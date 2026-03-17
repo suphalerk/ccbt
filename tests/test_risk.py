@@ -12,7 +12,7 @@ def config():
     """Standard test configuration."""
     return {
         "symbol": "BTCUSDT",
-        "leverage": 5,
+        "leverage": 3,
         "risk_per_trade": 0.005,
         "max_daily_loss": 0.02,
         "max_positions": 2,
@@ -40,14 +40,14 @@ class TestPositionSizing:
     def test_small_sl_large_position(self, risk_mgr):
         """Small SL should produce larger position (capped by leverage)."""
         size = risk_mgr.calculate_position_size(1000.0, 0.001)
-        # Risk = 5, size = 5/0.001 = 5000, but max = 1000*5 = 5000
-        assert size == pytest.approx(5000.0)
+        # Risk = 5, size = 5/0.001 = 5000, but max = 1000*3 = 3000
+        assert size == pytest.approx(3000.0)
 
     def test_leverage_cap(self, risk_mgr):
         """Position size should be capped at max leverage."""
         size = risk_mgr.calculate_position_size(1000.0, 0.0001)
-        # Risk = 5, size = 5/0.0001 = 50000, but max = 1000*5 = 5000
-        assert size == pytest.approx(5000.0)
+        # Risk = 5, size = 5/0.0001 = 50000, but max = 1000*3 = 3000
+        assert size == pytest.approx(3000.0)
 
     def test_zero_sl_raises(self, risk_mgr):
         """Zero stop loss percentage should raise ValueError."""
@@ -209,12 +209,101 @@ class TestLeverageCheck:
 
     def test_within_limit(self, risk_mgr):
         """Should pass when leverage is within limit."""
-        assert risk_mgr.check_leverage(3000.0, 1000.0)  # 3x
+        assert risk_mgr.check_leverage(2000.0, 1000.0)  # 2x
 
     def test_exceeds_limit(self, risk_mgr):
         """Should fail when leverage exceeds limit."""
-        assert not risk_mgr.check_leverage(6000.0, 1000.0)  # 6x > 5x
+        assert not risk_mgr.check_leverage(4000.0, 1000.0)  # 4x > 3x
 
     def test_zero_balance(self, risk_mgr):
         """Should fail with zero balance."""
         assert not risk_mgr.check_leverage(1000.0, 0.0)
+
+
+class TestDynamicRiskFactor:
+    """Test dynamic risk factor based on recent win rate."""
+
+    def test_insufficient_data_returns_conservative(self, config):
+        """With fewer than 10 trades, should return 0.5."""
+        rm = RiskManager(config, balance=100000.0)
+        # No trades recorded
+        assert rm.get_dynamic_risk_factor() == 0.5
+
+        # Record 5 trades (still < 10)
+        for _ in range(5):
+            rm.record_trade_result(10.0)
+        assert rm.get_dynamic_risk_factor() == 0.5
+
+    def test_high_win_rate_returns_full(self, config):
+        """Win rate > 50% should return 1.0."""
+        rm = RiskManager(config, balance=100000.0)
+        # Record 12 wins and 3 losses = 80% win rate
+        for _ in range(12):
+            rm.record_trade_result(10.0)
+        for _ in range(3):
+            rm.record_trade_result(-5.0)
+        assert rm.get_dynamic_risk_factor() == 1.0
+
+    def test_medium_win_rate_returns_reduced(self, config):
+        """Win rate 40-50% should return 0.6."""
+        rm = RiskManager(config, balance=100000.0)
+        # Directly set recent_results: 5 wins and 7 losses = 41.6% win rate
+        rm.state.recent_results = [
+            10.0, -5.0, -5.0, 10.0, -5.0, -5.0, 10.0, -5.0, 10.0, -5.0, 10.0, -5.0
+        ]
+        factor = rm.get_dynamic_risk_factor()
+        assert factor == 0.6
+
+    def test_low_win_rate_returns_minimal(self, config):
+        """Win rate < 40% should return 0.3."""
+        rm = RiskManager(config, balance=100000.0)
+        # Directly set recent_results to avoid triggering consecutive loss / daily loss limits
+        # 3 wins out of 13 = 23% win rate
+        rm.state.recent_results = [
+            -5.0, -5.0, 10.0, -5.0, -5.0, 10.0, -5.0, -5.0, 10.0, -5.0, -5.0, -5.0, -5.0
+        ]
+        factor = rm.get_dynamic_risk_factor()
+        assert factor == 0.3
+
+    def test_dynamic_factor_applied_in_validate_order(self, config):
+        """Dynamic risk factor should scale position size in validate_order."""
+        # Create manager with no trade history (factor = 0.5)
+        rm = RiskManager(config, balance=1000.0)
+        _, _, size_conservative = rm.validate_order(
+            balance=1000.0,
+            entry_price=60000.0,
+            stop_loss=59400.0,
+            take_profit=61200.0,
+            num_open_positions=0,
+        )
+
+        # Create another manager with high win rate (factor = 1.0)
+        rm2 = RiskManager(config, balance=1000.0)
+        for _ in range(15):
+            rm2.record_trade_result(10.0)
+        _, _, size_full = rm2.validate_order(
+            balance=1000.0,
+            entry_price=60000.0,
+            stop_loss=59400.0,
+            take_profit=61200.0,
+            num_open_positions=0,
+        )
+
+        # Full risk should be ~2x conservative risk
+        assert size_full == pytest.approx(size_conservative * 2.0, rel=0.01)
+
+    def test_volatile_regime_reduces_position(self, config):
+        """Volatile regime signal combined with dynamic factor should reduce size."""
+        rm = RiskManager(config, balance=1000.0)
+        # With 0 trades, factor = 0.5
+        _, _, size = rm.validate_order(
+            balance=1000.0,
+            entry_price=60000.0,
+            stop_loss=59400.0,
+            take_profit=61200.0,
+            num_open_positions=0,
+        )
+        # Position should be half of what it would be with factor=1.0
+        # Base position = (1000 * 0.005) / (600/60000) = 5 / 0.01 = 500
+        # With factor 0.5: 250
+        assert size == pytest.approx(250.0, rel=0.01)

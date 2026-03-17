@@ -26,13 +26,20 @@
   "slippage_rate": 0.0005,
   "ai_layer": {
     "enabled": true,
+    "mode": "advisor",
     "confidence_threshold": 0.65,
     "model": "claude-sonnet-4-6",
-    "max_tokens": 256,
-    "timeout_seconds": 8,
-    "fallback_on_timeout": "skip",
+    "max_tokens": 1024,
+    "timeout_seconds": 10,
+    "fallback_on_timeout": "execute",
     "news_source": "rss",
     "news_lookback_hours": 2,
-    "log_all_decisions": true
+    "log_all_decisions": true,
+    "calibration": {
+      "enabled": true,
+      "min_trades_for_accuracy": 5,
+      "rolling_window": 30,
+      "auto_adjust_influence": true
+    }
   }
 }

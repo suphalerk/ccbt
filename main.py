@@ -12,10 +12,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from bot.ai_analyst import AIAnalyst, AIDecision, CandidateSignal
+from bot.ai_analyst import AIAnalyst, CandidateSignal
 from bot.context_builder import ContextBuilder
 from bot.exchange import BybitClient
-from bot.logger import TradeJournal, setup_logging
+from bot.logger import CalibrationTracker, TradeJournal, setup_logging
 from bot.news_fetcher import NewsFetcher
 from bot.risk import RiskManager
 from bot.strategy import SignalType, generate_signal
@@ -57,6 +57,67 @@ def load_config(path: str = "config.json") -> dict:
     return config
 
 
+def apply_ai_adjustments(
+    stop_loss: float,
+    take_profit: float,
+    entry_price: float,
+    position_size: float,
+    ai_result,
+    signal_type: SignalType,
+    influence_multiplier: float = 1.0,
+) -> tuple[float, float, float]:
+    """Apply AI advisor adjustments to trade parameters.
+
+    Scales position size and adjusts SL/TP based on the AI advisor's
+    recommendations, modulated by the influence multiplier (which is
+    based on the AI's rolling accuracy).
+
+    Args:
+        stop_loss: Original stop loss price.
+        take_profit: Original take profit price.
+        entry_price: Entry price.
+        position_size: Original position size in USDT.
+        ai_result: AnalystResult from AI advisor.
+        signal_type: LONG or SHORT.
+        influence_multiplier: Calibration-based influence (0.5-1.25).
+
+    Returns:
+        Tuple of (adjusted_position_size, adjusted_sl, adjusted_tp).
+    """
+    # Scale position size modifier toward 1.0 based on influence
+    # If influence is 0.5 and AI says 1.3, effective modifier = 1 + 0.5*(1.3-1) = 1.15
+    raw_size_mod = ai_result.position_size_modifier
+    effective_size_mod = 1.0 + influence_multiplier * (raw_size_mod - 1.0)
+    effective_size_mod = max(0.5, min(1.5, effective_size_mod))
+    adjusted_size = position_size * effective_size_mod
+
+    # Adjust SL distance
+    sl_distance = abs(entry_price - stop_loss)
+    raw_sl_adj = ai_result.sl_adjustment
+    effective_sl_adj = 1.0 + influence_multiplier * (raw_sl_adj - 1.0)
+    effective_sl_adj = max(0.8, min(1.3, effective_sl_adj))
+    adjusted_sl_distance = sl_distance * effective_sl_adj
+
+    if signal_type == SignalType.LONG:
+        adjusted_sl = entry_price - adjusted_sl_distance
+    else:
+        adjusted_sl = entry_price + adjusted_sl_distance
+
+    # Adjust TP distance
+    tp_distance = abs(take_profit - entry_price)
+    raw_tp_adj = ai_result.tp_adjustment
+    effective_tp_adj = 1.0 + influence_multiplier * (raw_tp_adj - 1.0)
+    effective_tp_adj = max(0.7, min(1.5, effective_tp_adj))
+    adjusted_tp_distance = tp_distance * effective_tp_adj
+
+    if signal_type == SignalType.LONG:
+        adjusted_tp = entry_price + adjusted_tp_distance
+    else:
+        adjusted_tp = entry_price - adjusted_tp_distance
+
+    return adjusted_size, adjusted_sl, adjusted_tp
+
+
 async def trading_loop(config: dict) -> None:
     """Main trading loop.
 
@@ -78,19 +139,24 @@ async def trading_loop(config: dict) -> None:
         cryptopanic_token=os.getenv("CRYPTOPANIC_TOKEN"),
     )
 
-    ctx_builder = ContextBuilder(client, config, news_fetcher)
+    # Initialize calibration tracker
+    calibration_tracker = CalibrationTracker() if ai_enabled else None
+
+    ctx_builder = ContextBuilder(
+        client, config, news_fetcher, trade_journal=journal
+    )
 
     ai_analyst = AIAnalyst(
         api_key=os.getenv("ANTHROPIC_API_KEY", ""),
         confidence_threshold=ai_config.get("confidence_threshold", 0.65),
         model=ai_config.get("model", "claude-sonnet-4-6"),
-        max_tokens=ai_config.get("max_tokens", 512),
-        timeout_seconds=ai_config.get("timeout_seconds", 8.0),
-        fallback_on_timeout=ai_config.get("fallback_on_timeout", "skip"),
+        max_tokens=ai_config.get("max_tokens", 1024),
+        timeout_seconds=ai_config.get("timeout_seconds", 10.0),
+        fallback_on_timeout=ai_config.get("fallback_on_timeout", "execute"),
         enabled=ai_enabled,
+        calibration_tracker=calibration_tracker,
     )
 
-    confidence_threshold = ai_config.get("confidence_threshold", 0.65)
     log_all_decisions = ai_config.get("log_all_decisions", True)
 
     # Set leverage
@@ -106,6 +172,7 @@ async def trading_loop(config: dict) -> None:
             "leverage": config["leverage"],
             "mode": "LIVE" if not config.get("use_testnet", True) else "testnet",
             "ai_layer_enabled": ai_enabled,
+            "ai_mode": "advisor" if ai_enabled else "disabled",
         },
     )
 
@@ -179,8 +246,13 @@ async def trading_loop(config: dict) -> None:
 
                     side = "buy" if trade_signal.signal_type == SignalType.LONG else "sell"
 
-                    # AI gate
+                    # AI advisor
                     ai_result = None
+                    calibration_id = None
+                    adjusted_sl = trade_signal.stop_loss
+                    adjusted_tp = trade_signal.take_profit
+                    adjusted_size = position_size
+
                     if ai_enabled:
                         # Build candidate signal for AI
                         sl_pct = abs(trade_signal.entry_price - trade_signal.stop_loss) / trade_signal.entry_price * 100
@@ -200,85 +272,110 @@ async def trading_loop(config: dict) -> None:
                             config["symbol"], risk_mgr.state
                         )
 
-                        # Get AI decision
+                        # Get AI advisor decision
                         ai_result = await ai_analyst.analyze(candidate, market_ctx)
 
+                        # Record decision for calibration
+                        if calibration_tracker:
+                            calibration_id = calibration_tracker.record_decision(
+                                symbol=config["symbol"],
+                                side=side,
+                                entry_price=trade_signal.entry_price,
+                                stated_confidence=ai_result.confidence,
+                                position_size_modifier=ai_result.position_size_modifier,
+                                sl_adjustment=ai_result.sl_adjustment,
+                                tp_adjustment=ai_result.tp_adjustment,
+                                market_regime=ai_result.market_regime,
+                                reasoning=ai_result.reasoning,
+                                risk_flags=ai_result.risk_flags,
+                                should_skip=(ai_result.decision == "skip"),
+                            )
+
                         logger.info(
-                            "ai_decision",
+                            "ai_advisor_result",
                             extra={
-                                "decision": ai_result.decision.value,
+                                "decision": ai_result.decision,
                                 "confidence": ai_result.confidence,
+                                "calibrated_confidence": ai_result.calibrated_confidence,
+                                "position_size_modifier": ai_result.position_size_modifier,
+                                "sl_adjustment": ai_result.sl_adjustment,
+                                "tp_adjustment": ai_result.tp_adjustment,
+                                "market_regime": ai_result.market_regime,
                                 "reasoning": ai_result.reasoning,
                                 "flags": ai_result.risk_flags,
                             },
                         )
 
-                        # Gate: check decision and confidence
-                        if ai_result.decision in (AIDecision.SKIP, AIDecision.WAIT):
+                        # Only skip for hard-stop conditions (AI says should_skip)
+                        if ai_result.decision == "skip":
                             if log_all_decisions:
                                 journal.log_ai_decision(
                                     symbol=config["symbol"],
                                     side=side,
                                     entry_price=trade_signal.entry_price,
-                                    ai_decision=ai_result.decision.value,
+                                    ai_decision="skip",
                                     ai_confidence=ai_result.confidence,
                                     ai_reasoning=ai_result.reasoning,
                                     ai_risk_flags=ai_result.risk_flags,
-                                    ai_override=ai_result.override,
+                                    ai_override=False,
                                 )
                             logger.info(
-                                f"trade_{ai_result.decision.value}_by_ai",
+                                "trade_skipped_by_ai_hard_stop",
                                 extra={"reasoning": ai_result.reasoning},
                             )
                             await asyncio.sleep(60)
                             continue
 
-                        # EXECUTE but check confidence threshold
-                        if ai_result.confidence < confidence_threshold:
-                            if log_all_decisions:
-                                journal.log_ai_decision(
-                                    symbol=config["symbol"],
-                                    side=side,
-                                    entry_price=trade_signal.entry_price,
-                                    ai_decision="low_confidence",
-                                    ai_confidence=ai_result.confidence,
-                                    ai_reasoning=ai_result.reasoning,
-                                    ai_risk_flags=ai_result.risk_flags,
-                                    ai_override=ai_result.override,
-                                )
-                            logger.info(
-                                "trade_skipped_low_confidence",
-                                extra={
-                                    "confidence": ai_result.confidence,
-                                    "threshold": confidence_threshold,
-                                },
-                            )
-                            await asyncio.sleep(60)
-                            continue
+                        # Apply AI adjustments to trade parameters
+                        influence_mult = (
+                            calibration_tracker.get_influence_multiplier()
+                            if calibration_tracker
+                            else 1.0
+                        )
 
-                    # Execute trade
-                    contract_size = position_size / trade_signal.entry_price
+                        adjusted_size, adjusted_sl, adjusted_tp = (
+                            apply_ai_adjustments(
+                                stop_loss=trade_signal.stop_loss,
+                                take_profit=trade_signal.take_profit,
+                                entry_price=trade_signal.entry_price,
+                                position_size=position_size,
+                                ai_result=ai_result,
+                                signal_type=trade_signal.signal_type,
+                                influence_multiplier=influence_mult,
+                            )
+                        )
+
+                        # Re-validate leverage after AI size adjustment
+                        if not risk_mgr.check_leverage(adjusted_size, balance):
+                            adjusted_size = balance * config["leverage"]
+                            logger.warning(
+                                "ai_size_capped_by_leverage",
+                                extra={"capped_size": adjusted_size},
+                            )
+
+                    # Execute trade with (potentially adjusted) parameters
+                    contract_size = adjusted_size / trade_signal.entry_price
 
                     order = client.place_order(
                         side=side,
                         size=round(contract_size, 6),
-                        sl=round(trade_signal.stop_loss, 2),
-                        tp=round(trade_signal.take_profit, 2),
+                        sl=round(adjusted_sl, 2),
+                        tp=round(adjusted_tp, 2),
                     )
 
-                    # Log trade with AI decision data
-                    journal.log_trade_open(
+                    # Log trade with AI advisor data
+                    trade_id = journal.log_trade_open(
                         symbol=config["symbol"],
                         side=side,
                         entry_price=trade_signal.entry_price,
                         size=contract_size,
-                        stop_loss=trade_signal.stop_loss,
-                        take_profit=trade_signal.take_profit,
-                        ai_decision=ai_result.decision.value if ai_result else None,
+                        stop_loss=adjusted_sl,
+                        take_profit=adjusted_tp,
+                        ai_decision=ai_result.decision if ai_result else None,
                         ai_confidence=ai_result.confidence if ai_result else None,
                         ai_reasoning=ai_result.reasoning if ai_result else None,
                         ai_risk_flags=ai_result.risk_flags if ai_result else None,
-                        ai_override=ai_result.override if ai_result else False,
+                        ai_override=False,
                     )
 
                     ctx_builder.record_trade_time()
@@ -290,11 +387,17 @@ async def trading_loop(config: dict) -> None:
                             "side": side,
                             "size": contract_size,
                             "entry": trade_signal.entry_price,
-                            "sl": trade_signal.stop_loss,
-                            "tp": trade_signal.take_profit,
+                            "original_sl": trade_signal.stop_loss,
+                            "adjusted_sl": adjusted_sl,
+                            "original_tp": trade_signal.take_profit,
+                            "adjusted_tp": adjusted_tp,
+                            "original_size": position_size,
+                            "adjusted_size": adjusted_size,
                             "risk_usd": balance * config["risk_per_trade"],
-                            "ai_decision": ai_result.decision.value if ai_result else "disabled",
+                            "ai_decision": ai_result.decision if ai_result else "disabled",
                             "ai_confidence": ai_result.confidence if ai_result else None,
+                            "ai_market_regime": ai_result.market_regime if ai_result else None,
+                            "calibration_id": calibration_id,
                         },
                     )
                 else:

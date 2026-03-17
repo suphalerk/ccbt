@@ -7,10 +7,15 @@ from typing import Optional
 
 import pandas as pd
 
+from typing import TYPE_CHECKING as _TC
+
 from bot.data import add_indicators, compute_ema
 from bot.exchange import BybitClient
 from bot.news_fetcher import NewsFetcher
 from bot.risk import RiskState
+
+if _TC:
+    from bot.logger import TradeJournal
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +53,9 @@ class MarketContext:
     consecutive_losses: int = 0
     hours_since_last_trade: float = 0.0
 
+    # Recent trade results for AI context (positive=win, negative=loss)
+    recent_trade_results: list[float] = field(default_factory=list)
+
 
 class ContextBuilder:
     """Builds MarketContext from live exchange data and news feeds.
@@ -60,6 +68,7 @@ class ContextBuilder:
         client: BybitClient,
         config: dict,
         news_fetcher: Optional[NewsFetcher] = None,
+        trade_journal: Optional["TradeJournal"] = None,
     ) -> None:
         """Initialize the context builder.
 
@@ -67,10 +76,12 @@ class ContextBuilder:
             client: Bybit exchange client.
             config: Bot configuration.
             news_fetcher: Optional news fetcher. If None, news fields will be empty.
+            trade_journal: Optional trade journal for recent results context.
         """
         self.client = client
         self.config = config
         self.news_fetcher = news_fetcher
+        self.trade_journal = trade_journal
         self._last_trade_time: Optional[float] = None
 
     async def build(
@@ -155,6 +166,17 @@ class ContextBuilder:
             ) / 3600
         else:
             ctx.hours_since_last_trade = 99.0  # No trades yet
+
+        # Recent trade results for AI context
+        if self.trade_journal:
+            try:
+                ctx.recent_trade_results = self.trade_journal.get_recent_results(
+                    limit=10
+                )
+            except Exception as e:
+                logger.warning(
+                    "context_recent_results_error", extra={"error": str(e)}
+                )
 
         logger.info(
             "context_built",
