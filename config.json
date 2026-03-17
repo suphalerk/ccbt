@@ -2,7 +2,7 @@
   "symbol": "BTCUSDT",
   "timeframe_signal": "15m",
   "timeframe_trend": "1h",
-  "leverage": 5,
+  "leverage": 3,
   "risk_per_trade": 0.005,
   "max_daily_loss": 0.02,
   "max_positions": 2,

@@ -20,6 +20,7 @@ class RiskState:
     is_halted: bool = False
     halt_reason: str = ""
     trades_today: list = field(default_factory=list)
+    recent_results: list = field(default_factory=list)  # Last N trade W/L for dynamic sizing
 
 
 class RiskManager:
@@ -93,6 +94,31 @@ class RiskManager:
             },
         )
         return position_size
+
+    def get_dynamic_risk_factor(self) -> float:
+        """Adjust risk based on recent performance.
+
+        Examines the last 20 trade results and returns a multiplier
+        for position sizing based on win rate.
+
+        Returns:
+            Multiplier between 0.2 and 1.0 for position sizing.
+        """
+        results = self.state.recent_results
+        if len(results) < 10:
+            return 0.5  # Conservative until enough data
+
+        # Use last 20 results (or all if fewer)
+        recent = results[-20:]
+        wins = sum(1 for r in recent if r > 0)
+        win_rate = wins / len(recent)
+
+        if win_rate > 0.5:
+            return 1.0
+        elif win_rate >= 0.4:
+            return 0.6
+        else:
+            return 0.3
 
     def can_trade(self, current_balance: float, num_open_positions: int) -> tuple[bool, str]:
         """Check if trading is allowed based on all risk rules.
@@ -174,6 +200,10 @@ class RiskManager:
         sl_pct = risk / entry_price
         position_size = self.calculate_position_size(balance, sl_pct)
 
+        # Apply dynamic risk factor based on recent win rate
+        dynamic_factor = self.get_dynamic_risk_factor()
+        position_size *= dynamic_factor
+
         logger.info(
             "order_validated",
             extra={
@@ -182,6 +212,7 @@ class RiskManager:
                 "tp": take_profit,
                 "rr": round(rr_ratio, 2),
                 "size_usdt": round(position_size, 2),
+                "dynamic_risk_factor": dynamic_factor,
             },
         )
         return True, "", position_size
@@ -194,6 +225,10 @@ class RiskManager:
         """
         self.state.daily_pnl += pnl
         self.state.trades_today.append(pnl)
+        self.state.recent_results.append(pnl)
+        # Keep only last 20 results
+        if len(self.state.recent_results) > 20:
+            self.state.recent_results = self.state.recent_results[-20:]
 
         if pnl < 0:
             self.state.consecutive_losses += 1

@@ -116,6 +116,70 @@ def add_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     return df
 
 
+def detect_regime(df: pd.DataFrame, atr_period: int = 14, lookback: int = 20) -> str:
+    """Detect market regime based on ATR ratio and price structure.
+
+    Args:
+        df: DataFrame with high, low, close columns (and ideally pre-computed ATR).
+        atr_period: Period for ATR calculation.
+        lookback: Lookback window for ATR SMA and directional analysis.
+
+    Returns:
+        "trending", "ranging", or "volatile".
+    """
+    if len(df) < atr_period + lookback:
+        return "ranging"  # Not enough data, be conservative
+
+    # Compute ATR if not already present
+    if "atr" in df.columns:
+        atr = df["atr"]
+    else:
+        atr = compute_atr(df["high"], df["low"], df["close"], atr_period)
+
+    current_atr = atr.iloc[-1]
+    if pd.isna(current_atr) or current_atr == 0:
+        return "ranging"
+
+    atr_sma = atr.rolling(window=lookback).mean()
+    current_atr_sma = atr_sma.iloc[-1]
+    if pd.isna(current_atr_sma) or current_atr_sma == 0:
+        return "ranging"
+
+    atr_ratio = current_atr / current_atr_sma
+
+    # Directional movement: check for consistent higher highs/higher lows
+    # or lower highs/lower lows over the lookback window
+    recent = df.iloc[-lookback:]
+    highs = recent["high"].values
+    lows = recent["low"].values
+
+    higher_highs = sum(1 for i in range(1, len(highs)) if highs[i] > highs[i - 1])
+    higher_lows = sum(1 for i in range(1, len(lows)) if lows[i] > lows[i - 1])
+    lower_highs = sum(1 for i in range(1, len(highs)) if highs[i] < highs[i - 1])
+    lower_lows = sum(1 for i in range(1, len(lows)) if lows[i] < lows[i - 1])
+
+    total_comparisons = len(highs) - 1
+    if total_comparisons == 0:
+        return "ranging"
+
+    # Clear direction if >60% of bars show consistent HH/HL or LH/LL
+    up_score = (higher_highs + higher_lows) / (2 * total_comparisons)
+    down_score = (lower_highs + lower_lows) / (2 * total_comparisons)
+    has_clear_direction = up_score > 0.6 or down_score > 0.6
+
+    if atr_ratio > 1.5:
+        return "volatile"
+    elif atr_ratio < 0.8 and not has_clear_direction:
+        return "ranging"
+    elif 0.8 <= atr_ratio <= 1.5 and has_clear_direction:
+        return "trending"
+    else:
+        # Edge cases: moderate ATR but no direction, or low ATR with direction
+        if has_clear_direction:
+            return "trending"
+        return "ranging"
+
+
 def add_trend_filter(
     df: pd.DataFrame, trend_df: pd.DataFrame, config: dict
 ) -> pd.DataFrame:

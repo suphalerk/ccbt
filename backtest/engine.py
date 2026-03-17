@@ -67,10 +67,37 @@ class BacktestEngine:
         """
         self.config = config
         self.commission_rate = config.get("commission_rate", 0.00055)
-        self.slippage_rate = config.get("slippage_rate", 0.0005)
+        self.slippage_rate = config.get("slippage_rate", 0.0015)
         self.state = BacktestState(
             balance=initial_balance, initial_balance=initial_balance
         )
+
+    @staticmethod
+    def _get_slippage_multiplier(timestamp) -> float:
+        """Get slippage multiplier based on time-of-day and day-of-week.
+
+        Args:
+            timestamp: A pandas Timestamp or datetime-like object.
+
+        Returns:
+            Multiplier for the base slippage rate.
+        """
+        try:
+            ts = pd.Timestamp(timestamp)
+        except Exception:
+            return 1.0
+
+        # Weekend: low liquidity
+        if ts.dayofweek >= 5:  # Saturday=5, Sunday=6
+            return 2.0
+
+        hour = ts.hour
+        if 0 <= hour < 8:
+            return 1.0   # Asia hours
+        elif 8 <= hour < 16:
+            return 0.8   # Europe hours
+        else:
+            return 0.7   # US hours
 
     def run(
         self,
@@ -179,11 +206,13 @@ class BacktestEngine:
             if not approved:
                 continue
 
-            # Apply slippage to entry
+            # Apply slippage to entry (with time-of-day adjustment)
+            slippage_mult = self._get_slippage_multiplier(current_time)
+            effective_slippage = self.slippage_rate * slippage_mult
             if signal_type == SignalType.LONG:
-                entry_price *= 1 + self.slippage_rate
+                entry_price *= 1 + effective_slippage
             else:
-                entry_price *= 1 - self.slippage_rate
+                entry_price *= 1 - effective_slippage
 
             # Calculate risk amount BEFORE commission deduction
             risk_amount = self.state.balance * self.config["risk_per_trade"]
@@ -264,11 +293,13 @@ class BacktestEngine:
         if pos is None:
             return
 
-        # Apply slippage to exit
+        # Apply slippage to exit (with time-of-day adjustment)
+        slippage_mult = self._get_slippage_multiplier(exit_time)
+        effective_slippage = self.slippage_rate * slippage_mult
         if pos.side == "long":
-            exit_price *= 1 - self.slippage_rate
+            exit_price *= 1 - effective_slippage
         else:
-            exit_price *= 1 + self.slippage_rate
+            exit_price *= 1 + effective_slippage
 
         # Calculate PnL
         if pos.side == "long":

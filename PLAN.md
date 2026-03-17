@@ -59,181 +59,59 @@ plotly>=5.18.0
 
 ---
 
-## Part B: Deployment Plan
+## Part B: Deployment
+
+Deployment is fully automated via Docker and shell scripts. See the deployment files:
+
+### Deployment Files
+```
+Dockerfile              ← Python 3.11-slim, non-root user, health check
+.dockerignore           ← Excludes .git, tests, .env from Docker builds
+docker-compose.yml      ← Two services: bot + dashboard, shared volume
+.env.example            ← Template for all environment variables
+deploy/
+├── setup.sh            ← Full VPS setup (Docker, nginx, SSL, firewall, timers)
+├── nginx.conf          ← Reverse proxy with auth, WebSocket, rate limiting
+├── monitoring.py       ← Health checks + Telegram alerts (runs every 5 min)
+├── backup.sh           ← SQLite backup with 30-day retention, optional S3/rsync
+└── README-DEPLOY.md    ← Step-by-step deployment instructions
+```
+
+### Quick Deploy (Ubuntu 22.04 VPS)
+```bash
+# 1. Clone repo
+git clone <repo-url> /opt/trading-bot/app && cd /opt/trading-bot/app
+
+# 2. Run setup (installs Docker, nginx, SSL, firewall, creates user)
+sudo bash deploy/setup.sh dashboard.yourdomain.com
+
+# 3. Configure credentials
+sudo -u tradingbot cp .env.example .env
+sudo -u tradingbot nano .env
+
+# 4. Start services
+sudo -u tradingbot docker compose up -d --build
+
+# 5. Verify
+docker ps && curl -s http://localhost:8501/_stcore/health
+```
+
+For detailed instructions, see `deploy/README-DEPLOY.md`.
 
 ### Architecture
 ```
-┌─────────────────────────────────────────┐
-│              VPS (Ubuntu 22.04)         │
-│                                         │
-│  ┌─────────────┐   ┌────────────────┐  │
-│  │  trading-bot │   │   dashboard    │  │
-│  │  (systemd)   │   │  (streamlit)   │  │
-│  │  port: none  │   │  port: 8501    │  │
-│  └──────┬───────┘   └───────┬────────┘  │
-│         │                   │           │
-│         └───── trades.db ───┘           │
-│                                         │
-│  ┌──────────────────────────────────┐   │
-│  │  Nginx reverse proxy (HTTPS)     │   │
-│  │  → dashboard.yourdomain.com      │   │
-│  └──────────────────────────────────┘   │
-│                                         │
-│  ┌──────────────────────────────────┐   │
-│  │  Monitoring: healthcheck.io      │   │
-│  │  Alerts: Telegram bot            │   │
-│  └──────────────────────────────────┘   │
-└─────────────────────────────────────────┘
+VPS (Ubuntu 22.04)
+├── Docker
+│   ├── tradingbot           (main.py — trading engine)
+│   └── tradingbot-dashboard (Streamlit — web UI, port 8501)
+│       └── shared volume: bot-data (trades.db, heartbeat)
+├── Nginx (reverse proxy, HTTPS, basic auth, rate limiting)
+├── Systemd Timers
+│   ├── tradingbot-backup.timer   (daily at 03:00 UTC)
+│   └── tradingbot-monitor.timer  (every 5 minutes)
+├── fail2ban (brute force protection)
+└── UFW firewall (SSH + HTTP + HTTPS only)
 ```
-
-### Option A: VPS (Recommended for trading bot)
-**Provider**: Hetzner / DigitalOcean / Vultr
-**Spec**: 1 vCPU, 2GB RAM, 20GB SSD (~$5-10/mo)
-**Location**: Singapore (ใกล้ Bybit servers)
-
-**Setup Steps:**
-
-1. **Server setup**
-   ```bash
-   # Create user, SSH keys, firewall
-   ufw allow 22/tcp
-   ufw allow 443/tcp
-   ufw enable
-   ```
-
-2. **Install dependencies**
-   ```bash
-   apt update && apt install python3.11 python3.11-venv nginx certbot
-   python3.11 -m venv /opt/trading-bot/venv
-   source /opt/trading-bot/venv/bin/activate
-   pip install -r requirements.txt
-   ```
-
-3. **Environment variables**
-   ```bash
-   # /opt/trading-bot/.env
-   API_KEY=xxx
-   API_SECRET=xxx
-   ANTHROPIC_API_KEY=xxx
-   ```
-
-4. **Systemd service for trading bot**
-   ```ini
-   # /etc/systemd/system/trading-bot.service
-   [Unit]
-   Description=Crypto Trading Bot
-   After=network.target
-
-   [Service]
-   Type=simple
-   User=tradingbot
-   WorkingDirectory=/opt/trading-bot
-   EnvironmentFile=/opt/trading-bot/.env
-   ExecStart=/opt/trading-bot/venv/bin/python main.py
-   Restart=on-failure
-   RestartSec=30
-
-   [Install]
-   WantedBy=multi-user.target
-   ```
-
-5. **Systemd service for dashboard**
-   ```ini
-   # /etc/systemd/system/trading-dashboard.service
-   [Unit]
-   Description=Trading Dashboard
-   After=network.target
-
-   [Service]
-   Type=simple
-   User=tradingbot
-   WorkingDirectory=/opt/trading-bot
-   ExecStart=/opt/trading-bot/venv/bin/streamlit run dashboard/app.py --server.port 8501 --server.address 127.0.0.1
-   Restart=on-failure
-
-   [Install]
-   WantedBy=multi-user.target
-   ```
-
-6. **Nginx + HTTPS**
-   ```nginx
-   server {
-       listen 443 ssl;
-       server_name dashboard.yourdomain.com;
-
-       ssl_certificate /etc/letsencrypt/live/dashboard.yourdomain.com/fullchain.pem;
-       ssl_certificate_key /etc/letsencrypt/live/dashboard.yourdomain.com/privkey.pem;
-
-       # Basic auth for security
-       auth_basic "Trading Dashboard";
-       auth_basic_user_file /etc/nginx/.htpasswd;
-
-       location / {
-           proxy_pass http://127.0.0.1:8501;
-           proxy_http_version 1.1;
-           proxy_set_header Upgrade $http_upgrade;
-           proxy_set_header Connection "upgrade";
-           proxy_set_header Host $host;
-       }
-   }
-   ```
-
-### Option B: Docker (Alternative)
-```yaml
-# docker-compose.yml
-services:
-  bot:
-    build: .
-    env_file: .env
-    volumes:
-      - ./data:/app/data    # SQLite persistence
-    restart: unless-stopped
-
-  dashboard:
-    build: .
-    command: streamlit run dashboard/app.py --server.port 8501
-    ports:
-      - "8501:8501"
-    volumes:
-      - ./data:/app/data
-    restart: unless-stopped
-```
-
-```dockerfile
-# Dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
-CMD ["python", "main.py"]
-```
-
-### Monitoring & Alerts
-
-1. **Healthcheck** — bot writes heartbeat to file every loop iteration
-   ```python
-   # Add to main.py loop
-   Path("/tmp/trading-bot-heartbeat").write_text(str(time.time()))
-   ```
-   External monitor (healthchecks.io / UptimeRobot) pings every 5 min.
-
-2. **Telegram Alerts** — send on critical events:
-   - Trading halted (daily loss / API errors)
-   - Trade executed / closed
-   - Bot restart / crash
-   - Leverage exceeded
-
-3. **Log rotation**
-   ```ini
-   # /etc/logrotate.d/trading-bot
-   /opt/trading-bot/trading_bot.log {
-       daily
-       rotate 30
-       compress
-       missingok
-   }
-   ```
 
 ### Deployment Checklist
 

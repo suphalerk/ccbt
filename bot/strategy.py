@@ -7,7 +7,7 @@ from typing import Optional
 
 import pandas as pd
 
-from bot.data import add_indicators, add_trend_filter
+from bot.data import add_indicators, add_trend_filter, detect_regime
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,7 @@ class TradeSignal:
     atr: float
     rsi: float
     risk_reward_ratio: float
+    regime: str = "trending"
 
 
 def check_entry_conditions(
@@ -142,6 +143,14 @@ def generate_signal(
     if len(df) < 2:
         return None
 
+    # Detect market regime
+    regime = detect_regime(df, config.get("atr_period", 14))
+
+    # Skip trading in ranging markets
+    if regime == "ranging":
+        logger.info("signal_skipped_regime", extra={"regime": regime})
+        return None
+
     # Use the last closed candle
     row = df.iloc[-2]
     entry_price = row["close"]
@@ -159,6 +168,7 @@ def generate_signal(
                 atr=row["atr"],
                 rsi=row["rsi"],
                 risk_reward_ratio=rr,
+                regime=regime,
             )
             logger.info(
                 "signal_generated",
@@ -186,6 +196,7 @@ def generate_signal(
                 atr=row["atr"],
                 rsi=row["rsi"],
                 risk_reward_ratio=rr,
+                regime=regime,
             )
             logger.info(
                 "signal_generated",
