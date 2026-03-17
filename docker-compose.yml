@@ -1,0 +1,94 @@
+# =============================================================================
+# Docker Compose for Crypto Trading Bot
+# Services: bot (trading engine) + dashboard (Streamlit UI)
+# Shared volume for SQLite database persistence
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Trading Bot Service
+  # Runs the main trading loop (main.py)
+  # ---------------------------------------------------------------------------
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Persist SQLite database and logs across container restarts
+      - bot-data:/app/data
+      # Mount config as read-only (allows hot-swap without rebuild)
+      - ./config.json:/app/config.json:ro
+    # Resource limits to prevent runaway memory/CPU usage
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    # Health check is defined in Dockerfile
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # Dashboard Service
+  # Runs Streamlit web UI for monitoring trades and performance
+  # ---------------------------------------------------------------------------
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-dashboard
+    restart: unless-stopped
+    # Override the default CMD to run Streamlit instead of the bot
+    command: >
+      streamlit run dashboard/app.py
+      --server.port=8501
+      --server.address=0.0.0.0
+      --server.headless=true
+      --browser.gatherUsageStats=false
+      --server.enableCORS=false
+      --server.enableXsrfProtection=true
+    env_file:
+      - .env
+    ports:
+      # Expose Streamlit port; nginx will reverse-proxy to this
+      - "127.0.0.1:8501:8501"
+    volumes:
+      # Share the same data volume so dashboard reads the bot's database
+      - bot-data:/app/data
+      - ./config.json:/app/config.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    depends_on:
+      - bot
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Named volume for data persistence
+volumes:
+  bot-data:
+    driver: local

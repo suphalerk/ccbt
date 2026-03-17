@@ -1,0 +1,42 @@
+# Version control
+.git
+.gitignore
+
+# Python artifacts
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+dist
+build
+.pytest_cache
+.mypy_cache
+
+# Virtual environments
+.venv
+venv
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Environment and secrets
+.env
+
+# Database files (mounted as volume instead)
+*.db
+
+# Tests and development
+tests/
+backtest/
+htmlcov/
+.coverage
+
+# Documentation
+*.md
+!deploy/README-DEPLOY.md
+
+# Deploy scripts (not needed inside container)
+deploy/
