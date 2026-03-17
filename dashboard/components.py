@@ -402,13 +402,14 @@ def ai_confidence_histogram(decisions: pd.DataFrame, height: int = 300) -> go.Fi
         )
     )
 
+    layout_kwargs = {**DARK_LAYOUT}
+    layout_kwargs["xaxis"] = dict(range=[0, 1], gridcolor=COLORS["grid"], showgrid=True)
     fig.update_layout(
-        **DARK_LAYOUT,
+        **layout_kwargs,
         height=height,
         title=dict(text="AI Confidence Distribution", font=dict(size=14)),
         xaxis_title="Confidence",
         yaxis_title="Count",
-        xaxis=dict(range=[0, 1], gridcolor=COLORS["grid"]),
         showlegend=False,
     )
 
