@@ -106,6 +106,15 @@ class ContextBuilder:
         except Exception as e:
             logger.warning("context_trend_data_error", extra={"error": str(e)})
 
+        # Latest ticker price (more accurate than candle close)
+        try:
+            ticker = self.client._retry(
+                self.client.exchange.fetch_ticker, symbol
+            )
+            ctx.current_price = float(ticker.get("last", ctx.current_price))
+        except Exception as e:
+            logger.warning("context_ticker_error", extra={"error": str(e)})
+
         # Funding rate
         try:
             ctx.funding_rate = self.client.get_funding_rate(symbol)
@@ -263,7 +272,10 @@ class ContextBuilder:
         if bids and asks:
             best_bid = bids[0][0]
             best_ask = asks[0][0]
-            ctx.bid_ask_spread = (best_ask - best_bid) / best_bid
+            if best_ask > best_bid and best_bid > 0:
+                ctx.bid_ask_spread = (best_ask - best_bid) / best_bid
+            else:
+                ctx.bid_ask_spread = 0.0
 
             bid_vol = sum(b[1] for b in bids[:10])
             ask_vol = sum(a[1] for a in asks[:10])

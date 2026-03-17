@@ -218,7 +218,7 @@ class AIAnalyst:
         api_key: str,
         confidence_threshold: float = 0.65,
         model: str = "claude-sonnet-4-6",
-        max_tokens: int = 256,
+        max_tokens: int = 512,
         timeout_seconds: float = 8.0,
         fallback_on_timeout: str = "skip",
         enabled: bool = True,

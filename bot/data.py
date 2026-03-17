@@ -138,8 +138,14 @@ def add_trend_filter(
     trend_df["ema_trend"] = compute_ema(trend_df["close"], config["ema_trend"])
     trend_ema = trend_df[["ema_trend"]].rename(columns={"ema_trend": "ema_trend_1h"})
 
-    # Reindex to signal timeframe and forward-fill
-    df = df.join(trend_ema, how="left")
+    # Merge with backward-looking alignment to avoid look-ahead bias
+    df = pd.merge_asof(
+        df.reset_index(), trend_ema.reset_index(),
+        on="timestamp" if "timestamp" in df.reset_index().columns else df.reset_index().columns[0],
+        direction="backward",
+    )
+    if "timestamp" in df.columns:
+        df = df.set_index("timestamp")
     df["ema_trend_1h"] = df["ema_trend_1h"].ffill()
     df["above_trend"] = df["close"] > df["ema_trend_1h"]
     df["below_trend"] = df["close"] < df["ema_trend_1h"]

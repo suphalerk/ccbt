@@ -27,48 +27,34 @@ logger = logging.getLogger(__name__)
 # Graceful shutdown
 shutdown_event = asyncio.Event()
 
+REQUIRED_CONFIG_KEYS = [
+    "symbol", "timeframe_signal", "timeframe_trend", "leverage",
+    "risk_per_trade", "max_daily_loss", "max_positions",
+    "ema_fast", "ema_slow", "ema_trend", "rsi_period",
+    "rsi_min", "rsi_max", "atr_period", "atr_sl_mult", "atr_tp_mult",
+]
+
 
 def load_config(path: str = "config.json") -> dict:
-    """Load configuration from JSON file.
+    """Load and validate configuration from JSON file.
 
     Args:
         path: Path to config file.
 
     Returns:
         Configuration dictionary.
+
+    Raises:
+        ValueError: If required keys are missing.
     """
     with open(path) as f:
-        return json.load(f)
+        config = json.load(f)
 
+    missing = [k for k in REQUIRED_CONFIG_KEYS if k not in config]
+    if missing:
+        raise ValueError(f"Missing required config keys: {missing}")
 
-def _init_ai_layer(config: dict) -> tuple[AIAnalyst, ContextBuilder, NewsFetcher]:
-    """Initialize AI layer components.
-
-    Args:
-        config: Bot configuration.
-
-    Returns:
-        Tuple of (ai_analyst, context_builder, news_fetcher).
-    """
-    ai_config = config.get("ai_layer", {})
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
-
-    news_fetcher = NewsFetcher(
-        source=ai_config.get("news_source", "rss"),
-        cryptopanic_token=os.getenv("CRYPTOPANIC_TOKEN"),
-    )
-
-    ai_analyst = AIAnalyst(
-        api_key=api_key,
-        confidence_threshold=ai_config.get("confidence_threshold", 0.65),
-        model=ai_config.get("model", "claude-sonnet-4-6"),
-        max_tokens=ai_config.get("max_tokens", 256),
-        timeout_seconds=ai_config.get("timeout_seconds", 8.0),
-        fallback_on_timeout=ai_config.get("fallback_on_timeout", "skip"),
-        enabled=ai_config.get("enabled", False),
-    )
-
-    return ai_analyst, None, news_fetcher  # context_builder set after client init
+    return config
 
 
 async def trading_loop(config: dict) -> None:
@@ -98,7 +84,7 @@ async def trading_loop(config: dict) -> None:
         api_key=os.getenv("ANTHROPIC_API_KEY", ""),
         confidence_threshold=ai_config.get("confidence_threshold", 0.65),
         model=ai_config.get("model", "claude-sonnet-4-6"),
-        max_tokens=ai_config.get("max_tokens", 256),
+        max_tokens=ai_config.get("max_tokens", 512),
         timeout_seconds=ai_config.get("timeout_seconds", 8.0),
         fallback_on_timeout=ai_config.get("fallback_on_timeout", "skip"),
         enabled=ai_enabled,
@@ -110,13 +96,15 @@ async def trading_loop(config: dict) -> None:
     # Set leverage
     client.set_leverage(config["leverage"])
 
-    logger.info(
+    log_level = "warning" if not config.get("use_testnet", True) else "info"
+    logger.log(
+        logging.WARNING if log_level == "warning" else logging.INFO,
         "bot_started",
         extra={
             "symbol": config["symbol"],
             "balance": balance,
             "leverage": config["leverage"],
-            "testnet": config.get("use_testnet", True),
+            "mode": "LIVE" if not config.get("use_testnet", True) else "testnet",
             "ai_layer_enabled": ai_enabled,
         },
     )
@@ -146,15 +134,20 @@ async def trading_loop(config: dict) -> None:
                 await asyncio.sleep(60)
                 continue
 
-            # Fetch data
-            signal_df = client.get_ohlcv(
-                config["symbol"], config["timeframe_signal"], limit=100
-            )
-            trend_df = client.get_ohlcv(
-                config["symbol"], config["timeframe_trend"], limit=100
-            )
-
-            risk_mgr.clear_api_errors()
+            # Fetch data with error handling
+            try:
+                signal_df = client.get_ohlcv(
+                    config["symbol"], config["timeframe_signal"], limit=100
+                )
+                trend_df = client.get_ohlcv(
+                    config["symbol"], config["timeframe_trend"], limit=100
+                )
+                risk_mgr.clear_api_errors()
+            except Exception as e:
+                risk_mgr.record_api_error()
+                logger.error("data_fetch_error", extra={"error": str(e)})
+                await asyncio.sleep(30)
+                continue
 
             # Generate signal
             trade_signal = generate_signal(signal_df, trend_df, config)
@@ -170,6 +163,20 @@ async def trading_loop(config: dict) -> None:
                 )
 
                 if approved:
+                    # Validate leverage before placing order
+                    if not risk_mgr.check_leverage(position_size, balance):
+                        logger.warning(
+                            "trade_rejected_leverage",
+                            extra={
+                                "position_size": position_size,
+                                "balance": balance,
+                                "actual_leverage": position_size / balance if balance > 0 else 0,
+                                "max_leverage": config["leverage"],
+                            },
+                        )
+                        await asyncio.sleep(60)
+                        continue
+
                     side = "buy" if trade_signal.signal_type == SignalType.LONG else "sell"
 
                     # AI gate
@@ -207,7 +214,7 @@ async def trading_loop(config: dict) -> None:
                         )
 
                         # Gate: check decision and confidence
-                        if ai_result.decision == AIDecision.SKIP:
+                        if ai_result.decision in (AIDecision.SKIP, AIDecision.WAIT):
                             if log_all_decisions:
                                 journal.log_ai_decision(
                                     symbol=config["symbol"],
@@ -219,23 +226,10 @@ async def trading_loop(config: dict) -> None:
                                     ai_risk_flags=ai_result.risk_flags,
                                     ai_override=ai_result.override,
                                 )
-                            logger.info("trade_skipped_by_ai", extra={"reasoning": ai_result.reasoning})
-                            await asyncio.sleep(60)
-                            continue
-
-                        if ai_result.decision == AIDecision.WAIT:
-                            if log_all_decisions:
-                                journal.log_ai_decision(
-                                    symbol=config["symbol"],
-                                    side=side,
-                                    entry_price=trade_signal.entry_price,
-                                    ai_decision=ai_result.decision.value,
-                                    ai_confidence=ai_result.confidence,
-                                    ai_reasoning=ai_result.reasoning,
-                                    ai_risk_flags=ai_result.risk_flags,
-                                    ai_override=ai_result.override,
-                                )
-                            logger.info("trade_wait_by_ai", extra={"reasoning": ai_result.reasoning})
+                            logger.info(
+                                f"trade_{ai_result.decision.value}_by_ai",
+                                extra={"reasoning": ai_result.reasoning},
+                            )
                             await asyncio.sleep(60)
                             continue
 

@@ -61,7 +61,7 @@ class BybitClient:
             logger.info("exchange_init", extra={"mode": "testnet"})
         else:
             self.exchange = ccxt.bybit(exchange_params)
-            logger.info("exchange_init", extra={"mode": "live"})
+            logger.warning("exchange_init", extra={"mode": "LIVE", "warning": "REAL MONEY MODE"})
 
         self.exchange.load_markets()
 

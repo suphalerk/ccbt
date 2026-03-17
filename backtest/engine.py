@@ -185,11 +185,12 @@ class BacktestEngine:
             else:
                 entry_price *= 1 - self.slippage_rate
 
+            # Calculate risk amount BEFORE commission deduction
+            risk_amount = self.state.balance * self.config["risk_per_trade"]
+
             # Commission on entry
             commission = position_size * self.commission_rate
             self.state.balance -= commission
-
-            risk_amount = self.state.balance * self.config["risk_per_trade"]
 
             self.state.position = BacktestTrade(
                 entry_time=current_time,
