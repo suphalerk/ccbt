@@ -106,7 +106,12 @@ class TradeJournal:
                     pnl_pct REAL,
                     status TEXT NOT NULL DEFAULT 'open',
                     close_reason TEXT,
-                    duration_seconds INTEGER
+                    duration_seconds INTEGER,
+                    ai_decision TEXT,
+                    ai_confidence REAL,
+                    ai_reasoning TEXT,
+                    ai_risk_flags TEXT,
+                    ai_override INTEGER DEFAULT 0
                 )
                 """
             )
@@ -119,6 +124,11 @@ class TradeJournal:
         size: float,
         stop_loss: float,
         take_profit: float,
+        ai_decision: Optional[str] = None,
+        ai_confidence: Optional[float] = None,
+        ai_reasoning: Optional[str] = None,
+        ai_risk_flags: Optional[list[str]] = None,
+        ai_override: bool = False,
     ) -> int:
         """Log a new trade opening.
 
@@ -129,16 +139,24 @@ class TradeJournal:
             size: Position size.
             stop_loss: Stop loss price.
             take_profit: Take profit price.
+            ai_decision: AI analyst decision (execute/skip/wait).
+            ai_confidence: AI confidence score (0-1).
+            ai_reasoning: AI reasoning text.
+            ai_risk_flags: List of risk flags from AI.
+            ai_override: Whether AI overrode the signal.
 
         Returns:
             Trade ID.
         """
+        flags_json = json.dumps(ai_risk_flags) if ai_risk_flags else None
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
                 """
                 INSERT INTO trades (timestamp, symbol, side, entry_price, size,
-                                    stop_loss, take_profit, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
+                                    stop_loss, take_profit, status,
+                                    ai_decision, ai_confidence, ai_reasoning,
+                                    ai_risk_flags, ai_override)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)
                 """,
                 (
                     datetime.utcnow().isoformat(),
@@ -148,6 +166,11 @@ class TradeJournal:
                     size,
                     stop_loss,
                     take_profit,
+                    ai_decision,
+                    ai_confidence,
+                    ai_reasoning,
+                    flags_json,
+                    1 if ai_override else 0,
                 ),
             )
             return cursor.lastrowid  # type: ignore[return-value]
@@ -220,6 +243,59 @@ class TradeJournal:
                 (limit,),
             ).fetchall()
             return [dict(row) for row in rows]
+
+    def log_ai_decision(
+        self,
+        symbol: str,
+        side: str,
+        entry_price: float,
+        ai_decision: str,
+        ai_confidence: float,
+        ai_reasoning: str,
+        ai_risk_flags: Optional[list[str]] = None,
+        ai_override: bool = False,
+    ) -> int:
+        """Log an AI decision, including skipped signals.
+
+        Records AI decisions even when the trade is not executed,
+        enabling later analysis of skip accuracy.
+
+        Args:
+            symbol: Trading pair.
+            side: Signal direction.
+            entry_price: Candidate entry price.
+            ai_decision: AI decision (execute/skip/wait).
+            ai_confidence: AI confidence score.
+            ai_reasoning: AI reasoning text.
+            ai_risk_flags: Risk flags from AI.
+            ai_override: Whether AI overrode the signal.
+
+        Returns:
+            Record ID.
+        """
+        flags_json = json.dumps(ai_risk_flags) if ai_risk_flags else None
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO trades (timestamp, symbol, side, entry_price, size,
+                                    stop_loss, take_profit, status,
+                                    ai_decision, ai_confidence, ai_reasoning,
+                                    ai_risk_flags, ai_override)
+                VALUES (?, ?, ?, ?, 0, 0, 0, 'ai_skipped', ?, ?, ?, ?, ?)
+                """,
+                (
+                    datetime.utcnow().isoformat(),
+                    symbol,
+                    side,
+                    entry_price,
+                    ai_decision,
+                    ai_confidence,
+                    ai_reasoning,
+                    flags_json,
+                    1 if ai_override else 0,
+                ),
+            )
+            return cursor.lastrowid  # type: ignore[return-value]
 
     def get_open_trades(self) -> list[dict]:
         """Get all currently open trades.

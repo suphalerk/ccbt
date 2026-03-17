@@ -3,16 +3,24 @@
 import asyncio
 import json
 import logging
+import os
 import signal
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+from bot.ai_analyst import AIAnalyst, AIDecision, CandidateSignal
+from bot.context_builder import ContextBuilder
 from bot.exchange import BybitClient
 from bot.logger import TradeJournal, setup_logging
+from bot.news_fetcher import NewsFetcher
 from bot.risk import RiskManager
 from bot.strategy import SignalType, generate_signal
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +41,36 @@ def load_config(path: str = "config.json") -> dict:
         return json.load(f)
 
 
+def _init_ai_layer(config: dict) -> tuple[AIAnalyst, ContextBuilder, NewsFetcher]:
+    """Initialize AI layer components.
+
+    Args:
+        config: Bot configuration.
+
+    Returns:
+        Tuple of (ai_analyst, context_builder, news_fetcher).
+    """
+    ai_config = config.get("ai_layer", {})
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+
+    news_fetcher = NewsFetcher(
+        source=ai_config.get("news_source", "rss"),
+        cryptopanic_token=os.getenv("CRYPTOPANIC_TOKEN"),
+    )
+
+    ai_analyst = AIAnalyst(
+        api_key=api_key,
+        confidence_threshold=ai_config.get("confidence_threshold", 0.65),
+        model=ai_config.get("model", "claude-sonnet-4-6"),
+        max_tokens=ai_config.get("max_tokens", 256),
+        timeout_seconds=ai_config.get("timeout_seconds", 8.0),
+        fallback_on_timeout=ai_config.get("fallback_on_timeout", "skip"),
+        enabled=ai_config.get("enabled", False),
+    )
+
+    return ai_analyst, None, news_fetcher  # context_builder set after client init
+
+
 async def trading_loop(config: dict) -> None:
     """Main trading loop.
 
@@ -45,6 +83,30 @@ async def trading_loop(config: dict) -> None:
     risk_mgr = RiskManager(config, balance)
     journal = TradeJournal()
 
+    # Initialize AI layer
+    ai_config = config.get("ai_layer", {})
+    ai_enabled = ai_config.get("enabled", False)
+
+    news_fetcher = NewsFetcher(
+        source=ai_config.get("news_source", "rss"),
+        cryptopanic_token=os.getenv("CRYPTOPANIC_TOKEN"),
+    )
+
+    ctx_builder = ContextBuilder(client, config, news_fetcher)
+
+    ai_analyst = AIAnalyst(
+        api_key=os.getenv("ANTHROPIC_API_KEY", ""),
+        confidence_threshold=ai_config.get("confidence_threshold", 0.65),
+        model=ai_config.get("model", "claude-sonnet-4-6"),
+        max_tokens=ai_config.get("max_tokens", 256),
+        timeout_seconds=ai_config.get("timeout_seconds", 8.0),
+        fallback_on_timeout=ai_config.get("fallback_on_timeout", "skip"),
+        enabled=ai_enabled,
+    )
+
+    confidence_threshold = ai_config.get("confidence_threshold", 0.65)
+    log_all_decisions = ai_config.get("log_all_decisions", True)
+
     # Set leverage
     client.set_leverage(config["leverage"])
 
@@ -55,6 +117,7 @@ async def trading_loop(config: dict) -> None:
             "balance": balance,
             "leverage": config["leverage"],
             "testnet": config.get("use_testnet", True),
+            "ai_layer_enabled": ai_enabled,
         },
     )
 
@@ -107,11 +170,101 @@ async def trading_loop(config: dict) -> None:
                 )
 
                 if approved:
-                    # Convert USDT size to contract size
+                    side = "buy" if trade_signal.signal_type == SignalType.LONG else "sell"
+
+                    # AI gate
+                    ai_result = None
+                    if ai_enabled:
+                        # Build candidate signal for AI
+                        sl_pct = abs(trade_signal.entry_price - trade_signal.stop_loss) / trade_signal.entry_price * 100
+                        tp_pct = abs(trade_signal.take_profit - trade_signal.entry_price) / trade_signal.entry_price * 100
+                        candidate = CandidateSignal(
+                            side="long" if trade_signal.signal_type == SignalType.LONG else "short",
+                            entry_price=trade_signal.entry_price,
+                            stop_loss=trade_signal.stop_loss,
+                            take_profit=trade_signal.take_profit,
+                            sl_pct=sl_pct,
+                            tp_pct=tp_pct,
+                            rr_ratio=trade_signal.risk_reward_ratio,
+                        )
+
+                        # Build market context
+                        market_ctx = await ctx_builder.build(
+                            config["symbol"], risk_mgr.state
+                        )
+
+                        # Get AI decision
+                        ai_result = await ai_analyst.analyze(candidate, market_ctx)
+
+                        logger.info(
+                            "ai_decision",
+                            extra={
+                                "decision": ai_result.decision.value,
+                                "confidence": ai_result.confidence,
+                                "reasoning": ai_result.reasoning,
+                                "flags": ai_result.risk_flags,
+                            },
+                        )
+
+                        # Gate: check decision and confidence
+                        if ai_result.decision == AIDecision.SKIP:
+                            if log_all_decisions:
+                                journal.log_ai_decision(
+                                    symbol=config["symbol"],
+                                    side=side,
+                                    entry_price=trade_signal.entry_price,
+                                    ai_decision=ai_result.decision.value,
+                                    ai_confidence=ai_result.confidence,
+                                    ai_reasoning=ai_result.reasoning,
+                                    ai_risk_flags=ai_result.risk_flags,
+                                    ai_override=ai_result.override,
+                                )
+                            logger.info("trade_skipped_by_ai", extra={"reasoning": ai_result.reasoning})
+                            await asyncio.sleep(60)
+                            continue
+
+                        if ai_result.decision == AIDecision.WAIT:
+                            if log_all_decisions:
+                                journal.log_ai_decision(
+                                    symbol=config["symbol"],
+                                    side=side,
+                                    entry_price=trade_signal.entry_price,
+                                    ai_decision=ai_result.decision.value,
+                                    ai_confidence=ai_result.confidence,
+                                    ai_reasoning=ai_result.reasoning,
+                                    ai_risk_flags=ai_result.risk_flags,
+                                    ai_override=ai_result.override,
+                                )
+                            logger.info("trade_wait_by_ai", extra={"reasoning": ai_result.reasoning})
+                            await asyncio.sleep(60)
+                            continue
+
+                        # EXECUTE but check confidence threshold
+                        if ai_result.confidence < confidence_threshold:
+                            if log_all_decisions:
+                                journal.log_ai_decision(
+                                    symbol=config["symbol"],
+                                    side=side,
+                                    entry_price=trade_signal.entry_price,
+                                    ai_decision="low_confidence",
+                                    ai_confidence=ai_result.confidence,
+                                    ai_reasoning=ai_result.reasoning,
+                                    ai_risk_flags=ai_result.risk_flags,
+                                    ai_override=ai_result.override,
+                                )
+                            logger.info(
+                                "trade_skipped_low_confidence",
+                                extra={
+                                    "confidence": ai_result.confidence,
+                                    "threshold": confidence_threshold,
+                                },
+                            )
+                            await asyncio.sleep(60)
+                            continue
+
+                    # Execute trade
                     contract_size = position_size / trade_signal.entry_price
 
-                    # Place order
-                    side = "buy" if trade_signal.signal_type == SignalType.LONG else "sell"
                     order = client.place_order(
                         side=side,
                         size=round(contract_size, 6),
@@ -119,7 +272,7 @@ async def trading_loop(config: dict) -> None:
                         tp=round(trade_signal.take_profit, 2),
                     )
 
-                    # Log trade
+                    # Log trade with AI decision data
                     journal.log_trade_open(
                         symbol=config["symbol"],
                         side=side,
@@ -127,7 +280,14 @@ async def trading_loop(config: dict) -> None:
                         size=contract_size,
                         stop_loss=trade_signal.stop_loss,
                         take_profit=trade_signal.take_profit,
+                        ai_decision=ai_result.decision.value if ai_result else None,
+                        ai_confidence=ai_result.confidence if ai_result else None,
+                        ai_reasoning=ai_result.reasoning if ai_result else None,
+                        ai_risk_flags=ai_result.risk_flags if ai_result else None,
+                        ai_override=ai_result.override if ai_result else False,
                     )
+
+                    ctx_builder.record_trade_time()
 
                     logger.info(
                         "trade_executed",
@@ -139,13 +299,14 @@ async def trading_loop(config: dict) -> None:
                             "sl": trade_signal.stop_loss,
                             "tp": trade_signal.take_profit,
                             "risk_usd": balance * config["risk_per_trade"],
+                            "ai_decision": ai_result.decision.value if ai_result else "disabled",
+                            "ai_confidence": ai_result.confidence if ai_result else None,
                         },
                     )
                 else:
                     logger.info("trade_rejected", extra={"reason": reason})
 
             # Wait for next candle interval
-            # Sleep for 60 seconds between checks
             await asyncio.sleep(60)
 
         except KeyboardInterrupt:
@@ -158,7 +319,6 @@ async def trading_loop(config: dict) -> None:
             can_trade, reason = risk_mgr.can_trade(balance, 0)
             if not can_trade and "API error" in reason:
                 logger.critical("bot_halted_api_errors", extra={"reason": reason})
-                # Emergency: cancel all orders and close positions
                 try:
                     client.cancel_all_orders()
                     client.close_all_positions()
@@ -182,7 +342,13 @@ def main() -> None:
     setup_logging()
     config = load_config()
 
-    logger.info("config_loaded", extra={"testnet": config.get("use_testnet", True)})
+    logger.info(
+        "config_loaded",
+        extra={
+            "testnet": config.get("use_testnet", True),
+            "ai_layer": config.get("ai_layer", {}).get("enabled", False),
+        },
+    )
 
     # Register signal handlers
     signal.signal(signal.SIGINT, handle_shutdown)

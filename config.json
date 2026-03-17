@@ -23,5 +23,16 @@
   "volume_mult": 1.2,
   "min_rr_ratio": 2.0,
   "commission_rate": 0.00055,
-  "slippage_rate": 0.0005
+  "slippage_rate": 0.0005,
+  "ai_layer": {
+    "enabled": true,
+    "confidence_threshold": 0.65,
+    "model": "claude-sonnet-4-6",
+    "max_tokens": 256,
+    "timeout_seconds": 8,
+    "fallback_on_timeout": "skip",
+    "news_source": "rss",
+    "news_lookback_hours": 2,
+    "log_all_decisions": true
+  }
 }
