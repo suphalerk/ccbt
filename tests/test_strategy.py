@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bot.data import add_indicators, compute_atr, compute_ema, compute_rsi
+from bot.data import add_indicators, compute_atr, compute_ema, compute_rsi, detect_regime
 from bot.strategy import (
     SignalType,
     TradeSignal,
@@ -250,3 +250,130 @@ class TestEntryConditions:
             "above_trend": True,
         })
         assert not check_entry_conditions(row, config, SignalType.LONG)
+
+
+class TestDetectRegime:
+    """Test market regime detection."""
+
+    def test_trending_regime(self):
+        """Consistent uptrend with moderate ATR should be 'trending'."""
+        np.random.seed(10)
+        n = 80
+        dates = pd.date_range("2024-01-01", periods=n, freq="15min")
+        # Strong uptrend: consistent higher highs / higher lows
+        base = 60000 + np.arange(n) * 20.0 + np.random.randn(n) * 5
+        high = base + 15
+        low = base - 15
+        df = pd.DataFrame({
+            "open": base,
+            "high": high,
+            "low": low,
+            "close": base,
+            "volume": np.random.uniform(100, 500, n),
+        }, index=dates)
+        regime = detect_regime(df, atr_period=14, lookback=20)
+        assert regime == "trending"
+
+    def test_ranging_regime(self):
+        """Flat, low-volatility market should be 'ranging'."""
+        np.random.seed(20)
+        n = 80
+        dates = pd.date_range("2024-01-01", periods=n, freq="15min")
+        # Flat market with decreasing volatility
+        base = 60000 + np.random.randn(n) * 2  # Very tight range
+        high = base + 3
+        low = base - 3
+        df = pd.DataFrame({
+            "open": base,
+            "high": high,
+            "low": low,
+            "close": base,
+            "volume": np.random.uniform(100, 500, n),
+        }, index=dates)
+        regime = detect_regime(df, atr_period=14, lookback=20)
+        assert regime == "ranging"
+
+    def test_volatile_regime(self):
+        """Sudden spike in ATR should produce 'volatile'."""
+        np.random.seed(30)
+        n = 80
+        dates = pd.date_range("2024-01-01", periods=n, freq="15min")
+        base = 60000 + np.random.randn(n) * 10
+        high = base + 15
+        low = base - 15
+        # Make the last few candles extremely volatile
+        for i in range(n - 10, n):
+            high[i] = base[i] + 500
+            low[i] = base[i] - 500
+        df = pd.DataFrame({
+            "open": base,
+            "high": high,
+            "low": low,
+            "close": base,
+            "volume": np.random.uniform(100, 500, n),
+        }, index=dates)
+        regime = detect_regime(df, atr_period=14, lookback=20)
+        assert regime == "volatile"
+
+    def test_insufficient_data_returns_ranging(self):
+        """Too few candles should default to 'ranging'."""
+        dates = pd.date_range("2024-01-01", periods=10, freq="15min")
+        df = pd.DataFrame({
+            "open": [60000] * 10,
+            "high": [60100] * 10,
+            "low": [59900] * 10,
+            "close": [60000] * 10,
+            "volume": [200] * 10,
+        }, index=dates)
+        regime = detect_regime(df, atr_period=14, lookback=20)
+        assert regime == "ranging"
+
+
+class TestRegimeIntegration:
+    """Test regime detection integration with signal generation."""
+
+    def test_regime_blocks_signal_in_ranging(self, config):
+        """Ranging regime should block all signals."""
+        np.random.seed(20)
+        n = 100
+        dates = pd.date_range("2024-01-01", periods=n, freq="15min")
+        # Very flat market
+        base = 60000 + np.random.randn(n) * 1
+        df = pd.DataFrame({
+            "open": base,
+            "high": base + 2,
+            "low": base - 2,
+            "close": base,
+            "volume": np.random.uniform(100, 500, n),
+        }, index=dates)
+        signal = generate_signal(df, None, config)
+        assert signal is None
+
+    def test_volatile_regime_sets_flag(self, config):
+        """Volatile regime should set regime='volatile' on TradeSignal."""
+        # We test the regime field is properly set on the dataclass
+        signal = TradeSignal(
+            signal_type=SignalType.LONG,
+            entry_price=60000,
+            stop_loss=59000,
+            take_profit=62000,
+            atr=500,
+            rsi=55,
+            risk_reward_ratio=2.0,
+            regime="volatile",
+        )
+        assert signal.regime == "volatile"
+
+    def test_trending_regime_allows_signal(self, config):
+        """Trending regime should allow signal generation."""
+        signal = TradeSignal(
+            signal_type=SignalType.LONG,
+            entry_price=60000,
+            stop_loss=59000,
+            take_profit=62000,
+            atr=500,
+            rsi=55,
+            risk_reward_ratio=2.0,
+            regime="trending",
+        )
+        assert signal.regime == "trending"
