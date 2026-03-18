@@ -14,17 +14,22 @@ import streamlit as st
 
 from dashboard.components import (
     COLORS,
+    advisor_adjustments_chart,
     ai_confidence_histogram,
     ai_decision_pie,
+    calibration_curve_chart,
     candlestick_chart,
     daily_pnl_bar_chart,
     equity_curve_chart,
+    regime_accuracy_chart,
     risk_gauge,
     rsi_chart,
 )
 from dashboard.queries import (
     db_exists,
     get_ai_decisions,
+    get_calibration_data,
+    get_calibration_stats,
     get_closed_trades,
     get_consecutive_losses,
     get_daily_pnl,
@@ -158,6 +163,16 @@ def load_daily_pnl_data() -> pd.DataFrame:
 @st.cache_data(ttl=30)
 def load_open_trades() -> pd.DataFrame:
     return get_open_trades(db_path=DB_PATH)
+
+
+@st.cache_data(ttl=30)
+def load_calibration_data() -> pd.DataFrame:
+    return get_calibration_data(db_path=DB_PATH)
+
+
+@st.cache_data(ttl=30)
+def load_calibration_stats() -> dict:
+    return get_calibration_stats(db_path=DB_PATH)
 
 
 # ---------------------------------------------------------------------------
@@ -428,71 +443,101 @@ st.markdown("---")
 # SECTION 5: AI Analytics (if enabled)
 # ---------------------------------------------------------------------------
 if ai_enabled:
-    st.markdown("### AI Analytics")
+    st.markdown("### AI Advisor Analytics")
 
     ai_data = load_ai_decisions()
+    cal_data = load_calibration_data()
+    cal_stats = load_calibration_stats()
 
-    if ai_data.empty:
-        st.info("No AI decisions recorded yet. Data will appear as the AI layer makes decisions.")
+    if ai_data.empty and cal_data.empty:
+        st.info("No AI decisions recorded yet. Data will appear as the AI advisor makes decisions.")
     else:
-        ai_col1, ai_col2 = st.columns(2)
+        # Calibration overview metrics
+        cal_col1, cal_col2, cal_col3, cal_col4, cal_col5 = st.columns(5)
 
-        with ai_col1:
-            st.plotly_chart(
-                ai_decision_pie(ai_data),
-                use_container_width=True,
-                key="ai_pie",
-            )
+        with cal_col1:
+            st.metric("Total Decisions", cal_stats["total_decisions"])
+        with cal_col2:
+            st.metric("Decided Trades", cal_stats["decided_trades"])
+        with cal_col3:
+            acc_str = f"{cal_stats['accuracy']:.1%}" if cal_stats["decided_trades"] > 0 else "N/A"
+            st.metric("Win Rate", acc_str)
+        with cal_col4:
+            avg_conf = f"{cal_stats['avg_stated_confidence']:.0%}" if cal_stats["decided_trades"] > 0 else "N/A"
+            st.metric("Avg Confidence", avg_conf)
+        with cal_col5:
+            st.metric("Influence Mult", f"{cal_stats['influence_multiplier']:.2f}x")
 
-        with ai_col2:
-            st.plotly_chart(
-                ai_confidence_histogram(ai_data),
-                use_container_width=True,
-                key="ai_hist",
-            )
+        # Charts row 1: Calibration curve + Regime accuracy
+        chart_col1, chart_col2 = st.columns(2)
 
-        # AI Accuracy Analysis
-        st.markdown("#### AI Accuracy")
-
-        executed = ai_data[ai_data["ai_decision"] == "execute"]
-        skipped = ai_data[ai_data["ai_decision"] == "skip"]
-
-        acc_col1, acc_col2, acc_col3, acc_col4 = st.columns(4)
-
-        with acc_col1:
-            total_executed = len(executed)
-            st.metric("Total Executed", total_executed)
-
-        with acc_col2:
-            total_skipped = len(skipped)
-            st.metric("Total Skipped", total_skipped)
-
-        with acc_col3:
-            # Executed trades that were profitable (AI was right to execute)
-            if not executed.empty and "pnl" in executed.columns:
-                exec_profitable = len(executed[executed["pnl"].fillna(0) > 0])
-                exec_accuracy = exec_profitable / total_executed * 100 if total_executed > 0 else 0
-                st.metric("Execute Accuracy", f"{exec_accuracy:.1f}%")
+        with chart_col1:
+            if not cal_data.empty:
+                st.plotly_chart(
+                    calibration_curve_chart(cal_data),
+                    use_container_width=True,
+                    key="cal_curve",
+                )
             else:
-                st.metric("Execute Accuracy", "N/A")
+                st.plotly_chart(
+                    ai_confidence_histogram(ai_data),
+                    use_container_width=True,
+                    key="ai_hist",
+                )
 
-        with acc_col4:
-            # Skipped trades: check if entry_price moved favorably (would have won)
-            # For skipped trades, we don't have exit data, so count them
-            if not skipped.empty:
-                override_count = len(skipped[skipped["ai_override"] == 1])
-                st.metric("AI Overrides", override_count)
+        with chart_col2:
+            if not cal_data.empty:
+                st.plotly_chart(
+                    regime_accuracy_chart(cal_data),
+                    use_container_width=True,
+                    key="regime_acc",
+                )
             else:
-                st.metric("AI Overrides", 0)
+                st.plotly_chart(
+                    ai_decision_pie(ai_data),
+                    use_container_width=True,
+                    key="ai_pie",
+                )
 
-        # Detailed AI decision table
-        with st.expander("AI Decision Details"):
-            ai_display_cols = [
-                "timestamp", "side", "entry_price", "ai_decision",
-                "ai_confidence", "pnl", "status",
-            ]
-            available_ai_cols = [c for c in ai_display_cols if c in ai_data.columns]
-            st.dataframe(ai_data[available_ai_cols], use_container_width=True, height=250)
+        # Charts row 2: Advisor adjustments + Decision distribution
+        adj_col1, adj_col2 = st.columns(2)
+
+        with adj_col1:
+            if not cal_data.empty:
+                st.plotly_chart(
+                    advisor_adjustments_chart(cal_data),
+                    use_container_width=True,
+                    key="adj_chart",
+                )
+
+        with adj_col2:
+            if not ai_data.empty:
+                st.plotly_chart(
+                    ai_decision_pie(ai_data),
+                    use_container_width=True,
+                    key="ai_pie",
+                )
+
+        # Trade-level AI decision table
+        if not ai_data.empty:
+            with st.expander("AI Decision Details"):
+                ai_display_cols = [
+                    "timestamp", "side", "entry_price", "ai_decision",
+                    "ai_confidence", "pnl", "status",
+                ]
+                available_ai_cols = [c for c in ai_display_cols if c in ai_data.columns]
+                st.dataframe(ai_data[available_ai_cols], use_container_width=True, height=250)
+
+        # Calibration detail table
+        if not cal_data.empty:
+            with st.expander("Calibration Tracker Details"):
+                cal_display_cols = [
+                    "timestamp", "side", "entry_price", "stated_confidence",
+                    "position_size_modifier", "sl_adjustment", "tp_adjustment",
+                    "market_regime", "outcome", "pnl", "was_correct",
+                ]
+                available_cal_cols = [c for c in cal_display_cols if c in cal_data.columns]
+                st.dataframe(cal_data[available_cal_cols], use_container_width=True, height=250)
 
 st.markdown("---")
 

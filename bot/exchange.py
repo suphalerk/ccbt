@@ -262,6 +262,19 @@ class BybitClient:
         )
         return rate
 
+    def get_ticker_price(self, symbol: Optional[str] = None) -> float:
+        """Get current ticker price.
+
+        Args:
+            symbol: Trading pair. Defaults to configured symbol.
+
+        Returns:
+            Current last price.
+        """
+        symbol = symbol or self.symbol
+        ticker = self._retry(self.exchange.fetch_ticker, symbol)
+        return float(ticker.get("last", 0.0))
+
     def set_leverage(self, leverage: int, symbol: Optional[str] = None) -> None:
         """Set leverage for a symbol.
 

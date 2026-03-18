@@ -10,6 +10,7 @@ from bot.strategy import (
     TradeSignal,
     check_entry_conditions,
     compute_levels,
+    compute_net_rr,
     compute_trailing_stop,
     generate_signal,
 )
@@ -147,6 +148,39 @@ class TestSignalGeneration:
         assert tp == 60000 - 500 * 3.0  # 58500
 
 
+class TestNetRiskReward:
+    """Test net R:R calculation with fees."""
+
+    def test_fees_reduce_rr(self, config):
+        """Net R:R should be lower than gross R:R due to fees."""
+        entry = 60000.0
+        sl = 59100.0  # 1.5% SL
+        tp = 62700.0  # 4.5% TP (gross RR = 3.0)
+        net_rr = compute_net_rr(entry, sl, tp, config)
+        gross_rr = abs(tp - entry) / abs(entry - sl)
+        assert net_rr < gross_rr
+        assert net_rr > 0
+
+    def test_zero_fees_equals_gross(self):
+        """With zero fees, net R:R should equal gross R:R."""
+        config = {"commission_rate": 0.0, "slippage_rate": 0.0}
+        entry = 60000.0
+        sl = 59000.0
+        tp = 62000.0
+        net_rr = compute_net_rr(entry, sl, tp, config)
+        gross_rr = abs(tp - entry) / abs(entry - sl)
+        assert net_rr == pytest.approx(gross_rr, rel=0.001)
+
+    def test_high_fees_reduce_significantly(self):
+        """High fees should dramatically reduce net R:R."""
+        config = {"commission_rate": 0.005, "slippage_rate": 0.005}
+        entry = 60000.0
+        sl = 59400.0  # 600 risk
+        tp = 61200.0  # 1200 reward (gross RR = 2.0)
+        net_rr = compute_net_rr(entry, sl, tp, config)
+        assert net_rr < 1.0  # High fees make this unprofitable
+
+
 class TestTrailingStop:
     """Test trailing stop loss logic."""
 
@@ -180,9 +214,9 @@ class TestEntryConditions:
     """Test individual entry condition checks."""
 
     def test_rsi_out_of_range_rejects(self, config):
-        """Signal should be rejected when RSI is outside range."""
+        """Signal should be rejected when RSI is extreme overbought."""
         row = pd.Series({
-            "rsi": 70.0,  # Above rsi_max
+            "rsi": 82.0,  # Well above directional max (75 for longs)
             "atr": 500.0,
             "volume": 300.0,
             "volume_ma": 200.0,
@@ -231,6 +265,42 @@ class TestEntryConditions:
         """All conditions met should produce valid short entry."""
         row = pd.Series({
             "rsi": 55.0,
+            "atr": 500.0,
+            "volume": 300.0,
+            "volume_ma": 200.0,
+            "ema_cross_down": True,
+            "below_trend": True,
+        })
+        assert check_entry_conditions(row, config, SignalType.SHORT)
+
+    def test_long_allows_higher_rsi(self, config):
+        """Longs should allow RSI up to 75 (trend momentum)."""
+        row = pd.Series({
+            "rsi": 72.0,  # Above old rsi_max=65 but within long range
+            "atr": 500.0,
+            "volume": 300.0,
+            "volume_ma": 200.0,
+            "ema_cross_up": True,
+            "above_trend": True,
+        })
+        assert check_entry_conditions(row, config, SignalType.LONG)
+
+    def test_short_rejects_high_rsi(self, config):
+        """Shorts should reject RSI above 60."""
+        row = pd.Series({
+            "rsi": 63.0,  # Above short max (60)
+            "atr": 500.0,
+            "volume": 300.0,
+            "volume_ma": 200.0,
+            "ema_cross_down": True,
+            "below_trend": True,
+        })
+        assert not check_entry_conditions(row, config, SignalType.SHORT)
+
+    def test_short_allows_lower_rsi(self, config):
+        """Shorts should allow RSI down to 25."""
+        row = pd.Series({
+            "rsi": 30.0,  # Below old rsi_min=45 but within short range
             "atr": 500.0,
             "volume": 300.0,
             "volume_ma": 200.0,

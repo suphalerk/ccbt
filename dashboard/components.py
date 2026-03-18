@@ -416,6 +416,183 @@ def ai_confidence_histogram(decisions: pd.DataFrame, height: int = 300) -> go.Fi
     return fig
 
 
+def calibration_curve_chart(
+    calibration_df: pd.DataFrame, height: int = 300
+) -> go.Figure:
+    """Create a calibration curve: stated confidence vs actual win rate.
+
+    Args:
+        calibration_df: DataFrame with stated_confidence and was_correct columns.
+        height: Chart height in pixels.
+
+    Returns:
+        Plotly Figure with calibration curve.
+    """
+    fig = go.Figure()
+
+    decided = calibration_df[
+        calibration_df["outcome"].notna() & (calibration_df["should_skip"] == 0)
+    ].copy()
+
+    if decided.empty or len(decided) < 5:
+        fig.update_layout(**DARK_LAYOUT, height=height, title="Calibration Curve (insufficient data)")
+        return fig
+
+    # Bin confidence into buckets
+    decided["conf_bucket"] = (decided["stated_confidence"] * 10).round() / 10
+    buckets = decided.groupby("conf_bucket").agg(
+        actual_rate=("was_correct", "mean"),
+        count=("was_correct", "count"),
+    ).reset_index()
+    buckets = buckets[buckets["count"] >= 2]
+
+    if buckets.empty:
+        fig.update_layout(**DARK_LAYOUT, height=height, title="Calibration Curve (insufficient data)")
+        return fig
+
+    # Perfect calibration line
+    fig.add_trace(
+        go.Scatter(
+            x=[0, 1], y=[0, 1],
+            mode="lines",
+            line=dict(color=COLORS["neutral"], dash="dash", width=1),
+            name="Perfect",
+            showlegend=True,
+        )
+    )
+
+    # Actual calibration
+    fig.add_trace(
+        go.Scatter(
+            x=buckets["conf_bucket"],
+            y=buckets["actual_rate"],
+            mode="lines+markers",
+            marker=dict(size=8 + buckets["count"], color=COLORS["equity_line"]),
+            line=dict(color=COLORS["equity_line"], width=2),
+            name="Actual",
+            hovertext=[f"n={c}" for c in buckets["count"]],
+        )
+    )
+
+    fig.update_layout(
+        **DARK_LAYOUT,
+        height=height,
+        title=dict(text="Confidence Calibration", font=dict(size=14)),
+        xaxis_title="Stated Confidence",
+        yaxis_title="Actual Win Rate",
+        xaxis=dict(range=[0, 1], gridcolor=COLORS["grid"]),
+        yaxis=dict(range=[0, 1], gridcolor=COLORS["grid"]),
+    )
+
+    return fig
+
+
+def regime_accuracy_chart(
+    calibration_df: pd.DataFrame, height: int = 300
+) -> go.Figure:
+    """Create a bar chart of accuracy by market regime.
+
+    Args:
+        calibration_df: DataFrame with market_regime and was_correct columns.
+        height: Chart height in pixels.
+
+    Returns:
+        Plotly Figure with regime accuracy bars.
+    """
+    fig = go.Figure()
+
+    decided = calibration_df[
+        calibration_df["outcome"].notna() & (calibration_df["should_skip"] == 0)
+    ].copy()
+
+    if decided.empty:
+        fig.update_layout(**DARK_LAYOUT, height=height, title="Accuracy by Regime (no data)")
+        return fig
+
+    regimes = decided.groupby("market_regime").agg(
+        accuracy=("was_correct", "mean"),
+        count=("was_correct", "count"),
+    ).reset_index()
+    regimes = regimes[regimes["count"] >= 3]
+
+    if regimes.empty:
+        fig.update_layout(**DARK_LAYOUT, height=height, title="Accuracy by Regime (insufficient data)")
+        return fig
+
+    colors = [
+        COLORS["profit"] if acc >= 0.55 else (COLORS["ema_fast"] if acc >= 0.45 else COLORS["loss"])
+        for acc in regimes["accuracy"]
+    ]
+
+    fig.add_trace(
+        go.Bar(
+            x=regimes["market_regime"],
+            y=regimes["accuracy"],
+            marker=dict(color=colors),
+            text=[f"{a:.0%} (n={c})" for a, c in zip(regimes["accuracy"], regimes["count"])],
+            textposition="auto",
+            textfont=dict(color=COLORS["text"]),
+        )
+    )
+
+    fig.add_hline(y=0.5, line=dict(color=COLORS["neutral"], dash="dash"), opacity=0.5)
+
+    fig.update_layout(
+        **DARK_LAYOUT,
+        height=height,
+        title=dict(text="Accuracy by Market Regime", font=dict(size=14)),
+        yaxis_title="Win Rate",
+        yaxis=dict(range=[0, 1], gridcolor=COLORS["grid"]),
+        showlegend=False,
+    )
+
+    return fig
+
+
+def advisor_adjustments_chart(
+    calibration_df: pd.DataFrame, height: int = 300
+) -> go.Figure:
+    """Show distribution of AI advisor adjustments (size, SL, TP modifiers).
+
+    Args:
+        calibration_df: DataFrame with position_size_modifier, sl_adjustment, tp_adjustment.
+        height: Chart height in pixels.
+
+    Returns:
+        Plotly Figure with adjustment distributions.
+    """
+    fig = go.Figure()
+
+    cols = ["position_size_modifier", "sl_adjustment", "tp_adjustment"]
+    names = ["Size Modifier", "SL Adjustment", "TP Adjustment"]
+    colors_list = [COLORS["equity_line"], COLORS["ema_fast"], COLORS["rsi_line"]]
+
+    for col, name, color in zip(cols, names, colors_list):
+        if col in calibration_df.columns:
+            vals = calibration_df[col].dropna()
+            if not vals.empty:
+                fig.add_trace(
+                    go.Histogram(
+                        x=vals,
+                        name=name,
+                        marker=dict(color=color, line=dict(color=COLORS["bg"], width=1)),
+                        opacity=0.7,
+                        nbinsx=15,
+                    )
+                )
+
+    fig.update_layout(
+        **DARK_LAYOUT,
+        height=height,
+        title=dict(text="AI Advisor Adjustments", font=dict(size=14)),
+        xaxis_title="Multiplier Value",
+        yaxis_title="Count",
+        barmode="overlay",
+    )
+
+    return fig
+
+
 def daily_pnl_bar_chart(daily_df: pd.DataFrame, height: int = 300) -> go.Figure:
     """Create a daily PnL bar chart.
 

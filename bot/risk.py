@@ -165,6 +165,7 @@ class RiskManager:
         stop_loss: float,
         take_profit: float,
         num_open_positions: int,
+        regime: str = "trending",
     ) -> tuple[bool, str, float]:
         """Validate an order against all risk rules and compute position size.
 
@@ -174,6 +175,7 @@ class RiskManager:
             stop_loss: Stop loss price.
             take_profit: Take profit price.
             num_open_positions: Current open position count.
+            regime: Market regime for sizing adjustments.
 
         Returns:
             Tuple of (approved, reason, position_size).
@@ -204,6 +206,12 @@ class RiskManager:
         dynamic_factor = self.get_dynamic_risk_factor()
         position_size *= dynamic_factor
 
+        # Reduce size in volatile regimes (higher false signal rate)
+        regime_factor = 1.0
+        if regime == "volatile":
+            regime_factor = 0.5
+            position_size *= regime_factor
+
         logger.info(
             "order_validated",
             extra={
@@ -213,6 +221,8 @@ class RiskManager:
                 "rr": round(rr_ratio, 2),
                 "size_usdt": round(position_size, 2),
                 "dynamic_risk_factor": dynamic_factor,
+                "regime_factor": regime_factor,
+                "regime": regime,
             },
         )
         return True, "", position_size

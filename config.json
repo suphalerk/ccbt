@@ -18,7 +18,7 @@
   "rsi_max": 65,
   "atr_period": 14,
   "atr_sl_mult": 1.5,
-  "atr_tp_mult": 3.0,
+  "atr_tp_mult": 4.0,
   "atr_min": 0.001,
   "volume_mult": 1.2,
   "min_rr_ratio": 2.0,

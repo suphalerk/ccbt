@@ -342,6 +342,96 @@ def get_today_trade_count(db_path: Optional[str] = None) -> int:
         conn.close()
 
 
+def get_calibration_data(db_path: Optional[str] = None) -> pd.DataFrame:
+    """Get AI calibration tracker data for accuracy visualization.
+
+    Args:
+        db_path: Path to the database file.
+
+    Returns:
+        DataFrame with calibration records.
+    """
+    path = db_path or str(DEFAULT_DB_PATH)
+    if not Path(path).exists():
+        return pd.DataFrame()
+
+    try:
+        with sqlite3.connect(path) as conn:
+            conn.row_factory = sqlite3.Row
+            df = pd.read_sql_query(
+                """
+                SELECT id, timestamp, symbol, side, entry_price,
+                       stated_confidence, position_size_modifier,
+                       sl_adjustment, tp_adjustment, market_regime,
+                       reasoning, risk_flags, should_skip,
+                       outcome, pnl, was_correct
+                FROM ai_calibration
+                ORDER BY id DESC
+                """,
+                conn,
+            )
+            return df
+    except Exception:
+        return pd.DataFrame()
+
+
+def get_calibration_stats(db_path: Optional[str] = None) -> dict:
+    """Get aggregate calibration statistics.
+
+    Args:
+        db_path: Path to the database file.
+
+    Returns:
+        Dict with accuracy, regime breakdown, confidence calibration.
+    """
+    data = get_calibration_data(db_path)
+    stats = {
+        "total_decisions": 0,
+        "decided_trades": 0,
+        "accuracy": 0.0,
+        "avg_stated_confidence": 0.0,
+        "avg_size_modifier": 0.0,
+        "regime_accuracy": {},
+        "influence_multiplier": 1.0,
+    }
+
+    if data.empty:
+        return stats
+
+    stats["total_decisions"] = len(data)
+    decided = data[data["outcome"].notna() & (data["should_skip"] == 0)]
+    stats["decided_trades"] = len(decided)
+
+    if not decided.empty:
+        correct = decided["was_correct"].sum()
+        stats["accuracy"] = correct / len(decided) if len(decided) > 0 else 0.0
+        stats["avg_stated_confidence"] = decided["stated_confidence"].mean()
+        stats["avg_size_modifier"] = decided["position_size_modifier"].mean()
+
+        # Accuracy by regime
+        for regime in decided["market_regime"].dropna().unique():
+            regime_data = decided[decided["market_regime"] == regime]
+            if len(regime_data) >= 3:
+                regime_correct = regime_data["was_correct"].sum()
+                stats["regime_accuracy"][regime] = {
+                    "accuracy": regime_correct / len(regime_data),
+                    "count": len(regime_data),
+                }
+
+        # Influence multiplier
+        acc = stats["accuracy"]
+        if acc < 0.45:
+            stats["influence_multiplier"] = 0.5
+        elif acc < 0.55:
+            stats["influence_multiplier"] = 0.75
+        elif acc < 0.65:
+            stats["influence_multiplier"] = 1.0
+        else:
+            stats["influence_multiplier"] = 1.25
+
+    return stats
+
+
 def get_consecutive_losses(db_path: Optional[str] = None) -> int:
     """Count consecutive losses from the most recent trades.
 

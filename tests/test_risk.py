@@ -293,17 +293,27 @@ class TestDynamicRiskFactor:
         assert size_full == pytest.approx(size_conservative * 2.0, rel=0.01)
 
     def test_volatile_regime_reduces_position(self, config):
-        """Volatile regime signal combined with dynamic factor should reduce size."""
+        """Volatile regime should further reduce position size by 50%."""
         rm = RiskManager(config, balance=1000.0)
-        # With 0 trades, factor = 0.5
-        _, _, size = rm.validate_order(
+        # With 0 trades, dynamic factor = 0.5
+        _, _, size_trending = rm.validate_order(
             balance=1000.0,
             entry_price=60000.0,
             stop_loss=59400.0,
             take_profit=61200.0,
             num_open_positions=0,
+            regime="trending",
         )
-        # Position should be half of what it would be with factor=1.0
-        # Base position = (1000 * 0.005) / (600/60000) = 5 / 0.01 = 500
-        # With factor 0.5: 250
-        assert size == pytest.approx(250.0, rel=0.01)
+
+        rm2 = RiskManager(config, balance=1000.0)
+        _, _, size_volatile = rm2.validate_order(
+            balance=1000.0,
+            entry_price=60000.0,
+            stop_loss=59400.0,
+            take_profit=61200.0,
+            num_open_positions=0,
+            regime="volatile",
+        )
+
+        # Volatile should be half of trending (additional 0.5x regime factor)
+        assert size_volatile == pytest.approx(size_trending * 0.5, rel=0.01)

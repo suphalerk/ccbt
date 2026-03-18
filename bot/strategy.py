@@ -39,6 +39,10 @@ def check_entry_conditions(
 ) -> bool:
     """Check if all entry conditions are met for a given signal direction.
 
+    Uses directional RSI ranges: longs allow higher RSI (momentum),
+    shorts allow lower RSI. This aligns RSI filtering with trend-following
+    rather than mean-reversion.
+
     Args:
         row: Current candle row with indicators.
         config: Bot configuration.
@@ -52,11 +56,23 @@ def check_entry_conditions(
     atr_min = config.get("atr_min", 0.0)
     volume_mult = config.get("volume_mult", 1.2)
 
-    # RSI filter
+    # RSI filter — directional for trend-following
     if pd.isna(row.get("rsi")):
         return False
-    if not (rsi_min <= row["rsi"] <= rsi_max):
-        return False
+
+    if signal_type == SignalType.LONG:
+        # Longs: RSI should show momentum but not extreme overbought
+        # Allow RSI 40-75 (trends run with RSI 55-70)
+        if not (rsi_min - 5 <= row["rsi"] <= rsi_max + 10):
+            return False
+    elif signal_type == SignalType.SHORT:
+        # Shorts: RSI should show weakness but not extreme oversold
+        # Allow RSI 25-60 (downtrends run with RSI 30-45)
+        if not (rsi_min - 20 <= row["rsi"] <= rsi_max - 5):
+            return False
+    else:
+        if not (rsi_min <= row["rsi"] <= rsi_max):
+            return False
 
     # ATR minimum volatility
     if pd.isna(row.get("atr")) or row["atr"] < atr_min:
@@ -115,6 +131,41 @@ def compute_levels(
     return stop_loss, take_profit
 
 
+def compute_net_rr(
+    entry_price: float,
+    stop_loss: float,
+    take_profit: float,
+    config: dict,
+) -> float:
+    """Compute net risk-reward ratio after accounting for fees and slippage.
+
+    Round-trip costs reduce TP profits and increase SL losses.
+
+    Args:
+        entry_price: Entry price.
+        stop_loss: Stop loss price.
+        take_profit: Take profit price.
+        config: Bot configuration with commission_rate and slippage_rate.
+
+    Returns:
+        Net R:R ratio after fees.
+    """
+    commission = config.get("commission_rate", 0.00055)
+    slippage = config.get("slippage_rate", 0.0005)
+    round_trip_cost = (commission + slippage) * 2  # Entry + exit
+
+    risk = abs(entry_price - stop_loss)
+    reward = abs(take_profit - entry_price)
+    fee_impact = entry_price * round_trip_cost
+
+    net_risk = risk + fee_impact  # Fees make SL worse
+    net_reward = reward - fee_impact  # Fees reduce TP profit
+
+    if net_risk <= 0 or net_reward <= 0:
+        return 0.0
+    return net_reward / net_risk
+
+
 def generate_signal(
     signal_df: pd.DataFrame,
     trend_df: Optional[pd.DataFrame],
@@ -146,10 +197,13 @@ def generate_signal(
     # Detect market regime
     regime = detect_regime(df, config.get("atr_period", 14))
 
-    # Skip trading in ranging markets
+    # Skip trading in ranging markets (no trend to follow)
     if regime == "ranging":
         logger.info("signal_skipped_regime", extra={"regime": regime})
         return None
+
+    # Note: volatile regime is allowed but flagged on the signal
+    # so risk management can reduce position size
 
     # Use the last closed candle
     row = df.iloc[-2]
@@ -158,8 +212,9 @@ def generate_signal(
     # Check long conditions
     if check_entry_conditions(row, config, SignalType.LONG):
         sl, tp = compute_levels(entry_price, row["atr"], SignalType.LONG, config)
-        rr = abs(tp - entry_price) / abs(entry_price - sl) if abs(entry_price - sl) > 0 else 0
-        if rr >= config.get("min_rr_ratio", 2.0):
+        gross_rr = abs(tp - entry_price) / abs(entry_price - sl) if abs(entry_price - sl) > 0 else 0
+        net_rr = compute_net_rr(entry_price, sl, tp, config)
+        if net_rr >= config.get("min_rr_ratio", 2.0):
             signal = TradeSignal(
                 signal_type=SignalType.LONG,
                 entry_price=entry_price,
@@ -167,7 +222,7 @@ def generate_signal(
                 take_profit=tp,
                 atr=row["atr"],
                 rsi=row["rsi"],
-                risk_reward_ratio=rr,
+                risk_reward_ratio=net_rr,
                 regime=regime,
             )
             logger.info(
@@ -177,7 +232,8 @@ def generate_signal(
                     "entry": entry_price,
                     "sl": sl,
                     "tp": tp,
-                    "rr": round(rr, 2),
+                    "gross_rr": round(gross_rr, 2),
+                    "net_rr": round(net_rr, 2),
                     "rsi": round(row["rsi"], 2),
                 },
             )
@@ -186,8 +242,9 @@ def generate_signal(
     # Check short conditions
     if check_entry_conditions(row, config, SignalType.SHORT):
         sl, tp = compute_levels(entry_price, row["atr"], SignalType.SHORT, config)
-        rr = abs(entry_price - tp) / abs(sl - entry_price) if abs(sl - entry_price) > 0 else 0
-        if rr >= config.get("min_rr_ratio", 2.0):
+        gross_rr = abs(entry_price - tp) / abs(sl - entry_price) if abs(sl - entry_price) > 0 else 0
+        net_rr = compute_net_rr(entry_price, sl, tp, config)
+        if net_rr >= config.get("min_rr_ratio", 2.0):
             signal = TradeSignal(
                 signal_type=SignalType.SHORT,
                 entry_price=entry_price,
@@ -195,7 +252,7 @@ def generate_signal(
                 take_profit=tp,
                 atr=row["atr"],
                 rsi=row["rsi"],
-                risk_reward_ratio=rr,
+                risk_reward_ratio=net_rr,
                 regime=regime,
             )
             logger.info(
@@ -205,7 +262,8 @@ def generate_signal(
                     "entry": entry_price,
                     "sl": sl,
                     "tp": tp,
-                    "rr": round(rr, 2),
+                    "gross_rr": round(gross_rr, 2),
+                    "net_rr": round(net_rr, 2),
                     "rsi": round(row["rsi"], 2),
                 },
             )
