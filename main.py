@@ -346,12 +346,17 @@ async def trading_loop(config: dict) -> None:
     tracked_trades: dict[int, dict] = {}
 
     # Restore tracking for any positions already open on exchange (e.g., after restart)
+    # Only restore ONE trade per side to avoid double-counting PnL
+    # (Bybit merges same-direction positions into one net position)
     try:
         existing_positions = client.get_positions()
         open_db_trades = journal.get_open_trades()
+        restored_sides: set[str] = set()
         for db_trade in open_db_trades:
             trade_id = db_trade["id"]
             trade_side = "long" if db_trade["side"] == "buy" else "short"
+            if trade_side in restored_sides:
+                continue  # Already restored one trade for this side
             # Only restore if position is still active on exchange
             for pos in existing_positions:
                 pos_side = pos.get("side", "")
@@ -367,6 +372,7 @@ async def trading_loop(config: dict) -> None:
                         "atr": 0,  # Unknown after restart; trailing stop won't move without ATR
                         "open_time": time.time(),
                     }
+                    restored_sides.add(trade_side)
                     logger.info(
                         "restored_tracked_trade",
                         extra={"trade_id": trade_id, "side": db_trade["side"]},

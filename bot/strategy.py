@@ -293,7 +293,9 @@ def compute_trailing_stop(
     Returns:
         Updated stop loss price (only moves in favorable direction).
     """
-    trail_distance = atr * config["atr_sl_mult"]
+    # Use separate trail multiplier if available (tighter than initial SL)
+    trail_mult = config.get("atr_trail_mult", config["atr_sl_mult"])
+    trail_distance = atr * trail_mult
 
     if signal_type == SignalType.LONG:
         new_sl = current_price - trail_distance

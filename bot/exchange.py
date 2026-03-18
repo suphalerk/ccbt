@@ -64,7 +64,6 @@ class BybitClient:
             config: Bot configuration dictionary.
         """
         self.config = config
-        self.symbol = config["symbol"]
         self._last_request_time = 0.0
 
         exchange_params = {
@@ -85,6 +84,42 @@ class BybitClient:
             logger.warning("exchange_init", extra={"mode": "LIVE", "warning": "REAL MONEY MODE"})
 
         self.exchange.load_markets()
+
+        # Normalize symbol to ccxt unified format
+        # Config may have "BTCUSDT" but ccxt needs "BTC/USDT:USDT" for perp swaps
+        raw_symbol = config["symbol"]
+        if raw_symbol in self.exchange.markets:
+            self.symbol = raw_symbol
+        else:
+            # Try to find matching market by stripping/reformatting
+            matched = None
+            for market_symbol, market in self.exchange.markets.items():
+                if market.get("id", "") == raw_symbol or market.get("id", "") == raw_symbol.upper():
+                    matched = market_symbol
+                    break
+            if matched:
+                self.symbol = matched
+                logger.info(
+                    "symbol_normalized",
+                    extra={"config_symbol": raw_symbol, "ccxt_symbol": matched},
+                )
+            else:
+                # Last resort: try common USDT perpetual format
+                # BTCUSDT → BTC/USDT:USDT
+                base = raw_symbol.replace("USDT", "")
+                unified = f"{base}/USDT:USDT"
+                if unified in self.exchange.markets:
+                    self.symbol = unified
+                    logger.info(
+                        "symbol_normalized",
+                        extra={"config_symbol": raw_symbol, "ccxt_symbol": unified},
+                    )
+                else:
+                    self.symbol = raw_symbol
+                    logger.warning(
+                        "symbol_not_found_in_markets",
+                        extra={"symbol": raw_symbol, "falling_back": raw_symbol},
+                    )
 
     def _rate_limit(self) -> None:
         """Enforce rate limiting between API calls."""
@@ -246,7 +281,10 @@ class BybitClient:
         symbol = symbol or self.symbol
         positions = self.get_positions()
         for pos in positions:
-            if pos["symbol"] == symbol and float(pos["contracts"]) > 0:
+            # Use normalized comparison since symbol formats may differ
+            pos_sym = pos.get("symbol", "").replace("/", "").replace(":USDT", "").upper()
+            cfg_sym = symbol.replace("/", "").replace(":USDT", "").upper()
+            if pos_sym == cfg_sym and float(pos["contracts"]) > 0:
                 side = "sell" if pos["side"] == "long" else "buy"
                 self._retry(
                     self.exchange.create_order,

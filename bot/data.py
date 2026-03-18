@@ -105,12 +105,17 @@ def add_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     df["volume_ma"] = compute_volume_ma(df["volume"])
 
     # EMA crossover detection
+    # Suppress crossovers during EMA warmup period to avoid spurious signals
+    warmup = config["ema_slow"]
     df["ema_cross_up"] = (df["ema_fast"] > df["ema_slow"]) & (
         df["ema_fast"].shift(1) <= df["ema_slow"].shift(1)
     )
     df["ema_cross_down"] = (df["ema_fast"] < df["ema_slow"]) & (
         df["ema_fast"].shift(1) >= df["ema_slow"].shift(1)
     )
+    # Zero out crossovers in warmup rows
+    df.iloc[:warmup, df.columns.get_loc("ema_cross_up")] = False
+    df.iloc[:warmup, df.columns.get_loc("ema_cross_down")] = False
 
     logger.info("indicators_computed", extra={"rows": len(df)})
     return df
