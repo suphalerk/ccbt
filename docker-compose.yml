@@ -14,7 +14,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: tradingbot
-    restart: unless-stopped
+    restart: on-failure:5
     env_file:
       - .env
     volumes:
@@ -47,7 +47,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: tradingbot-dashboard
-    restart: unless-stopped
+    restart: on-failure:5
     # Override the default CMD to run Streamlit instead of the bot
     command: >
       streamlit run dashboard/app.py

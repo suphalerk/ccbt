@@ -43,6 +43,15 @@ BOT_USER="tradingbot"
 BOT_HOME="/opt/trading-bot"
 REPO_DIR="${BOT_HOME}/app"
 
+# ---------------------------------------------------------------------------
+# SSH access restriction (optional but recommended)
+# Set SSH_ALLOWED_IP to your static IP or CIDR to restrict SSH access.
+# Leave empty to allow SSH from any IP (less secure).
+# Example: SSH_ALLOWED_IP="203.0.113.42"
+#          SSH_ALLOWED_IP="203.0.113.0/24"
+# ---------------------------------------------------------------------------
+SSH_ALLOWED_IP=""
+
 # Must run as root
 if [ "$(id -u)" -ne 0 ]; then
     log_error "This script must be run as root (use sudo)"
@@ -153,7 +162,16 @@ ufw default deny incoming
 ufw default allow outgoing
 
 # Allow SSH (essential - do this first!)
-ufw allow 22/tcp comment "SSH"
+# Restrict to a specific IP/CIDR if SSH_ALLOWED_IP is set; otherwise allow all.
+# WARNING: Allowing SSH from all IPs exposes port 22 to brute-force attacks.
+#          Set SSH_ALLOWED_IP at the top of this script to restrict access.
+if [ -n "${SSH_ALLOWED_IP}" ]; then
+    ufw allow from "${SSH_ALLOWED_IP}" to any port 22 proto tcp comment "SSH (restricted)"
+    log_info "SSH access restricted to ${SSH_ALLOWED_IP}"
+else
+    ufw allow 22/tcp comment "SSH (open - consider setting SSH_ALLOWED_IP)"
+    log_warn "SSH is open to all IPs. Set SSH_ALLOWED_IP in setup.sh to restrict access."
+fi
 
 # Allow HTTP and HTTPS for nginx
 ufw allow 80/tcp comment "HTTP (certbot challenges)"
