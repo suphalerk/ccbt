@@ -299,8 +299,22 @@ def check_closed_positions(
 
             if calibration_tracker and info.get("calibration_id"):
                 outcome = "win" if estimated_pnl > 0 else "loss"
+                # Item 5: compute default_pnl (what PnL would have been without AI)
+                default_pnl = None
+                orig_size = info.get("original_size")
+                orig_sl = info.get("original_sl")
+                orig_tp = info.get("original_tp")
+                if orig_size is not None and orig_sl is not None and orig_tp is not None:
+                    if trade_side == "long":
+                        default_sl_pnl = (orig_sl - entry) / entry * orig_size
+                        default_tp_pnl = (orig_tp - entry) / entry * orig_size
+                    else:
+                        default_sl_pnl = (entry - orig_sl) / entry * orig_size
+                        default_tp_pnl = (entry - orig_tp) / entry * orig_size
+                    default_pnl = default_tp_pnl if close_reason == "tp" else default_sl_pnl
                 calibration_tracker.record_outcome(
-                    info["calibration_id"], outcome, estimated_pnl
+                    info["calibration_id"], outcome, estimated_pnl,
+                    default_pnl=default_pnl,
                 )
 
             logger.info(
@@ -826,6 +840,32 @@ async def trading_loop(config: dict) -> None:
                             },
                         )
 
+                        # Item 2: Wire AI regime to risk manager
+                        _regime_conservativeness = {
+                            "trending": 0, "low_liquidity": 1,
+                            "ranging": 2, "volatile": 3, "unknown": -1,
+                        }
+                        signal_regime = trade_signal.regime
+                        ai_regime = ai_result.market_regime
+                        signal_rank = _regime_conservativeness.get(signal_regime, 0)
+                        ai_rank = _regime_conservativeness.get(ai_regime, -1)
+                        if ai_rank > signal_rank:
+                            logger.info(
+                                "ai_regime_overrides_signal",
+                                extra={
+                                    "signal_regime": signal_regime,
+                                    "ai_regime": ai_regime,
+                                },
+                            )
+                            _, _, position_size = risk_mgr.validate_order(
+                                balance=balance,
+                                entry_price=trade_signal.entry_price,
+                                stop_loss=trade_signal.stop_loss,
+                                take_profit=trade_signal.take_profit,
+                                num_open_positions=num_positions,
+                                regime=ai_regime,
+                            )
+
                         # Only skip for hard-stop conditions (AI says should_skip)
                         if ai_result.decision == "skip":
                             if log_all_decisions:
@@ -1027,6 +1067,9 @@ async def trading_loop(config: dict) -> None:
                         "atr": trade_signal.atr,
                         "regime": trade_signal.regime,
                         "open_time": time.time(),
+                        # Pre-AI values for value_add calibration (Item 5)
+                        "original_sl": trade_signal.stop_loss,
+                        "original_tp": trade_signal.take_profit,
                     }
 
                     ctx_builder.record_trade_time()

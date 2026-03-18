@@ -194,6 +194,16 @@ class NewsFetcher:
                         continue
                 except ValueError:
                     pass
+
+            # Extract vote data (bullish/bearish community sentiment)
+            votes = post.get("votes", {})
+            bullish = int(votes.get("positive", 0))
+            bearish = int(votes.get("negative", 0))
+
+            # Annotate title with vote counts if meaningful
+            if bullish > 0 or bearish > 0:
+                title = f"{title} [+{bullish}/-{bearish}]"
+
             headlines.append(title)
 
         logger.info(

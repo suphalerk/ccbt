@@ -403,10 +403,18 @@ class CalibrationTracker:
                 should_skip INTEGER DEFAULT 0,
                 outcome TEXT,
                 pnl REAL,
-                was_correct INTEGER
+                was_correct INTEGER,
+                value_add REAL
             )
             """
         )
+        # Add value_add column to existing tables (safe no-op if already present)
+        try:
+            self._conn.execute(
+                "ALTER TABLE ai_calibration ADD COLUMN value_add REAL"
+            )
+        except Exception:
+            pass  # Column already exists
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_calibration_outcome "
             "ON ai_calibration(outcome, should_skip)"
@@ -477,22 +485,26 @@ class CalibrationTracker:
         calibration_id: int,
         outcome: str,
         pnl: float,
+        default_pnl: Optional[float] = None,
     ) -> None:
         """Record the outcome of a previously recorded AI decision.
 
         Args:
             calibration_id: ID from record_decision.
             outcome: "win", "loss", or "breakeven".
-            pnl: Actual profit/loss.
+            pnl: Actual profit/loss (with AI adjustments applied).
+            default_pnl: What PnL would have been WITHOUT AI adjustments.
+                         Positive value_add means AI added value.
         """
         was_correct = 1 if pnl > 0 else 0
+        value_add = (pnl - default_pnl) if default_pnl is not None else None
         self._conn.execute(
             """
             UPDATE ai_calibration
-            SET outcome = ?, pnl = ?, was_correct = ?
+            SET outcome = ?, pnl = ?, was_correct = ?, value_add = ?
             WHERE id = ?
             """,
-            (outcome, pnl, was_correct, calibration_id),
+            (outcome, pnl, was_correct, value_add, calibration_id),
         )
         self._conn.commit()
 
@@ -523,29 +535,20 @@ class CalibrationTracker:
     def get_influence_multiplier(self, window: int = 30) -> float:
         """Get the AI influence multiplier based on rolling accuracy.
 
-        - Accuracy < 45%: reduce influence to 0.5 (AI is hurting)
-        - Accuracy 45-55%: neutral influence at 0.75 (AI is noise)
-        - Accuracy 55-65%: standard influence at 1.0 (AI is helping)
-        - Accuracy > 65%: increased influence at 1.25 (AI is adding alpha)
+        Linear scale: 0.3 accuracy -> 0.70, 0.5 -> 1.0, 0.65+ -> 1.225
+        Formula: max(0.25, min(1.5, 0.25 + accuracy * 1.5))
 
         Args:
             window: Number of recent trades.
 
         Returns:
-            Influence multiplier (0.5 to 1.25).
+            Influence multiplier (0.25 to 1.5).
         """
         accuracy = self.get_rolling_accuracy(window)
         if accuracy is None:
             return 1.0  # Default to standard influence with no data
 
-        if accuracy < 0.45:
-            return 0.5
-        elif accuracy < 0.55:
-            return 0.75
-        elif accuracy < 0.65:
-            return 1.0
-        else:
-            return 1.25
+        return max(0.25, min(1.5, 0.25 + accuracy * 1.5))
 
     def calibrate(self, stated_confidence: float) -> float:
         """Adjust stated confidence using the calibration curve.
@@ -560,16 +563,16 @@ class CalibrationTracker:
         Returns:
             Calibrated confidence (0-1).
         """
-        # Get outcomes for this confidence bucket (0.1 width)
-        bucket_low = max(0.0, stated_confidence - 0.1)
-        bucket_high = min(1.0, stated_confidence + 0.1)
+        # Fixed 0.2-wide buckets (non-overlapping)
+        bucket_low = max(0.0, (stated_confidence // 0.2) * 0.2)
+        bucket_high = min(1.0, bucket_low + 0.2)
 
         rows = self._conn.execute(
             """
             SELECT was_correct FROM ai_calibration
             WHERE outcome IS NOT NULL
               AND should_skip = 0
-              AND stated_confidence BETWEEN ? AND ?
+              AND stated_confidence >= ? AND stated_confidence < ?
             ORDER BY id DESC LIMIT 20
             """,
             (bucket_low, bucket_high),

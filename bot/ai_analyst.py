@@ -181,15 +181,21 @@ def build_user_prompt(signal: CandidateSignal, ctx: "MarketContext") -> str:
     """
 
     def _summarize_price_action(candles: list[dict]) -> str:
-        """Convert raw candles into pattern descriptions."""
+        """Convert raw candles into pattern descriptions.
+
+        Uses candles[-2] (last CLOSED candle) to match signal generation,
+        avoiding the currently forming candle.
+        """
         if not candles or len(candles) < 3:
             return "Insufficient data for pattern analysis"
 
         lines = []
-        # Higher highs / lower lows detection
-        highs = [c["high"] for c in candles[-5:]]
-        lows = [c["low"] for c in candles[-5:]]
-        closes = [c["close"] for c in candles[-5:]]
+        # Use last 5 closed candles (excluding the forming candle at index -1)
+        closed = candles[:-1]  # exclude forming candle
+        recent_5 = closed[-5:] if len(closed) >= 5 else closed
+
+        highs = [c["high"] for c in recent_5]
+        lows = [c["low"] for c in recent_5]
 
         higher_highs = sum(1 for i in range(1, len(highs)) if highs[i] > highs[i - 1])
         higher_lows = sum(1 for i in range(1, len(lows)) if lows[i] > lows[i - 1])
@@ -206,7 +212,7 @@ def build_user_prompt(signal: CandidateSignal, ctx: "MarketContext") -> str:
             lines.append("No clear structural pattern in recent candles")
 
         # Volatility compression/expansion
-        ranges = [c["high"] - c["low"] for c in candles[-5:]]
+        ranges = [c["high"] - c["low"] for c in recent_5]
         if len(ranges) >= 3:
             recent_avg = sum(ranges[-3:]) / 3
             older_avg = sum(ranges[:2]) / 2 if len(ranges) >= 5 else recent_avg
@@ -217,21 +223,21 @@ def build_user_prompt(signal: CandidateSignal, ctx: "MarketContext") -> str:
                 elif ratio > 1.4:
                     lines.append("Volatility expanding (momentum move in progress)")
 
-        # Body-to-wick ratio (conviction check)
-        last = candles[-1]
-        body = abs(last["close"] - last["open"])
-        total_range = last["high"] - last["low"]
+        # Body-to-wick ratio on last CLOSED candle (iloc[-2])
+        last_closed = candles[-2]
+        body = abs(last_closed["close"] - last_closed["open"])
+        total_range = last_closed["high"] - last_closed["low"]
         if total_range > 0:
             body_ratio = body / total_range
             if body_ratio > 0.7:
-                lines.append(f"Last candle: strong conviction (body {body_ratio:.0%} of range)")
+                lines.append(f"Last closed candle: strong conviction (body {body_ratio:.0%} of range)")
             elif body_ratio < 0.3:
-                lines.append(f"Last candle: indecision/doji (body {body_ratio:.0%} of range)")
+                lines.append(f"Last closed candle: indecision/doji (body {body_ratio:.0%} of range)")
 
         return "\n".join(lines) if lines else "No notable patterns"
 
     news_block = (
-        "\n".join(f"- {h}" for h in ctx.news_headlines[:5])
+        "\n".join(f"- {h}" for h in ctx.news_headlines[:8])
         if ctx.news_headlines
         else "No significant news"
     )
@@ -269,6 +275,79 @@ def build_user_prompt(signal: CandidateSignal, ctx: "MarketContext") -> str:
     else:
         oi_note = "Stable"
 
+    # Higher timeframe: price vs EMA(50) on 1h
+    if ctx.ema_50_1h > 0 and ctx.current_price > 0:
+        htf_dist_pct = (ctx.current_price - ctx.ema_50_1h) / ctx.ema_50_1h * 100
+        htf_position = "above" if ctx.current_price > ctx.ema_50_1h else "below"
+        htf_note = f"Price is {htf_position} 1h EMA(50) by {abs(htf_dist_pct):.2f}%"
+    else:
+        htf_note = "1h EMA(50) data unavailable"
+
+    # 1h candle summary (last 3 closed candles)
+    if len(ctx.candles_1h) >= 2:
+        last_1h = ctx.candles_1h[-2]  # Last closed 1h candle
+        prev_1h = ctx.candles_1h[-3] if len(ctx.candles_1h) >= 3 else ctx.candles_1h[-2]
+        h1_direction = "bullish" if last_1h["close"] > last_1h["open"] else "bearish"
+        h1_range_pct = (last_1h["high"] - last_1h["low"]) / last_1h["close"] * 100 if last_1h["close"] > 0 else 0
+        htf_candle_note = f"Last closed 1h candle: {h1_direction}, range {h1_range_pct:.2f}%"
+    else:
+        htf_candle_note = "1h candle data unavailable"
+
+    # Orderbook microstructure
+    if ctx.bid_ask_spread > 0:
+        spread_pct = ctx.bid_ask_spread * 100
+        spread_note = f"{spread_pct:.4f}%"
+        if spread_pct > 0.05:
+            spread_note += " (WIDE — low liquidity)"
+        elif spread_pct < 0.01:
+            spread_note += " (tight — good liquidity)"
+    else:
+        spread_note = "N/A"
+
+    if ctx.orderbook_imbalance > 0:
+        bid_pct = ctx.orderbook_imbalance * 100
+        ask_pct = 100 - bid_pct
+        if ctx.orderbook_imbalance > 0.65:
+            ob_note = f"Bid-heavy ({bid_pct:.0f}% bids) — buying pressure"
+        elif ctx.orderbook_imbalance < 0.35:
+            ob_note = f"Ask-heavy ({ask_pct:.0f}% asks) — selling pressure"
+        else:
+            ob_note = f"Balanced ({bid_pct:.0f}% bids / {ask_pct:.0f}% asks)"
+    else:
+        ob_note = "N/A"
+
+    # Volume ratio interpretation
+    if ctx.volume_ratio > 0:
+        if ctx.volume_ratio > 2.0:
+            vol_note = f"{ctx.volume_ratio:.1f}x MA(20) — very high volume (strong momentum)"
+        elif ctx.volume_ratio > 1.5:
+            vol_note = f"{ctx.volume_ratio:.1f}x MA(20) — above average (good confirmation)"
+        elif ctx.volume_ratio > 1.0:
+            vol_note = f"{ctx.volume_ratio:.1f}x MA(20) — moderate"
+        else:
+            vol_note = f"{ctx.volume_ratio:.1f}x MA(20) — below average (weak conviction)"
+    else:
+        vol_note = "N/A"
+
+    # Liquidation level estimation (Item 9)
+    liq_note = ""
+    if ctx.current_price > 0:
+        # Typical retail leverage 10-15x means liquidation ~7-10% from entry
+        # High OI + funding divergence = elevated liquidation risk
+        liq_pct = 0.10  # 10% default (assumes ~10x effective leverage in market)
+        liq_long = ctx.current_price * (1 - liq_pct)
+        liq_short = ctx.current_price * (1 + liq_pct)
+        oi_risk = ""
+        oi_usdt = getattr(ctx, "open_interest_usdt", 0)
+        if oi_usdt > 5e9:  # >$5B OI
+            oi_risk = " — HIGH OI: cascading liquidations possible if levels break"
+        elif oi_usdt > 1e9:
+            oi_risk = " — elevated OI"
+        liq_note = (
+            f"Estimated liquidation clusters: ~${liq_long:,.0f} (longs) / "
+            f"~${liq_short:,.0f} (shorts){oi_risk}"
+        )
+
     # Recent trade results
     recent_results = ""
     if hasattr(ctx, "recent_trade_results") and ctx.recent_trade_results:
@@ -289,18 +368,27 @@ Stop loss  : {signal.stop_loss:,.2f}  ({signal.sl_pct:.2f}% from entry)
 Take profit: {signal.take_profit:,.2f}  ({signal.tp_pct:.2f}% from entry)
 R:R ratio  : 1:{signal.rr_ratio:.1f}
 
-## Price Action Summary (15m)
+## Price Action Summary (15m, based on last CLOSED candle)
 {price_action}
+
+## Higher Timeframe (1h)
+{htf_note}
+{htf_candle_note}
 
 ## Volatility Regime
 ATR(14) as % of price: {atr_pct:.2f}% — {vol_regime}
 
+## Orderbook & Volume
+Bid/ask spread: {spread_note}
+Order imbalance: {ob_note}
+Volume vs MA(20): {vol_note}
+
 ## Market Microstructure
 Funding rate: {ctx.funding_rate:.4f}% — {funding_note}
 OI change (1h): {ctx.open_interest_change:+.2f}% — {oi_note}
+{liq_note}
 
-## News & Sentiment (last 2h)
-Sentiment: {ctx.news_sentiment}
+## News & Sentiment (analyze headlines for sentiment)
 {news_block}
 
 ## Bot State

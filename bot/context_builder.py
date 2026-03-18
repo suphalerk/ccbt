@@ -46,7 +46,10 @@ class MarketContext:
 
     # News
     news_headlines: list[str] = field(default_factory=list)
-    news_sentiment: str = "neutral"  # "positive" | "negative" | "neutral"
+    news_sentiment: str = "neutral"  # "positive" | "negative" | "neutral" | "see_headlines"
+
+    # Open interest in USDT (for liquidation level estimation)
+    open_interest_usdt: float = 0.0
 
     # Bot state
     daily_pnl_pct: float = 0.0
@@ -157,6 +160,22 @@ class ContextBuilder:
         except Exception as e:
             logger.warning("context_funding_error", extra={"error": str(e)})
 
+        # Open interest (for liquidation level estimation)
+        try:
+            oi_data = self.client._retry(
+                self.client.exchange.fetch_open_interest, symbol
+            )
+            if oi_data:
+                # openInterestValue is OI in USDT; openInterest is in contracts
+                oi_usdt = float(
+                    oi_data.get("openInterestValue")
+                    or oi_data.get("openInterest", 0) * ctx.current_price
+                    or 0
+                )
+                ctx.open_interest_usdt = oi_usdt
+        except Exception as e:
+            logger.warning("context_oi_usdt_error", extra={"error": str(e)})
+
         # Orderbook data
         try:
             ctx = self._fill_orderbook_data(ctx, symbol)
@@ -173,7 +192,9 @@ class ContextBuilder:
                     lookback_hours=lookback_hours
                 )
                 ctx.news_headlines = headlines
-                ctx.news_sentiment = self._estimate_sentiment(headlines)
+                # Sentiment is now analyzed by Claude directly from headlines
+                # (Item 3: replaced keyword matching with AI reading)
+                ctx.news_sentiment = "see_headlines"
             except Exception as e:
                 logger.warning("context_news_error", extra={"error": str(e)})
 
@@ -339,35 +360,16 @@ class ContextBuilder:
         return ctx
 
     def _estimate_sentiment(self, headlines: list[str]) -> str:
-        """Simple keyword-based sentiment estimation.
+        """DEPRECATED: Keyword-based sentiment estimation.
+
+        No longer called — Claude reads the raw headlines directly
+        and infers sentiment from context (Item 3: AI reads news).
+        Kept for backward compatibility only.
 
         Args:
             headlines: List of news headlines.
 
         Returns:
-            "positive", "negative", or "neutral".
+            "neutral" always (deprecated).
         """
-        if not headlines:
-            return "neutral"
-
-        positive_keywords = [
-            "surge", "rally", "bull", "breakout", "soar", "gain",
-            "approval", "adopt", "etf approved", "all-time high",
-        ]
-        negative_keywords = [
-            "crash", "plunge", "bear", "hack", "ban", "lawsuit",
-            "sec charges", "liquidat", "dump", "sell-off", "fraud",
-        ]
-
-        pos_count = 0
-        neg_count = 0
-        for h in headlines:
-            h_lower = h.lower()
-            pos_count += sum(1 for kw in positive_keywords if kw in h_lower)
-            neg_count += sum(1 for kw in negative_keywords if kw in h_lower)
-
-        if pos_count > neg_count:
-            return "positive"
-        elif neg_count > pos_count:
-            return "negative"
         return "neutral"

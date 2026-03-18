@@ -50,7 +50,7 @@
     "timeout_seconds": 10,
     "fallback_on_timeout": "execute",
     "news_source": "rss",
-    "news_lookback_hours": 2,
+    "news_lookback_hours": 12,
     "log_all_decisions": true,
     "calibration": {
       "enabled": true,
