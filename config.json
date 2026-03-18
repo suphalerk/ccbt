@@ -21,9 +21,9 @@
   "atr_tp_mult": 4.0,
   "atr_min": 0.001,
   "volume_mult": 1.2,
-  "min_rr_ratio": 2.0,
+  "min_rr_ratio": 1.8,
   "commission_rate": 0.00055,
-  "slippage_rate": 0.0005,
+  "slippage_rate": 0.0002,
   "ai_layer": {
     "enabled": true,
     "mode": "advisor",

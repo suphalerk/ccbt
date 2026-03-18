@@ -126,12 +126,14 @@ def check_closed_positions(
     risk_mgr: RiskManager,
     calibration_tracker: Optional[CalibrationTracker],
     symbol: str,
+    client=None,
 ) -> dict:
     """Detect positions closed by exchange (SL/TP fill) and update state.
 
     Compares tracked open trades against current exchange positions.
     When a tracked trade is no longer open on the exchange, it has been
-    closed by SL or TP. We record the outcome.
+    closed by SL or TP. Queries exchange for actual fill data to determine
+    whether TP or SL was hit.
 
     Args:
         open_trade_ids: Dict of {trade_id: {side, entry_price, size, sl, tp, calibration_id, signal_type, atr, open_time}}.
@@ -140,6 +142,7 @@ def check_closed_positions(
         risk_mgr: Risk manager for recording PnL.
         calibration_tracker: Optional calibration tracker.
         symbol: Trading symbol.
+        client: BybitClient instance for fetching actual trade data.
 
     Returns:
         Updated open_trade_ids dict with closed trades removed.
@@ -163,13 +166,9 @@ def check_closed_positions(
             entry = info["entry_price"]
             sl = info["sl"]
             tp = info["tp"]
+            duration = int(time.time() - info["open_time"])
 
-            # Determine if SL or TP was hit by checking which is closer to
-            # the likely exit. Without exact fill price from exchange, we
-            # estimate based on typical behavior.
-            # If the position is gone, one of SL/TP was triggered.
-            # We'll try to get the actual exit from recent closed orders.
-            # Fallback: estimate from SL/TP levels.
+            # Compute both possible PnLs
             if trade_side == "long":
                 sl_pnl = (sl - entry) / entry * info["size"]
                 tp_pnl = (tp - entry) / entry * info["size"]
@@ -177,20 +176,68 @@ def check_closed_positions(
                 sl_pnl = (entry - sl) / entry * info["size"]
                 tp_pnl = (entry - tp) / entry * info["size"]
 
-            # We can't know for certain without exchange data, but we
-            # record as closed. The actual PnL will be one of these.
-            # Use SL PnL as conservative estimate; actual monitoring
-            # should use exchange's closed PnL when available.
-            duration = int(time.time() - info["open_time"])
+            # Try to get actual fill price from exchange trade history
+            actual_pnl = None
+            exit_price = None
+            close_reason = "unknown"
 
-            # For now, mark as closed with estimated PnL from SL
-            # (conservative). In production, query exchange for actual fill.
-            estimated_pnl = sl_pnl  # Conservative default
-            exit_price = sl  # Conservative default
-            close_reason = "sl"
+            if client is not None:
+                try:
+                    since_ms = int(info["open_time"] * 1000)
+                    recent_trades = client.get_closed_pnl(symbol, since_ms=since_ms)
+                    # Find the closing trade: opposite side to our entry
+                    close_side = "sell" if info["side"] == "buy" else "buy"
+                    for t in reversed(recent_trades):
+                        if t["side"] == close_side and t["amount"] > 0:
+                            exit_price = t["price"]
+                            # Calculate actual PnL from fill price
+                            if trade_side == "long":
+                                actual_pnl = (exit_price - entry) / entry * info["size"]
+                            else:
+                                actual_pnl = (entry - exit_price) / entry * info["size"]
+                            break
+                except Exception as e:
+                    logger.warning("failed_to_fetch_actual_pnl", extra={"error": str(e)})
 
-            # If we had the actual closed PnL from exchange, use that
-            # For now, use the SL estimate as conservative assumption
+            if actual_pnl is not None and exit_price is not None:
+                # Determine close reason from exit price proximity to SL/TP
+                dist_to_sl = abs(exit_price - sl)
+                dist_to_tp = abs(exit_price - tp)
+                close_reason = "tp" if dist_to_tp < dist_to_sl else "sl"
+                estimated_pnl = actual_pnl
+            else:
+                # Fallback: infer from current price if available
+                if client is not None:
+                    try:
+                        current_price = client.get_ticker_price(symbol)
+                        # If price is beyond TP, it was likely TP hit
+                        if trade_side == "long":
+                            if current_price >= tp:
+                                estimated_pnl = tp_pnl
+                                exit_price = tp
+                                close_reason = "tp"
+                            else:
+                                estimated_pnl = sl_pnl
+                                exit_price = sl
+                                close_reason = "sl"
+                        else:
+                            if current_price <= tp:
+                                estimated_pnl = tp_pnl
+                                exit_price = tp
+                                close_reason = "tp"
+                            else:
+                                estimated_pnl = sl_pnl
+                                exit_price = sl
+                                close_reason = "sl"
+                    except Exception:
+                        estimated_pnl = sl_pnl
+                        exit_price = sl
+                        close_reason = "sl"
+                else:
+                    estimated_pnl = sl_pnl
+                    exit_price = sl
+                    close_reason = "sl"
+
             pnl_pct = estimated_pnl / info["size"] * 100 if info["size"] > 0 else 0
 
             journal.log_trade_close(
@@ -217,7 +264,8 @@ def check_closed_positions(
                     "side": info["side"],
                     "entry": entry,
                     "exit": exit_price,
-                    "pnl": estimated_pnl,
+                    "pnl": round(estimated_pnl, 4),
+                    "pnl_pct": round(pnl_pct, 2),
                     "close_reason": close_reason,
                     "duration_s": duration,
                 },
@@ -316,6 +364,7 @@ async def trading_loop(config: dict) -> None:
                 risk_mgr=risk_mgr,
                 calibration_tracker=calibration_tracker,
                 symbol=config["symbol"],
+                client=client,
             )
 
             # Update trailing stops for open positions
@@ -329,15 +378,28 @@ async def trading_loop(config: dict) -> None:
                             sig_type, config,
                         )
                         if new_sl != info["sl"]:
-                            info["sl"] = new_sl
-                            logger.info(
-                                "trailing_stop_updated",
-                                extra={
-                                    "trade_id": trade_id,
-                                    "new_sl": round(new_sl, 2),
-                                    "current_price": current_price,
-                                },
+                            # Update SL on exchange, not just locally
+                            success = client.modify_sl(
+                                symbol=config["symbol"],
+                                side=info["side"],
+                                new_sl=round(new_sl, 2),
                             )
+                            if success:
+                                info["sl"] = new_sl
+                                logger.info(
+                                    "trailing_stop_updated",
+                                    extra={
+                                        "trade_id": trade_id,
+                                        "old_sl": round(info["sl"], 2),
+                                        "new_sl": round(new_sl, 2),
+                                        "current_price": current_price,
+                                    },
+                                )
+                            else:
+                                logger.warning(
+                                    "trailing_stop_exchange_update_failed",
+                                    extra={"trade_id": trade_id, "new_sl": new_sl},
+                                )
                 except Exception as e:
                     logger.warning("trailing_stop_error", extra={"error": str(e)})
 

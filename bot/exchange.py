@@ -275,6 +275,76 @@ class BybitClient:
         ticker = self._retry(self.exchange.fetch_ticker, symbol)
         return float(ticker.get("last", 0.0))
 
+    def get_closed_pnl(self, symbol: Optional[str] = None, since_ms: Optional[int] = None) -> list[dict]:
+        """Get recently closed positions with actual PnL from exchange.
+
+        Args:
+            symbol: Trading pair. Defaults to configured symbol.
+            since_ms: Fetch trades since this timestamp (ms). Defaults to last 24h.
+
+        Returns:
+            List of dicts with: side, entry_price, exit_price, pnl, size, timestamp.
+        """
+        symbol = symbol or self.symbol
+        if since_ms is None:
+            since_ms = int((time.time() - 86400) * 1000)
+
+        try:
+            # Fetch closed orders to get fill prices
+            trades = self._retry(
+                self.exchange.fetch_my_trades, symbol, since_ms, limit=50
+            )
+            return [
+                {
+                    "id": t.get("id"),
+                    "side": t.get("side"),
+                    "price": float(t.get("price", 0)),
+                    "amount": float(t.get("amount", 0)),
+                    "cost": float(t.get("cost", 0)),
+                    "timestamp": t.get("timestamp"),
+                    "info": t.get("info", {}),
+                }
+                for t in trades
+            ]
+        except Exception as e:
+            logger.warning("get_closed_pnl_failed", extra={"error": str(e)})
+            return []
+
+    def modify_sl(self, symbol: Optional[str] = None, side: str = "buy", new_sl: float = 0.0) -> bool:
+        """Modify the stop loss of an existing position on exchange.
+
+        Uses Bybit's set_trading_stop endpoint to update SL without
+        cancelling and recreating orders.
+
+        Args:
+            symbol: Trading pair. Defaults to configured symbol.
+            side: Position side ('buy' for long, 'sell' for short).
+            new_sl: New stop loss price.
+
+        Returns:
+            True if successful.
+        """
+        symbol = symbol or self.symbol
+        try:
+            # Bybit: use set_trading_stop to modify SL on position
+            position_side = "Buy" if side == "buy" else "Sell"
+            self._retry(
+                self.exchange.set_trading_stop,
+                symbol,
+                params={
+                    "stopLoss": str(new_sl),
+                    "positionIdx": 0,  # One-way mode
+                },
+            )
+            logger.info(
+                "sl_modified",
+                extra={"symbol": symbol, "side": side, "new_sl": new_sl},
+            )
+            return True
+        except Exception as e:
+            logger.warning("sl_modify_failed", extra={"error": str(e)})
+            return False
+
     def set_leverage(self, leverage: int, symbol: Optional[str] = None) -> None:
         """Set leverage for a symbol.
 
