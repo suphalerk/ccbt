@@ -224,15 +224,15 @@ class TestDynamicRiskFactor:
     """Test dynamic risk factor based on recent win rate."""
 
     def test_insufficient_data_returns_conservative(self, config):
-        """With fewer than 10 trades, should return 0.8."""
+        """With fewer than 10 trades, should return 0.9."""
         rm = RiskManager(config, balance=100000.0)
         # No trades recorded
-        assert rm.get_dynamic_risk_factor() == 0.8
+        assert rm.get_dynamic_risk_factor() == 0.9
 
         # Record 5 trades (still < 10)
         for _ in range(5):
             rm.record_trade_result(10.0)
-        assert rm.get_dynamic_risk_factor() == 0.8
+        assert rm.get_dynamic_risk_factor() == 0.9
 
     def test_high_win_rate_returns_full(self, config):
         """Win rate > 50% should return 1.0."""
@@ -245,17 +245,17 @@ class TestDynamicRiskFactor:
         assert rm.get_dynamic_risk_factor() == 1.0
 
     def test_medium_win_rate_returns_reduced(self, config):
-        """Win rate 40-50% should return 0.6."""
+        """Win rate 40-48% should return 0.85."""
         rm = RiskManager(config, balance=100000.0)
         # Directly set recent_results: 5 wins and 7 losses = 41.6% win rate
         rm.state.recent_results = [
             10.0, -5.0, -5.0, 10.0, -5.0, -5.0, 10.0, -5.0, 10.0, -5.0, 10.0, -5.0
         ]
         factor = rm.get_dynamic_risk_factor()
-        assert factor == 0.6
+        assert factor == 0.85
 
     def test_low_win_rate_returns_minimal(self, config):
-        """Win rate < 40% should return 0.3."""
+        """Win rate < 40% should return 0.7."""
         rm = RiskManager(config, balance=100000.0)
         # Directly set recent_results to avoid triggering consecutive loss / daily loss limits
         # 3 wins out of 13 = 23% win rate
@@ -263,7 +263,7 @@ class TestDynamicRiskFactor:
             -5.0, -5.0, 10.0, -5.0, -5.0, 10.0, -5.0, -5.0, 10.0, -5.0, -5.0, -5.0, -5.0
         ]
         factor = rm.get_dynamic_risk_factor()
-        assert factor == 0.3
+        assert factor == 0.7
 
     def test_dynamic_factor_applied_in_validate_order(self, config):
         """Dynamic risk factor should scale position size in validate_order."""
@@ -289,8 +289,8 @@ class TestDynamicRiskFactor:
             num_open_positions=0,
         )
 
-        # Full risk should be ~1.25x conservative risk (1.0/0.8)
-        assert size_full == pytest.approx(size_conservative * (1.0 / 0.8), rel=0.01)
+        # Full risk should be ~1.11x conservative risk (1.0/0.9)
+        assert size_full == pytest.approx(size_conservative * (1.0 / 0.9), rel=0.01)
 
     def test_volatile_regime_reduces_position(self, config):
         """Volatile regime should further reduce position size by 50%."""

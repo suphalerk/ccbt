@@ -264,7 +264,7 @@ class TestEntryConditions:
     def test_valid_short_entry(self, config):
         """All conditions met should produce valid short entry."""
         row = pd.Series({
-            "rsi": 55.0,
+            "rsi": 45.0,
             "atr": 500.0,
             "volume": 300.0,
             "volume_ma": 200.0,
@@ -286,9 +286,9 @@ class TestEntryConditions:
         assert check_entry_conditions(row, config, SignalType.LONG)
 
     def test_short_rejects_high_rsi(self, config):
-        """Shorts should reject RSI above 60."""
+        """Shorts should reject RSI above 52."""
         row = pd.Series({
-            "rsi": 63.0,  # Above short max (60)
+            "rsi": 55.0,  # Above short max (52)
             "atr": 500.0,
             "volume": 300.0,
             "volume_ma": 200.0,

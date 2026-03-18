@@ -106,19 +106,19 @@ class RiskManager:
         """
         results = self.state.recent_results
         if len(results) < 10:
-            return 0.8  # Slightly conservative until enough data
+            return 0.9  # Near full size until enough data
 
         # Use last 20 results (or all if fewer)
         recent = results[-20:]
         wins = sum(1 for r in recent if r > 0)
         win_rate = wins / len(recent)
 
-        if win_rate > 0.5:
+        if win_rate > 0.48:
             return 1.0
-        elif win_rate >= 0.4:
-            return 0.6
+        elif win_rate >= 0.40:
+            return 0.85
         else:
-            return 0.3
+            return 0.7
 
     def can_trade(self, current_balance: float, num_open_positions: int) -> tuple[bool, str]:
         """Check if trading is allowed based on all risk rules.
@@ -209,11 +209,13 @@ class RiskManager:
         dynamic_factor = self.get_dynamic_risk_factor()
         position_size *= dynamic_factor
 
-        # Reduce size in volatile regimes (higher false signal rate)
+        # Reduce size in non-trending regimes
         regime_factor = 1.0
         if regime == "volatile":
             regime_factor = 0.5
-            position_size *= regime_factor
+        elif regime == "ranging":
+            regime_factor = 0.7
+        position_size *= regime_factor
 
         logger.info(
             "order_validated",

@@ -517,8 +517,10 @@ async def trading_loop(config: dict) -> None:
                 signal_df = client.get_ohlcv(
                     config["symbol"], config["timeframe_signal"], limit=100
                 )
+                # Trend TF needs more candles for EMA(50) to stabilize
+                trend_limit = max(100, config.get("ema_trend", 50) * 3)
                 trend_df = client.get_ohlcv(
-                    config["symbol"], config["timeframe_trend"], limit=100
+                    config["symbol"], config["timeframe_trend"], limit=trend_limit
                 )
                 risk_mgr.clear_api_errors()
             except Exception as e:
@@ -792,8 +794,14 @@ async def trading_loop(config: dict) -> None:
                 else:
                     logger.info("trade_rejected", extra={"reason": reason})
 
-            # Wait for next candle interval
-            await asyncio.sleep(60)
+            # Wait until next candle close for timely signal detection
+            now = datetime.now(tz=timezone.utc)
+            signal_minutes = int(config["timeframe_signal"].replace("m", "").replace("h", "")) if "m" in config["timeframe_signal"] else 60
+            minutes_until_close = (signal_minutes - 1) - (now.minute % signal_minutes)
+            seconds_until_close = minutes_until_close * 60 + (60 - now.second)
+            # Sleep until ~2s after candle close (give exchange time to finalize)
+            sleep_time = max(10, min(seconds_until_close + 2, signal_minutes * 60))
+            await asyncio.sleep(sleep_time)
 
         except KeyboardInterrupt:
             break

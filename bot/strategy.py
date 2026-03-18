@@ -61,14 +61,12 @@ def check_entry_conditions(
         return False
 
     if signal_type == SignalType.LONG:
-        # Longs: RSI should show momentum but not extreme overbought
-        # Allow RSI 40-75 (trends run with RSI 55-70)
-        if not (rsi_min - 5 <= row["rsi"] <= rsi_max + 10):
+        # Longs: RSI 48-75 — confirmed uptrend momentum, not overbought
+        if not (rsi_min + 3 <= row["rsi"] <= rsi_max + 10):
             return False
     elif signal_type == SignalType.SHORT:
-        # Shorts: RSI should show weakness but not extreme oversold
-        # Allow RSI 25-60 (downtrends run with RSI 30-45)
-        if not (rsi_min - 20 <= row["rsi"] <= rsi_max - 5):
+        # Shorts: RSI 25-52 — confirmed downtrend weakness
+        if not (rsi_min - 20 <= row["rsi"] <= rsi_max - 13):
             return False
     else:
         if not (rsi_min <= row["rsi"] <= rsi_max):
@@ -197,13 +195,8 @@ def generate_signal(
     # Detect market regime
     regime = detect_regime(df, config.get("atr_period", 14))
 
-    # Skip trading in ranging markets (no trend to follow)
-    if regime == "ranging":
-        logger.info("signal_skipped_regime", extra={"regime": regime})
-        return None
-
-    # Note: volatile regime is allowed but flagged on the signal
-    # so risk management can reduce position size
+    # Note: ranging and volatile regimes are allowed but flagged on the signal
+    # so risk management can reduce position size accordingly
 
     # Use the last closed candle
     row = df.iloc[-2]

@@ -145,6 +145,19 @@ class BybitClient:
             try:
                 self._rate_limit()
                 return func(*args, **kwargs)
+            except ccxt.RateLimitExceeded as e:
+                last_error = e
+                wait_time = 2 ** (attempt + 1)  # Longer backoff for rate limits
+                logger.warning(
+                    "rate_limit_hit",
+                    extra={
+                        "attempt": attempt + 1,
+                        "max_retries": self.MAX_RETRIES,
+                        "wait_seconds": wait_time,
+                        "error": str(e),
+                    },
+                )
+                time.sleep(wait_time)
             except (ccxt.NetworkError, ccxt.ExchangeNotAvailable) as e:
                 last_error = e
                 wait_time = 2 ** attempt
@@ -237,7 +250,7 @@ class BybitClient:
         )
 
         # Use actual filled size, not requested size (handles partial fills)
-        filled_size = float(order.get("filled", order.get("amount", size)))
+        filled_size = float(order.get("filled") or order.get("amount") or size)
         if filled_size < size * 0.95:
             logger.warning(
                 "partial_fill_detected",
@@ -248,12 +261,20 @@ class BybitClient:
                 },
             )
 
+        # Extract execution price safely (market orders may not have 'average')
+        avg_price = order.get("average") or order.get("price")
+        if avg_price is None:
+            raw_info = order.get("info", {})
+            avg_price = raw_info.get("avgPrice") or raw_info.get("price")
+            if avg_price is not None:
+                avg_price = float(avg_price)
+
         result = OrderResult(
             order_id=order["id"],
             symbol=order["symbol"],
             side=side,
             size=filled_size,
-            price=order.get("average") or order.get("price"),
+            price=avg_price,
             sl=sl,
             tp=tp,
             status=order["status"],
@@ -403,17 +424,30 @@ class BybitClient:
         symbol = symbol or self.symbol
         try:
             # Use Bybit v5 private API to modify position SL
-            # ccxt doesn't have a unified set_trading_stop method
+            # ccxt generates implicit API methods in camelCase
             market = self.exchange.market(symbol)
-            self._retry(
-                self.exchange.private_post_v5_position_trading_stop,
-                params={
-                    "category": "linear",
-                    "symbol": market["id"],
-                    "stopLoss": str(new_sl),
-                    "positionIdx": 0,  # One-way mode
-                },
+            params = {
+                "category": "linear",
+                "symbol": market["id"],
+                "stopLoss": str(new_sl),
+                "positionIdx": 0,  # One-way mode
+            }
+
+            # Try camelCase (ccxt convention), then snake_case fallback
+            method = getattr(
+                self.exchange,
+                "privatePostV5PositionTradingStop",
+                getattr(self.exchange, "private_post_v5_position_trading_stop", None),
             )
+            if method is not None:
+                self._retry(method, params=params)
+            else:
+                # Last resort: use generic private API call
+                self._retry(
+                    self.exchange.privatePostV5PositionTradingStop,
+                    params=params,
+                )
+
             logger.info(
                 "sl_modified",
                 extra={"symbol": symbol, "side": side, "new_sl": new_sl},
