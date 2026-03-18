@@ -109,13 +109,11 @@ if [ -f "${BOT_APP_DIR}/config.json" ]; then
     log_info "config.json backed up"
 fi
 
-# Environment file (contains secrets - handle carefully)
-if [ -f "${BOT_APP_DIR}/.env" ]; then
-    cp "${BOT_APP_DIR}/.env" "${BACKUP_PATH}/.env"
-    # Restrict permissions on the .env backup
-    chmod 600 "${BACKUP_PATH}/.env"
-    log_info ".env backed up (permissions restricted to owner-only)"
-fi
+# .env is intentionally NOT included in the backup archive.
+# It contains API keys (Bybit, Anthropic, Telegram) and must never land in a
+# world-readable tar.gz.  Back it up separately with encryption, e.g.:
+#   gpg --symmetric --cipher-algo AES256 .env && mv .env.gpg /secure/location/
+log_info ".env excluded from backup archive (back up separately with encryption)"
 
 # ---------------------------------------------------------------------------
 # Step 3: Compress the backup
@@ -124,6 +122,21 @@ log_info "Step 3/4: Compressing backup..."
 
 cd "${BACKUP_DIR}"
 tar -czf "${BACKUP_NAME}.tar.gz" "${BACKUP_NAME}/"
+
+# Restrict archive permissions immediately after creation (defense-in-depth).
+# The directory had a world-readable umask by default; this overrides it so
+# the tar.gz is readable only by its owner.
+chmod 600 "${BACKUP_NAME}.tar.gz"
+
+# Verify SQLite integrity of the backed-up database before discarding staging dir
+if [ -f "${BACKUP_PATH}/trades.db" ] && command -v sqlite3 &> /dev/null; then
+    if sqlite3 "${BACKUP_PATH}/trades.db" "PRAGMA integrity_check;" | grep -q "^ok$"; then
+        log_info "SQLite integrity check passed"
+    else
+        log_error "BACKUP INTEGRITY FAILED: trades.db integrity check did not pass"
+        # Continue anyway — the archive is still created, but flag the failure
+    fi
+fi
 
 # Remove uncompressed directory
 rm -rf "${BACKUP_PATH}"

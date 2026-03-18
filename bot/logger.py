@@ -3,7 +3,7 @@
 import json
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -14,7 +14,7 @@ class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format the log record as a JSON string."""
         log_entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "message": record.getMessage(),
         }
@@ -81,42 +81,61 @@ class TradeJournal:
     def __init__(self, db_path: str = "trades.db") -> None:
         """Initialize the trade journal.
 
+        Opens a persistent connection for the lifetime of the instance.
+        Uses check_same_thread=False because asyncio may resume coroutines
+        on a different OS thread while still being single-threaded logically.
+
         Args:
             db_path: Path to the SQLite database file.
         """
         self.db_path = db_path
+        # Persistent connection — avoids per-query connect/disconnect overhead
+        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._init_db()
 
+    def close(self) -> None:
+        """Close the persistent database connection."""
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+
     def _init_db(self) -> None:
-        """Create the trades table if it doesn't exist."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL")
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS trades (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp TEXT NOT NULL,
-                    symbol TEXT NOT NULL,
-                    side TEXT NOT NULL,
-                    entry_price REAL NOT NULL,
-                    exit_price REAL,
-                    size REAL NOT NULL,
-                    stop_loss REAL,
-                    take_profit REAL,
-                    pnl REAL,
-                    pnl_pct REAL,
-                    status TEXT NOT NULL DEFAULT 'open',
-                    close_reason TEXT,
-                    duration_seconds INTEGER,
-                    ai_decision TEXT,
-                    ai_confidence REAL,
-                    ai_reasoning TEXT,
-                    ai_risk_flags TEXT,
-                    ai_override INTEGER DEFAULT 0
-                )
-                """
+        """Create the trades table and indexes if they don't exist."""
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA synchronous=NORMAL")
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                entry_price REAL NOT NULL,
+                exit_price REAL,
+                size REAL NOT NULL,
+                stop_loss REAL,
+                take_profit REAL,
+                pnl REAL,
+                pnl_pct REAL,
+                status TEXT NOT NULL DEFAULT 'open',
+                close_reason TEXT,
+                duration_seconds INTEGER,
+                ai_decision TEXT,
+                ai_confidence REAL,
+                ai_reasoning TEXT,
+                ai_risk_flags TEXT,
+                ai_override INTEGER DEFAULT 0
             )
+            """
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status)"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(timestamp)"
+        )
+        self._conn.commit()
 
     def log_trade_open(
         self,
@@ -151,31 +170,31 @@ class TradeJournal:
             Trade ID.
         """
         flags_json = json.dumps(ai_risk_flags) if ai_risk_flags else None
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO trades (timestamp, symbol, side, entry_price, size,
-                                    stop_loss, take_profit, status,
-                                    ai_decision, ai_confidence, ai_reasoning,
-                                    ai_risk_flags, ai_override)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)
-                """,
-                (
-                    datetime.utcnow().isoformat(),
-                    symbol,
-                    side,
-                    entry_price,
-                    size,
-                    stop_loss,
-                    take_profit,
-                    ai_decision,
-                    ai_confidence,
-                    ai_reasoning,
-                    flags_json,
-                    1 if ai_override else 0,
-                ),
-            )
-            return cursor.lastrowid  # type: ignore[return-value]
+        cursor = self._conn.execute(
+            """
+            INSERT INTO trades (timestamp, symbol, side, entry_price, size,
+                                stop_loss, take_profit, status,
+                                ai_decision, ai_confidence, ai_reasoning,
+                                ai_risk_flags, ai_override)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)
+            """,
+            (
+                datetime.now(timezone.utc).isoformat(),
+                symbol,
+                side,
+                entry_price,
+                size,
+                stop_loss,
+                take_profit,
+                ai_decision,
+                ai_confidence,
+                ai_reasoning,
+                flags_json,
+                1 if ai_override else 0,
+            ),
+        )
+        self._conn.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
 
     def log_trade_close(
         self,
@@ -196,16 +215,16 @@ class TradeJournal:
             close_reason: Reason for closing (tp, sl, trailing_sl, manual, circuit_breaker).
             duration_seconds: Trade duration in seconds.
         """
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                """
-                UPDATE trades SET exit_price = ?, pnl = ?, pnl_pct = ?,
-                                  status = 'closed', close_reason = ?,
-                                  duration_seconds = ?
-                WHERE id = ?
-                """,
-                (exit_price, pnl, pnl_pct, close_reason, duration_seconds, trade_id),
-            )
+        self._conn.execute(
+            """
+            UPDATE trades SET exit_price = ?, pnl = ?, pnl_pct = ?,
+                              status = 'closed', close_reason = ?,
+                              duration_seconds = ?
+            WHERE id = ?
+            """,
+            (exit_price, pnl, pnl_pct, close_reason, duration_seconds, trade_id),
+        )
+        self._conn.commit()
 
     def get_daily_pnl(self, date: Optional[str] = None) -> float:
         """Get total PnL for a given date.
@@ -217,17 +236,16 @@ class TradeJournal:
             Total PnL for the date.
         """
         if date is None:
-            date = datetime.utcnow().strftime("%Y-%m-%d")
-        with sqlite3.connect(self.db_path) as conn:
-            result = conn.execute(
-                """
-                SELECT COALESCE(SUM(pnl), 0)
-                FROM trades
-                WHERE timestamp LIKE ? AND status = 'closed'
-                """,
-                (f"{date}%",),
-            ).fetchone()
-            return result[0]
+            date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        result = self._conn.execute(
+            """
+            SELECT COALESCE(SUM(pnl), 0)
+            FROM trades
+            WHERE timestamp LIKE ? AND status = 'closed'
+            """,
+            (f"{date}%",),
+        ).fetchone()
+        return result[0]
 
     def get_trade_history(self, limit: int = 50) -> list[dict]:
         """Get recent trade history.
@@ -238,13 +256,13 @@ class TradeJournal:
         Returns:
             List of trade dictionaries.
         """
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT * FROM trades ORDER BY id DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
-            return [dict(row) for row in rows]
+        self._conn.row_factory = sqlite3.Row
+        rows = self._conn.execute(
+            "SELECT * FROM trades ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        self._conn.row_factory = None
+        return [dict(row) for row in rows]
 
     def log_ai_decision(
         self,
@@ -276,28 +294,28 @@ class TradeJournal:
             Record ID.
         """
         flags_json = json.dumps(ai_risk_flags) if ai_risk_flags else None
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO trades (timestamp, symbol, side, entry_price, size,
-                                    stop_loss, take_profit, status,
-                                    ai_decision, ai_confidence, ai_reasoning,
-                                    ai_risk_flags, ai_override)
-                VALUES (?, ?, ?, ?, 0, 0, 0, 'ai_skipped', ?, ?, ?, ?, ?)
-                """,
-                (
-                    datetime.utcnow().isoformat(),
-                    symbol,
-                    side,
-                    entry_price,
-                    ai_decision,
-                    ai_confidence,
-                    ai_reasoning,
-                    flags_json,
-                    1 if ai_override else 0,
-                ),
-            )
-            return cursor.lastrowid  # type: ignore[return-value]
+        cursor = self._conn.execute(
+            """
+            INSERT INTO trades (timestamp, symbol, side, entry_price, size,
+                                stop_loss, take_profit, status,
+                                ai_decision, ai_confidence, ai_reasoning,
+                                ai_risk_flags, ai_override)
+            VALUES (?, ?, ?, ?, 0, 0, 0, 'ai_skipped', ?, ?, ?, ?, ?)
+            """,
+            (
+                datetime.now(timezone.utc).isoformat(),
+                symbol,
+                side,
+                entry_price,
+                ai_decision,
+                ai_confidence,
+                ai_reasoning,
+                flags_json,
+                1 if ai_override else 0,
+            ),
+        )
+        self._conn.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
 
     def get_open_trades(self) -> list[dict]:
         """Get all currently open trades.
@@ -305,12 +323,12 @@ class TradeJournal:
         Returns:
             List of open trade dictionaries.
         """
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT * FROM trades WHERE status = 'open'"
-            ).fetchall()
-            return [dict(row) for row in rows]
+        self._conn.row_factory = sqlite3.Row
+        rows = self._conn.execute(
+            "SELECT * FROM trades WHERE status = 'open'"
+        ).fetchall()
+        self._conn.row_factory = None
+        return [dict(row) for row in rows]
 
     def get_recent_results(self, limit: int = 10) -> list[float]:
         """Get PnL values of recent closed trades.
@@ -321,16 +339,15 @@ class TradeJournal:
         Returns:
             List of PnL values (positive=win, negative=loss), most recent first.
         """
-        with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                """
-                SELECT pnl FROM trades
-                WHERE status = 'closed' AND pnl IS NOT NULL
-                ORDER BY id DESC LIMIT ?
-                """,
-                (limit,),
-            ).fetchall()
-            return [row[0] for row in rows]
+        rows = self._conn.execute(
+            """
+            SELECT pnl FROM trades
+            WHERE status = 'closed' AND pnl IS NOT NULL
+            ORDER BY id DESC LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [row[0] for row in rows]
 
 
 class CalibrationTracker:
@@ -345,39 +362,56 @@ class CalibrationTracker:
     def __init__(self, db_path: str = "trades.db") -> None:
         """Initialize calibration tracker.
 
+        Opens a persistent connection for the lifetime of the instance.
+        Uses check_same_thread=False because asyncio may resume coroutines
+        on a different OS thread while still being single-threaded logically.
+
         Args:
             db_path: Path to the SQLite database file.
         """
         self.db_path = db_path
+        # Persistent connection — avoids per-query connect/disconnect overhead
+        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._init_calibration_table()
 
+    def close(self) -> None:
+        """Close the persistent database connection."""
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+
     def _init_calibration_table(self) -> None:
-        """Create the ai_calibration table if it doesn't exist."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL")
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS ai_calibration (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp TEXT NOT NULL,
-                    symbol TEXT NOT NULL,
-                    side TEXT NOT NULL,
-                    entry_price REAL NOT NULL,
-                    stated_confidence REAL NOT NULL,
-                    position_size_modifier REAL NOT NULL DEFAULT 1.0,
-                    sl_adjustment REAL NOT NULL DEFAULT 1.0,
-                    tp_adjustment REAL NOT NULL DEFAULT 1.0,
-                    market_regime TEXT,
-                    reasoning TEXT,
-                    risk_flags TEXT,
-                    should_skip INTEGER DEFAULT 0,
-                    outcome TEXT,
-                    pnl REAL,
-                    was_correct INTEGER
-                )
-                """
+        """Create the ai_calibration table and indexes if they don't exist."""
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA synchronous=NORMAL")
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ai_calibration (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                entry_price REAL NOT NULL,
+                stated_confidence REAL NOT NULL,
+                position_size_modifier REAL NOT NULL DEFAULT 1.0,
+                sl_adjustment REAL NOT NULL DEFAULT 1.0,
+                tp_adjustment REAL NOT NULL DEFAULT 1.0,
+                market_regime TEXT,
+                reasoning TEXT,
+                risk_flags TEXT,
+                should_skip INTEGER DEFAULT 0,
+                outcome TEXT,
+                pnl REAL,
+                was_correct INTEGER
             )
+            """
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_calibration_outcome "
+            "ON ai_calibration(outcome, should_skip)"
+        )
+        self._conn.commit()
 
     def record_decision(
         self,
@@ -412,31 +446,31 @@ class CalibrationTracker:
             Record ID.
         """
         flags_json = json.dumps(risk_flags) if risk_flags else None
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO ai_calibration
-                    (timestamp, symbol, side, entry_price, stated_confidence,
-                     position_size_modifier, sl_adjustment, tp_adjustment,
-                     market_regime, reasoning, risk_flags, should_skip)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    datetime.utcnow().isoformat(),
-                    symbol,
-                    side,
-                    entry_price,
-                    stated_confidence,
-                    position_size_modifier,
-                    sl_adjustment,
-                    tp_adjustment,
-                    market_regime,
-                    reasoning,
-                    flags_json,
-                    1 if should_skip else 0,
-                ),
-            )
-            return cursor.lastrowid  # type: ignore[return-value]
+        cursor = self._conn.execute(
+            """
+            INSERT INTO ai_calibration
+                (timestamp, symbol, side, entry_price, stated_confidence,
+                 position_size_modifier, sl_adjustment, tp_adjustment,
+                 market_regime, reasoning, risk_flags, should_skip)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                datetime.now(timezone.utc).isoformat(),
+                symbol,
+                side,
+                entry_price,
+                stated_confidence,
+                position_size_modifier,
+                sl_adjustment,
+                tp_adjustment,
+                market_regime,
+                reasoning,
+                flags_json,
+                1 if should_skip else 0,
+            ),
+        )
+        self._conn.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
 
     def record_outcome(
         self,
@@ -452,15 +486,15 @@ class CalibrationTracker:
             pnl: Actual profit/loss.
         """
         was_correct = 1 if pnl > 0 else 0
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                """
-                UPDATE ai_calibration
-                SET outcome = ?, pnl = ?, was_correct = ?
-                WHERE id = ?
-                """,
-                (outcome, pnl, was_correct, calibration_id),
-            )
+        self._conn.execute(
+            """
+            UPDATE ai_calibration
+            SET outcome = ?, pnl = ?, was_correct = ?
+            WHERE id = ?
+            """,
+            (outcome, pnl, was_correct, calibration_id),
+        )
+        self._conn.commit()
 
     def get_rolling_accuracy(self, window: int = 30) -> Optional[float]:
         """Get rolling accuracy over the last N decided trades.
@@ -471,15 +505,14 @@ class CalibrationTracker:
         Returns:
             Accuracy as float (0-1), or None if insufficient data.
         """
-        with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                """
-                SELECT was_correct FROM ai_calibration
-                WHERE outcome IS NOT NULL AND should_skip = 0
-                ORDER BY id DESC LIMIT ?
-                """,
-                (window,),
-            ).fetchall()
+        rows = self._conn.execute(
+            """
+            SELECT was_correct FROM ai_calibration
+            WHERE outcome IS NOT NULL AND should_skip = 0
+            ORDER BY id DESC LIMIT ?
+            """,
+            (window,),
+        ).fetchall()
 
         if len(rows) < 5:  # Need minimum 5 trades for meaningful accuracy
             return None
@@ -527,21 +560,20 @@ class CalibrationTracker:
         Returns:
             Calibrated confidence (0-1).
         """
-        with sqlite3.connect(self.db_path) as conn:
-            # Get outcomes for this confidence bucket (0.1 width)
-            bucket_low = max(0.0, stated_confidence - 0.1)
-            bucket_high = min(1.0, stated_confidence + 0.1)
+        # Get outcomes for this confidence bucket (0.1 width)
+        bucket_low = max(0.0, stated_confidence - 0.1)
+        bucket_high = min(1.0, stated_confidence + 0.1)
 
-            rows = conn.execute(
-                """
-                SELECT was_correct FROM ai_calibration
-                WHERE outcome IS NOT NULL
-                  AND should_skip = 0
-                  AND stated_confidence BETWEEN ? AND ?
-                ORDER BY id DESC LIMIT 20
-                """,
-                (bucket_low, bucket_high),
-            ).fetchall()
+        rows = self._conn.execute(
+            """
+            SELECT was_correct FROM ai_calibration
+            WHERE outcome IS NOT NULL
+              AND should_skip = 0
+              AND stated_confidence BETWEEN ? AND ?
+            ORDER BY id DESC LIMIT 20
+            """,
+            (bucket_low, bucket_high),
+        ).fetchall()
 
         if len(rows) < 5:
             # Not enough data for calibration, return stated confidence
@@ -558,15 +590,14 @@ class CalibrationTracker:
         Returns:
             Human-readable accuracy summary, or empty string if insufficient data.
         """
-        with sqlite3.connect(self.db_path) as conn:
-            # Overall accuracy (last 30)
-            rows = conn.execute(
-                """
-                SELECT was_correct, stated_confidence FROM ai_calibration
-                WHERE outcome IS NOT NULL AND should_skip = 0
-                ORDER BY id DESC LIMIT 30
-                """,
-            ).fetchall()
+        # Overall accuracy (last 30)
+        rows = self._conn.execute(
+            """
+            SELECT was_correct, stated_confidence FROM ai_calibration
+            WHERE outcome IS NOT NULL AND should_skip = 0
+            ORDER BY id DESC LIMIT 30
+            """,
+        ).fetchall()
 
         if len(rows) < 5:
             return ""
@@ -594,18 +625,17 @@ class CalibrationTracker:
             )
 
         # Per-regime accuracy
-        with sqlite3.connect(self.db_path) as conn2:
-            regime_rows = conn2.execute(
-                """
-                SELECT market_regime, COUNT(*) as n,
-                       SUM(was_correct) as wins
-                FROM ai_calibration
-                WHERE outcome IS NOT NULL AND should_skip = 0
-                  AND market_regime IS NOT NULL
-                GROUP BY market_regime
-                HAVING n >= 3
-                """,
-            ).fetchall()
+        regime_rows = self._conn.execute(
+            """
+            SELECT market_regime, COUNT(*) as n,
+                   SUM(was_correct) as wins
+            FROM ai_calibration
+            WHERE outcome IS NOT NULL AND should_skip = 0
+              AND market_regime IS NOT NULL
+            GROUP BY market_regime
+            HAVING n >= 3
+            """,
+        ).fetchall()
 
         if regime_rows:
             lines.append("Accuracy by regime:")

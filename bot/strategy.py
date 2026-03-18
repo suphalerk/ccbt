@@ -168,11 +168,14 @@ def generate_signal(
     signal_df: pd.DataFrame,
     trend_df: Optional[pd.DataFrame],
     config: dict,
-) -> Optional[TradeSignal]:
+) -> tuple[Optional[TradeSignal], pd.DataFrame]:
     """Generate a trade signal from the latest candle data.
 
     Uses the most recent closed candle (index -1 is current/forming,
     so we use index -2 for the last closed candle).
+
+    Returns the enriched DataFrame (with indicators already computed) so
+    callers can reuse it instead of re-running add_indicators().
 
     Args:
         signal_df: Signal timeframe OHLCV DataFrame (e.g., 15m).
@@ -180,7 +183,7 @@ def generate_signal(
         config: Bot configuration.
 
     Returns:
-        TradeSignal if conditions are met, None otherwise.
+        Tuple of (TradeSignal or None, enriched DataFrame with indicators).
     """
     # Add indicators
     df = add_indicators(signal_df, config)
@@ -190,7 +193,7 @@ def generate_signal(
         df = add_trend_filter(df, trend_df, config)
 
     if len(df) < 2:
-        return None
+        return None, df
 
     # Detect market regime
     regime = detect_regime(df, config.get("atr_period", 14))
@@ -230,7 +233,7 @@ def generate_signal(
                     "rsi": round(row["rsi"], 2),
                 },
             )
-            return signal
+            return signal, df
 
     # Check short conditions
     if check_entry_conditions(row, config, SignalType.SHORT):
@@ -260,9 +263,9 @@ def generate_signal(
                     "rsi": round(row["rsi"], 2),
                 },
             )
-            return signal
+            return signal, df
 
-    return None
+    return None, df
 
 
 def compute_trailing_stop(

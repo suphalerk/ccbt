@@ -116,7 +116,7 @@ class TestSignalGeneration:
         """Flat market should produce no signal (no crossover)."""
         df = make_ohlcv(100, "flat")
         # In a flat market, crossovers are less likely to coincide with all conditions
-        signal = generate_signal(df, None, config)
+        signal, _ = generate_signal(df, None, config)
         # Signal may or may not exist, but it should be valid if it does
         if signal is not None:
             assert isinstance(signal, TradeSignal)
@@ -125,7 +125,7 @@ class TestSignalGeneration:
     def test_signal_has_valid_levels(self, config):
         """If a signal is generated, levels should be consistent."""
         df = make_ohlcv(100, "up")
-        signal = generate_signal(df, None, config)
+        signal, _ = generate_signal(df, None, config)
         if signal is not None:
             if signal.signal_type == SignalType.LONG:
                 assert signal.stop_loss < signal.entry_price
@@ -416,7 +416,7 @@ class TestRegimeIntegration:
             "close": base,
             "volume": np.random.uniform(100, 500, n),
         }, index=dates)
-        signal = generate_signal(df, None, config)
+        signal, _ = generate_signal(df, None, config)
         assert signal is None
 
     def test_volatile_regime_sets_flag(self, config):

@@ -184,7 +184,8 @@ class BybitClient:
         """
         balance = self._retry(self.exchange.fetch_balance)
         usdt = balance.get("USDT", {})
-        free = usdt.get("free", 0.0) or usdt.get("total", 0.0)
+        free = usdt.get("free", None)
+        free = free if free is not None else usdt.get("total", 0.0)
         logger.info("balance_fetched", extra={"usdt_free": free})
         return float(free)
 

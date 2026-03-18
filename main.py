@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 
 from bot.ai_analyst import AIAnalyst, CandidateSignal
 from bot.context_builder import ContextBuilder
+from bot.data import add_indicators
 from bot.exchange import BybitClient
 from bot.logger import CalibrationTracker, TradeJournal, setup_logging
 from bot.news_fetcher import NewsFetcher
@@ -315,6 +316,20 @@ def check_closed_positions(
     return open_trade_ids
 
 
+async def _interruptible_sleep(seconds: float) -> bool:
+    """Sleep for up to `seconds`, waking early if shutdown is requested.
+
+    Returns:
+        True if shutdown was requested (caller should break/return),
+        False if the full sleep elapsed normally.
+    """
+    try:
+        await asyncio.wait_for(shutdown_event.wait(), timeout=seconds)
+        return True  # Shutdown requested
+    except asyncio.TimeoutError:
+        return False  # Normal timeout — continue
+
+
 async def trading_loop(config: dict) -> None:
     """Main trading loop.
 
@@ -418,6 +433,19 @@ async def trading_loop(config: dict) -> None:
             for pos in existing_positions:
                 pos_side = pos.get("side", "")
                 if pos_side == trade_side:
+                    # Item 6: Fetch fresh ATR for restored trades so trailing stop works
+                    restored_atr = 0.0
+                    try:
+                        fresh_df = client.get_ohlcv(
+                            config["symbol"], config["timeframe_signal"], limit=100
+                        )
+                        fresh_df = add_indicators(fresh_df, config)
+                        if "atr" in fresh_df.columns and len(fresh_df) > 0:
+                            restored_atr = float(fresh_df["atr"].iloc[-2])
+                        logger.info("restored_trade_atr_fetched", extra={"trade_id": trade_id, "atr": restored_atr})
+                    except Exception as atr_err:
+                        logger.warning("restored_trade_atr_fetch_failed", extra={"trade_id": trade_id, "error": str(atr_err)})
+
                     tracked_trades[trade_id] = {
                         "side": db_trade["side"],
                         "entry_price": db_trade["entry_price"],
@@ -426,7 +454,7 @@ async def trading_loop(config: dict) -> None:
                         "tp": db_trade.get("take_profit", 0),
                         "calibration_id": None,
                         "signal_type": SignalType.LONG if db_trade["side"] == "buy" else SignalType.SHORT,
-                        "atr": 0,  # Unknown after restart; trailing stop won't move without ATR
+                        "atr": restored_atr,
                         "open_time": time.time(),
                     }
                     restored_sides.add(trade_side)
@@ -509,7 +537,8 @@ async def trading_loop(config: dict) -> None:
 
             if not can_trade:
                 logger.info("trade_skipped", extra={"reason": reason})
-                await asyncio.sleep(60)
+                if await _interruptible_sleep(60):
+                    break
                 continue
 
             # Fetch data with error handling
@@ -526,24 +555,34 @@ async def trading_loop(config: dict) -> None:
             except Exception as e:
                 risk_mgr.record_api_error()
                 logger.error("data_fetch_error", extra={"error": str(e)})
-                await asyncio.sleep(30)
+                if await _interruptible_sleep(30):
+                    break
                 continue
 
-            # Generate signal
-            trade_signal = generate_signal(signal_df, trend_df, config)
+            # Generate signal (also returns enriched df with indicators for reuse)
+            trade_signal, enriched_signal_df = generate_signal(signal_df, trend_df, config)
 
             if trade_signal is not None:
-                # Validate order through risk manager
-                approved, reason, position_size = risk_mgr.validate_order(
-                    balance=balance,
-                    entry_price=trade_signal.entry_price,
-                    stop_loss=trade_signal.stop_loss,
-                    take_profit=trade_signal.take_profit,
-                    num_open_positions=num_positions,
-                    regime=trade_signal.regime,
-                )
+                # Item 1: Enforce 1 trade per side — skip if already tracking a trade on the same side
+                new_side = "buy" if trade_signal.signal_type == SignalType.LONG else "sell"
+                already_open_side = any(info["side"] == new_side for info in tracked_trades.values())
+                if already_open_side:
+                    logger.info(
+                        "trade_skipped_duplicate_side",
+                        extra={"side": new_side, "reason": "already_tracking_trade_on_this_side"},
+                    )
+                else:
+                    # Validate order through risk manager
+                    approved, reason, position_size = risk_mgr.validate_order(
+                        balance=balance,
+                        entry_price=trade_signal.entry_price,
+                        stop_loss=trade_signal.stop_loss,
+                        take_profit=trade_signal.take_profit,
+                        num_open_positions=num_positions,
+                        regime=trade_signal.regime,
+                    )
 
-                if approved:
+                if not already_open_side and approved:
                     # Validate leverage before placing order
                     if not risk_mgr.check_leverage(position_size, balance):
                         logger.warning(
@@ -555,7 +594,8 @@ async def trading_loop(config: dict) -> None:
                                 "max_leverage": config["leverage"],
                             },
                         )
-                        await asyncio.sleep(60)
+                        if await _interruptible_sleep(60):
+                            break
                         continue
 
                     side = "buy" if trade_signal.signal_type == SignalType.LONG else "sell"
@@ -581,9 +621,13 @@ async def trading_loop(config: dict) -> None:
                             rr_ratio=trade_signal.risk_reward_ratio,
                         )
 
-                        # Build market context
+                        # Build market context, passing pre-fetched DataFrames
+                        # to avoid redundant OHLCV fetches and indicator recomputation
                         market_ctx = await ctx_builder.build(
-                            config["symbol"], risk_mgr.state
+                            config["symbol"],
+                            risk_mgr.state,
+                            signal_df=enriched_signal_df,
+                            trend_df=trend_df,
                         )
 
                         # Get AI advisor decision
@@ -637,7 +681,8 @@ async def trading_loop(config: dict) -> None:
                                 "trade_skipped_by_ai_hard_stop",
                                 extra={"reasoning": ai_result.reasoning},
                             )
-                            await asyncio.sleep(60)
+                            if await _interruptible_sleep(60):
+                                break
                             continue
 
                         # Apply AI adjustments to trade parameters
@@ -729,16 +774,57 @@ async def trading_loop(config: dict) -> None:
                             "sl_verification_failed_closing_position",
                             extra={"order_id": order.order_id},
                         )
+                        close_ok = False
                         try:
                             client.close_all_positions()
-                        except Exception:
-                            pass
-                        await asyncio.sleep(60)
+                            close_ok = True
+                        except Exception as close_err:
+                            logger.critical(
+                                "sl_verification_and_close_failed_halting",
+                                extra={"order_id": order.order_id, "error": str(close_err)},
+                            )
+                        if not close_ok:
+                            # Cannot verify SL AND cannot close position — must halt immediately
+                            shutdown_event.set()
+                            break
+                        if await _interruptible_sleep(60):
+                            break
                         continue
 
                     # Use actual fill price and size, not requested
                     actual_entry = order.price if order.price else trade_signal.entry_price
                     actual_size = order.size  # Filled size (handles partial fills)
+
+                    # Item 7: Recompute SL/TP from actual fill price, preserving ATR distances
+                    sl_distance = abs(trade_signal.entry_price - adjusted_sl)
+                    tp_distance = abs(adjusted_tp - trade_signal.entry_price)
+                    if trade_signal.signal_type == SignalType.LONG:
+                        fill_adjusted_sl = actual_entry - sl_distance
+                        fill_adjusted_tp = actual_entry + tp_distance
+                    else:
+                        fill_adjusted_sl = actual_entry + sl_distance
+                        fill_adjusted_tp = actual_entry - tp_distance
+                    # Only update on exchange if fill price differed meaningfully
+                    epsilon = trade_signal.entry_price * 0.0005  # 0.05% threshold
+                    if abs(actual_entry - trade_signal.entry_price) > epsilon:
+                        logger.info(
+                            "sl_tp_recomputed_from_fill",
+                            extra={
+                                "requested_entry": trade_signal.entry_price,
+                                "fill_entry": actual_entry,
+                                "old_sl": round(adjusted_sl, 2),
+                                "new_sl": round(fill_adjusted_sl, 2),
+                                "old_tp": round(adjusted_tp, 2),
+                                "new_tp": round(fill_adjusted_tp, 2),
+                            },
+                        )
+                        client.modify_sl(
+                            symbol=config["symbol"],
+                            side=side,
+                            new_sl=round(fill_adjusted_sl, 2),
+                        )
+                        adjusted_sl = fill_adjusted_sl
+                        adjusted_tp = fill_adjusted_tp
 
                     # Log trade with AI advisor data
                     trade_id = journal.log_trade_open(
@@ -791,17 +877,30 @@ async def trading_loop(config: dict) -> None:
                             "calibration_id": calibration_id,
                         },
                     )
-                else:
+                elif not already_open_side:
                     logger.info("trade_rejected", extra={"reason": reason})
 
             # Wait until next candle close for timely signal detection
             now = datetime.now(tz=timezone.utc)
-            signal_minutes = int(config["timeframe_signal"].replace("m", "").replace("h", "")) if "m" in config["timeframe_signal"] else 60
+            tf = config["timeframe_signal"]
+            if "h" in tf:
+                signal_minutes = int(tf.replace("h", "")) * 60
+            elif "m" in tf:
+                signal_minutes = int(tf.replace("m", ""))
+            else:
+                signal_minutes = 15  # default
             minutes_until_close = (signal_minutes - 1) - (now.minute % signal_minutes)
             seconds_until_close = minutes_until_close * 60 + (60 - now.second)
+            # Item 15: Write heartbeat file so deployment monitoring can detect a stalled bot
+            heartbeat_path = Path(os.getenv("BOT_DATA_DIR", "data")) / "heartbeat"
+            heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
+            heartbeat_path.write_text(str(time.time()))
+
             # Sleep until ~2s after candle close (give exchange time to finalize)
+            # Item 5: Use shutdown-aware sleep so SIGTERM wakes the bot immediately
             sleep_time = max(10, min(seconds_until_close + 2, signal_minutes * 60))
-            await asyncio.sleep(sleep_time)
+            if await _interruptible_sleep(sleep_time):
+                break
 
         except KeyboardInterrupt:
             break
@@ -820,7 +919,8 @@ async def trading_loop(config: dict) -> None:
                     pass
                 break
 
-            await asyncio.sleep(30)
+            if await _interruptible_sleep(30):
+                break
 
     # Graceful shutdown: close all positions and cancel orders
     logger.warning("bot_shutting_down", extra={"tracked_trades": len(tracked_trades)})
@@ -859,6 +959,17 @@ async def trading_loop(config: dict) -> None:
         logger.error("graceful_shutdown_failed", extra={"error": str(e)})
 
     logger.info("bot_stopped")
+
+    # Close persistent database connections
+    try:
+        journal.close()
+    except Exception:
+        pass
+    if calibration_tracker:
+        try:
+            calibration_tracker.close()
+        except Exception:
+            pass
 
 
 def handle_shutdown(signum, frame) -> None:

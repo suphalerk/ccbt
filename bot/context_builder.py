@@ -88,34 +88,59 @@ class ContextBuilder:
         self,
         symbol: str,
         risk_state: Optional[RiskState] = None,
+        signal_df: Optional[pd.DataFrame] = None,
+        trend_df: Optional[pd.DataFrame] = None,
     ) -> MarketContext:
         """Build a complete market context for AI analysis.
+
+        When signal_df and/or trend_df are provided, they are used directly
+        instead of fetching fresh data from the exchange. This avoids
+        redundant OHLCV fetches when the trading loop has already fetched
+        and enriched those DataFrames.
 
         Args:
             symbol: Trading pair symbol.
             risk_state: Current risk manager state for bot context.
+            signal_df: Optional pre-fetched (and optionally pre-enriched)
+                signal timeframe DataFrame. When provided, skips the exchange
+                fetch for the signal timeframe.
+            trend_df: Optional pre-fetched trend timeframe DataFrame. When
+                provided, skips the exchange fetch for the trend timeframe.
 
         Returns:
             MarketContext with all available data filled in.
         """
         ctx = MarketContext(symbol=symbol)
 
-        # Fetch price data
-        try:
-            signal_df = self.client.get_ohlcv(
-                symbol, self.config["timeframe_signal"], limit=100
-            )
-            ctx = self._fill_signal_data(ctx, signal_df)
-        except Exception as e:
-            logger.warning("context_signal_data_error", extra={"error": str(e)})
+        # Signal timeframe data
+        if signal_df is not None and not signal_df.empty:
+            try:
+                ctx = self._fill_signal_data(ctx, signal_df)
+            except Exception as e:
+                logger.warning("context_signal_data_error", extra={"error": str(e)})
+        else:
+            try:
+                fetched_signal_df = self.client.get_ohlcv(
+                    symbol, self.config["timeframe_signal"], limit=100
+                )
+                ctx = self._fill_signal_data(ctx, fetched_signal_df)
+            except Exception as e:
+                logger.warning("context_signal_data_error", extra={"error": str(e)})
 
-        try:
-            trend_df = self.client.get_ohlcv(
-                symbol, self.config["timeframe_trend"], limit=100
-            )
-            ctx = self._fill_trend_data(ctx, trend_df)
-        except Exception as e:
-            logger.warning("context_trend_data_error", extra={"error": str(e)})
+        # Trend timeframe data
+        if trend_df is not None and not trend_df.empty:
+            try:
+                ctx = self._fill_trend_data(ctx, trend_df)
+            except Exception as e:
+                logger.warning("context_trend_data_error", extra={"error": str(e)})
+        else:
+            try:
+                fetched_trend_df = self.client.get_ohlcv(
+                    symbol, self.config["timeframe_trend"], limit=100
+                )
+                ctx = self._fill_trend_data(ctx, fetched_trend_df)
+            except Exception as e:
+                logger.warning("context_trend_data_error", extra={"error": str(e)})
 
         # Latest ticker price (more accurate than candle close)
         try:
@@ -199,14 +224,21 @@ class ContextBuilder:
     ) -> MarketContext:
         """Fill signal timeframe data into context.
 
+        If the DataFrame already contains indicator columns (e.g., because
+        generate_signal() already called add_indicators()), skip recomputation.
+
         Args:
             ctx: MarketContext to fill.
-            df: Signal timeframe OHLCV DataFrame.
+            df: Signal timeframe OHLCV DataFrame, optionally pre-enriched.
 
         Returns:
             Updated MarketContext.
         """
-        df_ind = add_indicators(df, self.config)
+        # Check if indicators are already present (Item 12: avoid redundant computation)
+        if "ema_fast" in df.columns and "rsi" in df.columns and "atr" in df.columns:
+            df_ind = df
+        else:
+            df_ind = add_indicators(df, self.config)
 
         if len(df_ind) == 0:
             return ctx

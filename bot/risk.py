@@ -312,7 +312,7 @@ class RiskManager:
         self.state.is_halted = False
         self.state.halt_reason = ""
         self.state.api_error_count = 0
-        self.state.consecutive_losses = 0
+        # consecutive_losses intentionally NOT reset here — only resets on a winning trade
         self.state.cooldown_until = 0.0
         logger.info("daily_reset", extra={"new_balance": new_balance})
 

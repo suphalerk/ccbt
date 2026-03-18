@@ -22,12 +22,13 @@ Environment variables required:
   TELEGRAM_BOT_TOKEN  - Telegram bot API token
   TELEGRAM_CHAT_ID    - Chat/group ID to send alerts to
   BOT_DATA_DIR        - Path to bot data directory (default: /app/data)
-  MONITOR_STATE_FILE  - Path to monitor state file (default: /tmp/tradingbot-monitor-state.json)
+  MONITOR_STATE_FILE  - Path to monitor state file (default: /opt/trading-bot/monitor-state.json)
 """
 
 import json
 import logging
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -51,8 +52,12 @@ BOT_DATA_DIR = Path(os.getenv("BOT_DATA_DIR", "/app/data"))
 HEARTBEAT_FILE = BOT_DATA_DIR / "heartbeat"
 DB_PATH = BOT_DATA_DIR / "trades.db"
 
-# Monitor state file: tracks previous check results to avoid duplicate alerts
-STATE_FILE = Path(os.getenv("MONITOR_STATE_FILE", "/tmp/tradingbot-monitor-state.json"))
+# Monitor state file: tracks previous check results to avoid duplicate alerts.
+# IMPORTANT: must be on a persistent volume, NOT /tmp (which is wiped on reboot).
+# A reboot would reset dedup state and cause duplicate alerts or missed
+# last_notified_trade_id, leading to re-notification of old trades.
+# Default to the same persistent directory as trades.db so state survives reboots.
+STATE_FILE = Path(os.getenv("MONITOR_STATE_FILE", "/opt/trading-bot/monitor-state.json"))
 
 # Thresholds
 HEARTBEAT_MAX_AGE_SECONDS = 300  # 5 minutes
@@ -356,6 +361,29 @@ def get_current_balance() -> Optional[float]:
         return None
 
 
+def check_disk_space(threshold_pct: float = 85.0) -> Optional[str]:
+    """Check whether the root filesystem is running low on disk space.
+
+    Args:
+        threshold_pct: Alert when disk usage exceeds this percentage (default 85%).
+
+    Returns:
+        Alert string if disk usage exceeds the threshold, otherwise None.
+    """
+    try:
+        disk = shutil.disk_usage("/")
+        disk_pct = disk.used / disk.total * 100
+        if disk_pct > threshold_pct:
+            free_gb = disk.free / 1e9
+            return (
+                f"DISK WARNING: {disk_pct:.1f}% used "
+                f"({free_gb:.1f} GB free)"
+            )
+    except OSError as e:
+        logger.error("Failed to check disk space: %s", e)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Main Monitoring Logic
 # ---------------------------------------------------------------------------
@@ -470,7 +498,12 @@ def run_checks() -> None:
                 )
         state["last_known_balance"] = current_balance
 
-    # --- Check 6: Daily PnL summary (at specific hours) ---
+    # --- Check 6: Disk space ---
+    disk_alert = check_disk_space()
+    if disk_alert:
+        alerts.append(f"⚠️ <b>{disk_alert}</b>\nCheck VPS disk usage before logs or backups fill the volume.")
+
+    # --- Check 7: Daily PnL summary (at 23:55 UTC or when forced) ---
     now_utc = datetime.now(tz=timezone.utc)
     current_hour = now_utc.hour
     last_daily_report_date = state.get("last_daily_report_date", "")
