@@ -152,8 +152,11 @@ def check_closed_positions(
 
     # Determine which sides have active positions on exchange
     active_sides = set()
+    def _normalize_symbol(s: str) -> str:
+        return s.replace("/", "").replace(":USDT", "").replace("-", "").upper()
+    norm_symbol = _normalize_symbol(symbol)
     for pos in current_positions:
-        if pos.get("symbol", "").replace("/", "").replace(":USDT", "") == symbol.replace("/", ""):
+        if _normalize_symbol(pos.get("symbol", "")) == norm_symbol:
             side = pos.get("side", "")
             active_sides.add(side)
 
@@ -402,6 +405,9 @@ async def trading_loop(config: dict) -> None:
                 try:
                     current_price = client.get_ticker_price(config["symbol"])
                     for trade_id, info in tracked_trades.items():
+                        # Skip trailing stop for restored trades without ATR data
+                        if info["atr"] <= 0:
+                            continue
                         sig_type = info["signal_type"]
                         new_sl = compute_trailing_stop(
                             current_price, info["sl"], info["atr"],
@@ -623,6 +629,27 @@ async def trading_loop(config: dict) -> None:
                         sl=round(adjusted_sl, 2),
                         tp=round(adjusted_tp, 2),
                     )
+
+                    # Verify SL/TP was actually set on the position
+                    # If not, set them separately via trading stop API
+                    try:
+                        verify_positions = client.get_positions()
+                        pos_has_sl = False
+                        for vp in verify_positions:
+                            if vp.get("side") == ("long" if side == "buy" else "short"):
+                                sl_val = float(vp.get("stopLossPrice") or vp.get("info", {}).get("stopLoss", 0) or 0)
+                                if sl_val > 0:
+                                    pos_has_sl = True
+                                break
+                        if not pos_has_sl:
+                            logger.warning("sl_not_set_on_order_retrying")
+                            client.modify_sl(
+                                symbol=config["symbol"],
+                                side=side,
+                                new_sl=round(adjusted_sl, 2),
+                            )
+                    except Exception as e:
+                        logger.error("sl_verification_failed", extra={"error": str(e)})
 
                     # Use actual fill price if available, else fall back to signal price
                     actual_entry = order.price if order.price else trade_signal.entry_price

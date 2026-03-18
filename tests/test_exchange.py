@@ -29,6 +29,9 @@ def mock_ccxt():
         MockBybit.return_value = mock_exchange
         mock_exchange.load_markets.return_value = {}
         mock_exchange.set_sandbox_mode = MagicMock()
+        # Precision methods return the value as-is for testing
+        mock_exchange.amount_to_precision.side_effect = lambda sym, val: val
+        mock_exchange.price_to_precision.side_effect = lambda sym, val: val
         yield mock_exchange
 
 
@@ -54,12 +57,12 @@ class TestGetBalance:
     """Test balance fetching."""
 
     def test_get_balance(self, client, mock_ccxt):
-        """Should return USDT total balance."""
+        """Should return USDT free balance."""
         mock_ccxt.fetch_balance.return_value = {
             "USDT": {"total": 1000.0, "free": 950.0}
         }
         balance = client.get_balance()
-        assert balance == 1000.0
+        assert balance == 950.0
 
     def test_get_balance_empty(self, client, mock_ccxt):
         """Should return 0 for missing USDT balance."""
@@ -109,8 +112,9 @@ class TestPlaceOrder:
         assert isinstance(result, OrderResult)
         assert result.order_id == "order123"
         assert result.side == "buy"
-        assert result.sl == 59400.0
-        assert result.tp == 61200.0
+        # SL/TP go through _safe_precision, values should be preserved
+        assert result.sl == pytest.approx(59400.0)
+        assert result.tp == pytest.approx(61200.0)
 
     def test_place_order_with_params(self, client, mock_ccxt):
         """Should include SL/TP in order params."""

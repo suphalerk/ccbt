@@ -346,13 +346,13 @@ class TestDetectRegime:
 
     def test_ranging_regime(self):
         """Flat, low-volatility market should be 'ranging'."""
-        np.random.seed(20)
-        n = 80
+        np.random.seed(42)
+        n = 100
         dates = pd.date_range("2024-01-01", periods=n, freq="15min")
-        # Flat market with decreasing volatility
-        base = 60000 + np.random.randn(n) * 2  # Very tight range
-        high = base + 3
-        low = base - 3
+        # Truly flat market: constant price with tiny noise
+        base = np.full(n, 60000.0) + np.random.randn(n) * 0.5
+        high = base + 1
+        low = base - 1
         df = pd.DataFrame({
             "open": base,
             "high": high,

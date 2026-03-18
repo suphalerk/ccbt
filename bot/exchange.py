@@ -30,6 +30,27 @@ class OrderResult:
     raw: dict
 
 
+def _safe_precision(exchange, symbol: str, value: float, kind: str = "amount") -> float:
+    """Apply exchange-specific precision to a value.
+
+    Args:
+        exchange: ccxt exchange instance.
+        symbol: Trading pair.
+        value: Value to round.
+        kind: "amount" for contract size, "price" for price levels.
+
+    Returns:
+        Precision-adjusted value.
+    """
+    try:
+        if kind == "amount":
+            return float(exchange.amount_to_precision(symbol, value))
+        return float(exchange.price_to_precision(symbol, value))
+    except Exception:
+        # Fallback to reasonable defaults
+        return round(value, 6 if kind == "amount" else 2)
+
+
 class BybitClient:
     """Bybit Perpetual Futures client wrapping ccxt with retry logic and rate limiting."""
 
@@ -115,9 +136,9 @@ class BybitClient:
         """
         balance = self._retry(self.exchange.fetch_balance)
         usdt = balance.get("USDT", {})
-        total = usdt.get("total", 0.0)
-        logger.info("balance_fetched", extra={"usdt_total": total})
-        return float(total)
+        free = usdt.get("free", 0.0) or usdt.get("total", 0.0)
+        logger.info("balance_fetched", extra={"usdt_free": free})
+        return float(free)
 
     def get_ohlcv(
         self, symbol: str, timeframe: str, limit: int = 100
@@ -161,9 +182,13 @@ class BybitClient:
             OrderResult with order details.
         """
         params: dict = {}
+        # Apply exchange precision to all values
+        size = _safe_precision(self.exchange, self.symbol, size, "amount")
         if sl is not None:
+            sl = _safe_precision(self.exchange, self.symbol, sl, "price")
             params["stopLoss"] = {"triggerPrice": sl}
         if tp is not None:
+            tp = _safe_precision(self.exchange, self.symbol, tp, "price")
             params["takeProfit"] = {"triggerPrice": tp}
 
         order = self._retry(
@@ -326,10 +351,14 @@ class BybitClient:
         """
         symbol = symbol or self.symbol
         try:
+            # Use Bybit v5 private API to modify position SL
+            # ccxt doesn't have a unified set_trading_stop method
+            market = self.exchange.market(symbol)
             self._retry(
-                self.exchange.set_trading_stop,
-                symbol,
+                self.exchange.private_post_v5_position_trading_stop,
                 params={
+                    "category": "linear",
+                    "symbol": market["id"],
                     "stopLoss": str(new_sl),
                     "positionIdx": 0,  # One-way mode
                 },

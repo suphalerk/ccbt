@@ -590,19 +590,6 @@ class CalibrationTracker:
             )
 
         # Per-regime accuracy
-        regime_rows = conn.execute(
-            """
-            SELECT market_regime, COUNT(*) as n,
-                   SUM(was_correct) as wins
-            FROM ai_calibration
-            WHERE outcome IS NOT NULL AND should_skip = 0
-              AND market_regime IS NOT NULL
-            GROUP BY market_regime
-            HAVING n >= 3
-            """,
-        ).fetchall() if hasattr(conn, 'execute') else []
-
-        # Re-query with a fresh connection for regime data
         with sqlite3.connect(self.db_path) as conn2:
             regime_rows = conn2.execute(
                 """

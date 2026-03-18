@@ -224,15 +224,15 @@ class TestDynamicRiskFactor:
     """Test dynamic risk factor based on recent win rate."""
 
     def test_insufficient_data_returns_conservative(self, config):
-        """With fewer than 10 trades, should return 0.5."""
+        """With fewer than 10 trades, should return 0.8."""
         rm = RiskManager(config, balance=100000.0)
         # No trades recorded
-        assert rm.get_dynamic_risk_factor() == 0.5
+        assert rm.get_dynamic_risk_factor() == 0.8
 
         # Record 5 trades (still < 10)
         for _ in range(5):
             rm.record_trade_result(10.0)
-        assert rm.get_dynamic_risk_factor() == 0.5
+        assert rm.get_dynamic_risk_factor() == 0.8
 
     def test_high_win_rate_returns_full(self, config):
         """Win rate > 50% should return 1.0."""
@@ -267,7 +267,7 @@ class TestDynamicRiskFactor:
 
     def test_dynamic_factor_applied_in_validate_order(self, config):
         """Dynamic risk factor should scale position size in validate_order."""
-        # Create manager with no trade history (factor = 0.5)
+        # Create manager with no trade history (factor = 0.8)
         rm = RiskManager(config, balance=1000.0)
         _, _, size_conservative = rm.validate_order(
             balance=1000.0,
@@ -289,8 +289,8 @@ class TestDynamicRiskFactor:
             num_open_positions=0,
         )
 
-        # Full risk should be ~2x conservative risk
-        assert size_full == pytest.approx(size_conservative * 2.0, rel=0.01)
+        # Full risk should be ~1.25x conservative risk (1.0/0.8)
+        assert size_full == pytest.approx(size_conservative * (1.0 / 0.8), rel=0.01)
 
     def test_volatile_regime_reduces_position(self, config):
         """Volatile regime should further reduce position size by 50%."""

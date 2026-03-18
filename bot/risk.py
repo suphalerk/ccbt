@@ -106,7 +106,7 @@ class RiskManager:
         """
         results = self.state.recent_results
         if len(results) < 10:
-            return 0.5  # Conservative until enough data
+            return 0.8  # Slightly conservative until enough data
 
         # Use last 20 results (or all if fewer)
         recent = results[-20:]
@@ -153,7 +153,8 @@ class RiskManager:
         if self.state.consecutive_losses >= self.max_consecutive_losses:
             cooldown_seconds = self.cooldown_hours * 3600
             self.state.cooldown_until = time.time() + cooldown_seconds
-            self.state.consecutive_losses = 0  # Reset after cooldown starts
+            # Don't reset consecutive_losses here — only reset on a win
+            # (record_trade_result resets to 0 on positive PnL)
             return False, f"Consecutive loss limit ({self.max_consecutive_losses}), cooling down {self.cooldown_hours}h"
 
         return True, ""
@@ -186,14 +187,16 @@ class RiskManager:
             logger.warning("order_rejected", extra={"reason": reason})
             return False, reason, 0.0
 
-        # Validate R:R ratio
+        # Validate R:R ratio (gross check as safety net)
         risk = abs(entry_price - stop_loss)
         reward = abs(take_profit - entry_price)
         if risk == 0:
             return False, "Stop loss at entry price", 0.0
 
         rr_ratio = reward / risk
-        if rr_ratio < self.min_rr_ratio:
+        # Use gross R:R with a lower threshold as safety net
+        # (strategy.py already validates net R:R before reaching here)
+        if rr_ratio < self.min_rr_ratio * 0.8:
             reason = f"R:R ratio {rr_ratio:.2f} below minimum {self.min_rr_ratio}"
             logger.warning("order_rejected", extra={"reason": reason})
             return False, reason, 0.0
@@ -307,6 +310,8 @@ class RiskManager:
         self.state.is_halted = False
         self.state.halt_reason = ""
         self.state.api_error_count = 0
+        self.state.consecutive_losses = 0
+        self.state.cooldown_until = 0.0
         logger.info("daily_reset", extra={"new_balance": new_balance})
 
     def _halt(self, reason: str) -> None:

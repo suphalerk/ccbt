@@ -119,6 +119,9 @@ def add_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
 def detect_regime(df: pd.DataFrame, atr_period: int = 14, lookback: int = 20) -> str:
     """Detect market regime based on ATR ratio and price structure.
 
+    Uses only closed candles (excludes the forming candle at iloc[-1])
+    to be consistent with signal generation which uses iloc[-2].
+
     Args:
         df: DataFrame with high, low, close columns (and ideally pre-computed ATR).
         atr_period: Period for ATR calculation.
@@ -127,14 +130,17 @@ def detect_regime(df: pd.DataFrame, atr_period: int = 14, lookback: int = 20) ->
     Returns:
         "trending", "ranging", or "volatile".
     """
-    if len(df) < atr_period + lookback:
+    # Exclude the forming candle to avoid look-ahead bias
+    df_closed = df.iloc[:-1] if len(df) > 1 else df
+
+    if len(df_closed) < atr_period + lookback:
         return "ranging"  # Not enough data, be conservative
 
     # Compute ATR if not already present
-    if "atr" in df.columns:
-        atr = df["atr"]
+    if "atr" in df_closed.columns:
+        atr = df_closed["atr"]
     else:
-        atr = compute_atr(df["high"], df["low"], df["close"], atr_period)
+        atr = compute_atr(df_closed["high"], df_closed["low"], df_closed["close"], atr_period)
 
     current_atr = atr.iloc[-1]
     if pd.isna(current_atr) or current_atr == 0:
@@ -149,7 +155,7 @@ def detect_regime(df: pd.DataFrame, atr_period: int = 14, lookback: int = 20) ->
 
     # Directional movement: check for consistent higher highs/higher lows
     # or lower highs/lower lows over the lookback window
-    recent = df.iloc[-lookback:]
+    recent = df_closed.iloc[-lookback:]
     highs = recent["high"].values
     lows = recent["low"].values
 
