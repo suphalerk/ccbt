@@ -19,7 +19,7 @@ from bot.exchange import BybitClient
 from bot.logger import CalibrationTracker, TradeJournal, setup_logging
 from bot.news_fetcher import NewsFetcher
 from bot.risk import RiskManager
-from bot.strategy import SignalType, compute_trailing_stop, generate_signal
+from bot.strategy import SignalType, compute_net_rr, compute_trailing_stop, generate_signal
 
 load_dotenv()
 
@@ -342,6 +342,36 @@ async def trading_loop(config: dict) -> None:
     # {trade_id: {side, entry_price, size, sl, tp, calibration_id, signal_type, atr, open_time}}
     tracked_trades: dict[int, dict] = {}
 
+    # Restore tracking for any positions already open on exchange (e.g., after restart)
+    try:
+        existing_positions = client.get_positions()
+        open_db_trades = journal.get_open_trades()
+        for db_trade in open_db_trades:
+            trade_id = db_trade["id"]
+            trade_side = "long" if db_trade["side"] == "buy" else "short"
+            # Only restore if position is still active on exchange
+            for pos in existing_positions:
+                pos_side = pos.get("side", "")
+                if pos_side == trade_side:
+                    tracked_trades[trade_id] = {
+                        "side": db_trade["side"],
+                        "entry_price": db_trade["entry_price"],
+                        "size": db_trade["size"] * db_trade["entry_price"],
+                        "sl": db_trade.get("stop_loss", 0),
+                        "tp": db_trade.get("take_profit", 0),
+                        "calibration_id": None,
+                        "signal_type": SignalType.LONG if db_trade["side"] == "buy" else SignalType.SHORT,
+                        "atr": 0,  # Unknown after restart; trailing stop won't move without ATR
+                        "open_time": time.time(),
+                    }
+                    logger.info(
+                        "restored_tracked_trade",
+                        extra={"trade_id": trade_id, "side": db_trade["side"]},
+                    )
+                    break
+    except Exception as e:
+        logger.warning("failed_to_restore_tracked_trades", extra={"error": str(e)})
+
     while not shutdown_event.is_set():
         try:
             # Daily reset check
@@ -379,6 +409,7 @@ async def trading_loop(config: dict) -> None:
                         )
                         if new_sl != info["sl"]:
                             # Update SL on exchange, not just locally
+                            old_sl = info["sl"]
                             success = client.modify_sl(
                                 symbol=config["symbol"],
                                 side=info["side"],
@@ -390,7 +421,7 @@ async def trading_loop(config: dict) -> None:
                                     "trailing_stop_updated",
                                     extra={
                                         "trade_id": trade_id,
-                                        "old_sl": round(info["sl"], 2),
+                                        "old_sl": round(old_sl, 2),
                                         "new_sl": round(new_sl, 2),
                                         "current_price": current_price,
                                     },
@@ -557,6 +588,24 @@ async def trading_loop(config: dict) -> None:
                             )
                         )
 
+                        # Re-validate net R:R after AI adjustments
+                        post_ai_rr = compute_net_rr(
+                            trade_signal.entry_price, adjusted_sl, adjusted_tp, config,
+                        )
+                        min_rr = config.get("min_rr_ratio", 1.8)
+                        if post_ai_rr < min_rr:
+                            logger.warning(
+                                "ai_adjustments_broke_rr",
+                                extra={
+                                    "post_ai_rr": round(post_ai_rr, 2),
+                                    "min_rr": min_rr,
+                                    "reverting": True,
+                                },
+                            )
+                            # Revert to original SL/TP, keep only size adjustment
+                            adjusted_sl = trade_signal.stop_loss
+                            adjusted_tp = trade_signal.take_profit
+
                         # Re-validate leverage after AI size adjustment
                         if not risk_mgr.check_leverage(adjusted_size, balance):
                             adjusted_size = balance * config["leverage"]
@@ -575,11 +624,14 @@ async def trading_loop(config: dict) -> None:
                         tp=round(adjusted_tp, 2),
                     )
 
+                    # Use actual fill price if available, else fall back to signal price
+                    actual_entry = order.price if order.price else trade_signal.entry_price
+
                     # Log trade with AI advisor data
                     trade_id = journal.log_trade_open(
                         symbol=config["symbol"],
                         side=side,
-                        entry_price=trade_signal.entry_price,
+                        entry_price=actual_entry,
                         size=contract_size,
                         stop_loss=adjusted_sl,
                         take_profit=adjusted_tp,
@@ -593,7 +645,7 @@ async def trading_loop(config: dict) -> None:
                     # Track for position monitoring
                     tracked_trades[trade_id] = {
                         "side": side,
-                        "entry_price": trade_signal.entry_price,
+                        "entry_price": actual_entry,
                         "size": adjusted_size,
                         "sl": adjusted_sl,
                         "tp": adjusted_tp,

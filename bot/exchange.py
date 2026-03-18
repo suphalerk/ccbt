@@ -326,8 +326,6 @@ class BybitClient:
         """
         symbol = symbol or self.symbol
         try:
-            # Bybit: use set_trading_stop to modify SL on position
-            position_side = "Buy" if side == "buy" else "Sell"
             self._retry(
                 self.exchange.set_trading_stop,
                 symbol,
