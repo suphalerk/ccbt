@@ -236,11 +236,23 @@ class BybitClient:
             params,
         )
 
+        # Use actual filled size, not requested size (handles partial fills)
+        filled_size = float(order.get("filled", order.get("amount", size)))
+        if filled_size < size * 0.95:
+            logger.warning(
+                "partial_fill_detected",
+                extra={
+                    "requested": size,
+                    "filled": filled_size,
+                    "filled_pct": round(filled_size / size * 100, 1) if size > 0 else 0,
+                },
+            )
+
         result = OrderResult(
             order_id=order["id"],
             symbol=order["symbol"],
             side=side,
-            size=size,
+            size=filled_size,
             price=order.get("average") or order.get("price"),
             sl=sl,
             tp=tp,
@@ -254,7 +266,8 @@ class BybitClient:
                 "order_id": result.order_id,
                 "symbol": result.symbol,
                 "side": side,
-                "size": size,
+                "size": filled_size,
+                "requested_size": size,
                 "price": result.price,
                 "sl": sl,
                 "tp": tp,

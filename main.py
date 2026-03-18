@@ -55,6 +55,26 @@ def load_config(path: str = "config.json") -> dict:
     if missing:
         raise ValueError(f"Missing required config keys: {missing}")
 
+    # Validate numeric ranges to prevent dangerous misconfigurations
+    if not 1 <= config["leverage"] <= 25:
+        raise ValueError(f"leverage must be 1-25, got {config['leverage']}")
+    if not 0.001 <= config["risk_per_trade"] <= 0.1:
+        raise ValueError(f"risk_per_trade must be 0.1%-10%, got {config['risk_per_trade']}")
+    if not 0.005 <= config["max_daily_loss"] <= 0.5:
+        raise ValueError(f"max_daily_loss must be 0.5%-50%, got {config['max_daily_loss']}")
+    if config["atr_sl_mult"] <= 0 or config["atr_tp_mult"] <= 0:
+        raise ValueError("atr_sl_mult and atr_tp_mult must be > 0")
+    if config.get("atr_trail_mult", config["atr_sl_mult"]) <= 0:
+        raise ValueError("atr_trail_mult must be > 0")
+
+    # AI layer validation
+    ai_cfg = config.get("ai_layer", {})
+    if ai_cfg.get("enabled"):
+        if ai_cfg.get("max_tokens", 1024) < 256:
+            raise ValueError("ai max_tokens must be >= 256")
+        if not 0.0 <= ai_cfg.get("confidence_threshold", 0.65) <= 1.0:
+            raise ValueError("confidence_threshold must be 0-1")
+
     return config
 
 
@@ -115,6 +135,20 @@ def apply_ai_adjustments(
         adjusted_tp = entry_price + adjusted_tp_distance
     else:
         adjusted_tp = entry_price - adjusted_tp_distance
+
+    # Validate adjusted levels are in the correct direction
+    if signal_type == SignalType.LONG:
+        if adjusted_sl >= entry_price or adjusted_tp <= entry_price:
+            logger.warning("ai_adjustments_invalid_direction_reverting")
+            adjusted_sl = stop_loss
+            adjusted_tp = take_profit
+            adjusted_size = position_size
+    elif signal_type == SignalType.SHORT:
+        if adjusted_sl <= entry_price or adjusted_tp >= entry_price:
+            logger.warning("ai_adjustments_invalid_direction_reverting")
+            adjusted_sl = stop_loss
+            adjusted_tp = take_profit
+            adjusted_size = position_size
 
     return adjusted_size, adjusted_sl, adjusted_tp
 
@@ -292,6 +326,29 @@ async def trading_loop(config: dict) -> None:
     balance = client.get_balance()
     risk_mgr = RiskManager(config, balance)
     journal = TradeJournal()
+
+    # Rebuild consecutive losses and daily PnL from database to survive restarts
+    try:
+        recent_pnls = journal.get_recent_results(limit=20)
+        consecutive = 0
+        for pnl in recent_pnls:  # Most recent first
+            if pnl < 0:
+                consecutive += 1
+            else:
+                break
+        if consecutive > 0:
+            risk_mgr.state.consecutive_losses = consecutive
+            logger.info(
+                "consecutive_losses_restored",
+                extra={"count": consecutive},
+            )
+        # Restore today's PnL from database
+        today_pnl = journal.get_daily_pnl()
+        if today_pnl != 0:
+            risk_mgr.state.daily_pnl = today_pnl
+            logger.info("daily_pnl_restored", extra={"pnl": today_pnl})
+    except Exception as e:
+        logger.warning("state_restoration_failed", extra={"error": str(e)})
 
     # Initialize AI layer
     ai_config = config.get("ai_layer", {})
@@ -636,36 +693,57 @@ async def trading_loop(config: dict) -> None:
                         tp=round(adjusted_tp, 2),
                     )
 
-                    # Verify SL/TP was actually set on the position
-                    # If not, set them separately via trading stop API
-                    try:
-                        verify_positions = client.get_positions()
-                        pos_has_sl = False
-                        for vp in verify_positions:
-                            if vp.get("side") == ("long" if side == "buy" else "short"):
-                                sl_val = float(vp.get("stopLossPrice") or vp.get("info", {}).get("stopLoss", 0) or 0)
-                                if sl_val > 0:
-                                    pos_has_sl = True
+                    # Verify SL was actually set on the position with retry
+                    sl_verified = False
+                    for sl_attempt in range(3):
+                        try:
+                            await asyncio.sleep(0.3 * (sl_attempt + 1))
+                            verify_positions = client.get_positions()
+                            for vp in verify_positions:
+                                if vp.get("side") == ("long" if side == "buy" else "short"):
+                                    sl_val = float(vp.get("stopLossPrice") or vp.get("info", {}).get("stopLoss", 0) or 0)
+                                    if sl_val > 0:
+                                        sl_verified = True
+                                    break
+                            if sl_verified:
                                 break
-                        if not pos_has_sl:
-                            logger.warning("sl_not_set_on_order_retrying")
+                            logger.warning(
+                                "sl_not_set_retrying",
+                                extra={"attempt": sl_attempt + 1},
+                            )
                             client.modify_sl(
                                 symbol=config["symbol"],
                                 side=side,
                                 new_sl=round(adjusted_sl, 2),
                             )
-                    except Exception as e:
-                        logger.error("sl_verification_failed", extra={"error": str(e)})
+                        except Exception as e:
+                            logger.error(
+                                "sl_verification_failed",
+                                extra={"attempt": sl_attempt + 1, "error": str(e)},
+                            )
 
-                    # Use actual fill price if available, else fall back to signal price
+                    if not sl_verified:
+                        logger.critical(
+                            "sl_verification_failed_closing_position",
+                            extra={"order_id": order.order_id},
+                        )
+                        try:
+                            client.close_all_positions()
+                        except Exception:
+                            pass
+                        await asyncio.sleep(60)
+                        continue
+
+                    # Use actual fill price and size, not requested
                     actual_entry = order.price if order.price else trade_signal.entry_price
+                    actual_size = order.size  # Filled size (handles partial fills)
 
                     # Log trade with AI advisor data
                     trade_id = journal.log_trade_open(
                         symbol=config["symbol"],
                         side=side,
                         entry_price=actual_entry,
-                        size=contract_size,
+                        size=actual_size,
                         stop_loss=adjusted_sl,
                         take_profit=adjusted_tp,
                         ai_decision=ai_result.decision if ai_result else None,
@@ -675,11 +753,12 @@ async def trading_loop(config: dict) -> None:
                         ai_override=False,
                     )
 
-                    # Track for position monitoring
+                    # Track for position monitoring (use actual filled values)
+                    actual_size_usdt = actual_size * actual_entry
                     tracked_trades[trade_id] = {
                         "side": side,
                         "entry_price": actual_entry,
-                        "size": adjusted_size,
+                        "size": actual_size_usdt,
                         "sl": adjusted_sl,
                         "tp": adjusted_tp,
                         "calibration_id": calibration_id,
@@ -695,8 +774,8 @@ async def trading_loop(config: dict) -> None:
                         extra={
                             "order_id": order.order_id,
                             "side": side,
-                            "size": contract_size,
-                            "entry": trade_signal.entry_price,
+                            "size": actual_size,
+                            "entry": actual_entry,
                             "original_sl": trade_signal.stop_loss,
                             "adjusted_sl": adjusted_sl,
                             "original_tp": trade_signal.take_profit,
@@ -734,6 +813,42 @@ async def trading_loop(config: dict) -> None:
                 break
 
             await asyncio.sleep(30)
+
+    # Graceful shutdown: close all positions and cancel orders
+    logger.warning("bot_shutting_down", extra={"tracked_trades": len(tracked_trades)})
+    try:
+        client.cancel_all_orders()
+        remaining_positions = client.get_positions()
+        if remaining_positions:
+            logger.warning(
+                "closing_positions_on_shutdown",
+                extra={"count": len(remaining_positions)},
+            )
+            client.close_all_positions()
+            # Record closures for tracked trades
+            for trade_id, info in tracked_trades.items():
+                try:
+                    current_price = client.get_ticker_price(config["symbol"])
+                    trade_side = "long" if info["side"] == "buy" else "short"
+                    if trade_side == "long":
+                        pnl = (current_price - info["entry_price"]) / info["entry_price"] * info["size"]
+                    else:
+                        pnl = (info["entry_price"] - current_price) / info["entry_price"] * info["size"]
+                    pnl_pct = pnl / info["size"] * 100 if info["size"] > 0 else 0
+                    duration = int(time.time() - info["open_time"])
+                    journal.log_trade_close(
+                        trade_id=trade_id,
+                        exit_price=current_price,
+                        pnl=pnl,
+                        pnl_pct=pnl_pct,
+                        close_reason="graceful_shutdown",
+                        duration_seconds=duration,
+                    )
+                    risk_mgr.record_trade_result(pnl)
+                except Exception as close_err:
+                    logger.error("shutdown_close_log_failed", extra={"error": str(close_err)})
+    except Exception as e:
+        logger.error("graceful_shutdown_failed", extra={"error": str(e)})
 
     logger.info("bot_stopped")
 

@@ -536,8 +536,8 @@ class AIAnalyst:
             return self._fallback_result("API timeout")
 
         except json.JSONDecodeError as e:
-            logger.error("ai_parse_error", extra={"error": str(e)})
-            return self._fallback_result(f"JSON parse error: {e}")
+            logger.error("ai_parse_error", extra={"error": str(e), "raw_text": response[:300] if response else ""})
+            return self._fallback_result(f"JSON parse error: {e}", reduce_size=True)
 
         except anthropic.APIError as e:
             logger.error("ai_api_error", extra={"error": str(e)})
@@ -565,17 +565,18 @@ class AIAnalyst:
         )
         return message.content[0].text
 
-    def _fallback_result(self, reason: str) -> AnalystResult:
-        """Create a neutral fallback result when the API call fails.
+    def _fallback_result(self, reason: str, reduce_size: bool = False) -> AnalystResult:
+        """Create a fallback result when the API call fails.
 
-        On failure, the advisor returns neutral defaults so the trade
-        proceeds with standard parameters (no modification).
+        On parse failure, reduces position size as a safety measure.
+        On timeout, uses configured fallback behavior.
 
         Args:
             reason: Reason for fallback.
+            reduce_size: If True, reduce position size (for parse errors).
 
         Returns:
-            Neutral AnalystResult (execute with standard parameters).
+            AnalystResult with conservative parameters.
         """
         if self.fallback_on_timeout == "skip":
             decision = "skip"
@@ -588,7 +589,7 @@ class AIAnalyst:
             reasoning=f"Fallback: {reason}",
             risk_flags=["api_fallback"],
             override=False,
-            position_size_modifier=1.0,
+            position_size_modifier=0.7 if reduce_size else 1.0,
             sl_adjustment=1.0,
             tp_adjustment=1.0,
             calibrated_confidence=0.0,

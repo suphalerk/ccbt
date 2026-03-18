@@ -106,7 +106,8 @@ def add_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
 
     # EMA crossover detection
     # Suppress crossovers during EMA warmup period to avoid spurious signals
-    warmup = config["ema_slow"]
+    # Add buffer beyond ema_slow for better EMA convergence
+    warmup = max(config["ema_fast"], config["ema_slow"]) + 10
     df["ema_cross_up"] = (df["ema_fast"] > df["ema_slow"]) & (
         df["ema_fast"].shift(1) <= df["ema_slow"].shift(1)
     )

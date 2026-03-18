@@ -21,7 +21,7 @@
   "atr_trail_mult": 1.0,
   "atr_tp_mult": 4.0,
   "atr_min": 0.001,
-  "volume_mult": 0.8,
+  "volume_mult": 1.2,
   "min_rr_ratio": 1.8,
   "commission_rate": 0.00055,
   "slippage_rate": 0.0002,
