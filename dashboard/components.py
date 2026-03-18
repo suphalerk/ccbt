@@ -27,6 +27,11 @@ COLORS = {
     "gauge_safe": "#00C853",
     "gauge_warn": "#FFD600",
     "gauge_danger": "#FF1744",
+    "log_info": "#78909C",
+    "log_warning": "#FFD600",
+    "log_error": "#FF1744",
+    "log_critical": "#FF1744",
+    "log_bg": "#151A22",
 }
 
 DARK_LAYOUT = dict(

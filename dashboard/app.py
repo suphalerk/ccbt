@@ -4,6 +4,7 @@ Run with:
     streamlit run dashboard/app.py --server.port 8501
 """
 
+import html as _html
 import json
 import time
 from datetime import datetime
@@ -35,10 +36,13 @@ from dashboard.queries import (
     get_daily_pnl,
     get_equity_curve,
     get_open_trades,
+    get_recent_logs,
     get_recent_trades,
     get_today_pnl,
     get_trade_stats,
 )
+
+LOG_PATH = str(Path(__file__).resolve().parent.parent / "trading_bot.log")
 
 # ---------------------------------------------------------------------------
 # Page configuration
@@ -80,6 +84,29 @@ st.markdown(
     .cb-green { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #00C853; margin-right: 6px; }
     .cb-yellow { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #FFD600; margin-right: 6px; }
     .cb-red { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #FF1744; margin-right: 6px; }
+    /* Log viewer */
+    .log-container {
+        background: #151A22;
+        border: 1px solid #2D3748;
+        border-radius: 8px;
+        padding: 12px;
+        max-height: 500px;
+        overflow-y: auto;
+        font-family: 'Courier New', monospace;
+        font-size: 0.8rem;
+        line-height: 1.5;
+    }
+    .log-entry {
+        padding: 2px 6px;
+        border-bottom: 1px solid #1E2530;
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+    .log-level-INFO { color: #78909C; }
+    .log-level-WARNING { color: #FFD600; }
+    .log-level-ERROR { color: #FF1744; font-weight: bold; }
+    .log-level-CRITICAL { color: #FF1744; font-weight: bold; background: rgba(255,23,68,0.1); }
+    .log-level-DEBUG { color: #546E7A; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -117,6 +144,11 @@ with st.sidebar:
     if st.button("Refresh Now"):
         st.cache_data.clear()
         st.rerun()
+    st.markdown("---")
+    st.markdown("### Log Viewer")
+    log_lines = st.slider("Log lines", 50, 500, 100, step=50)
+    log_level = st.selectbox("Min level", ["ALL", "INFO", "WARNING", "ERROR", "CRITICAL"])
+    log_search = st.text_input("Search logs", "")
     st.markdown("---")
     st.markdown(f"**DB Path:** `{DB_PATH}`")
     st.markdown(f"**Config:** `{CONFIG_PATH}`")
@@ -173,6 +205,11 @@ def load_calibration_data() -> pd.DataFrame:
 @st.cache_data(ttl=30)
 def load_calibration_stats() -> dict:
     return get_calibration_stats(db_path=DB_PATH)
+
+
+@st.cache_data(ttl=30)
+def load_recent_logs(max_lines: int = 100, min_level: str = "ALL", search: str = "") -> list:
+    return get_recent_logs(max_lines=max_lines, min_level=min_level, search=search, log_path=LOG_PATH)
 
 
 # ---------------------------------------------------------------------------
@@ -538,6 +575,85 @@ if ai_enabled:
                 ]
                 available_cal_cols = [c for c in cal_display_cols if c in cal_data.columns]
                 st.dataframe(cal_data[available_cal_cols], use_container_width=True, height=250)
+
+st.markdown("---")
+
+# ---------------------------------------------------------------------------
+# SECTION 6: Live Log Viewer
+# ---------------------------------------------------------------------------
+st.markdown("### Live Log Viewer")
+
+log_entries = load_recent_logs(max_lines=log_lines, min_level=log_level, search=log_search)
+
+if not log_entries:
+    if not Path(LOG_PATH).exists():
+        st.info("No log file found. Logs will appear here once the bot starts running.")
+    else:
+        st.info("No log entries match the current filters.")
+else:
+    # Summary metrics
+    level_counts = {}
+    for entry in log_entries:
+        lvl = entry["level"]
+        level_counts[lvl] = level_counts.get(lvl, 0) + 1
+
+    lm_col1, lm_col2, lm_col3, lm_col4, lm_col5 = st.columns(5)
+    with lm_col1:
+        st.metric("Total Entries", len(log_entries))
+    with lm_col2:
+        st.metric("INFO", level_counts.get("INFO", 0))
+    with lm_col3:
+        st.metric("WARNING", level_counts.get("WARNING", 0))
+    with lm_col4:
+        st.metric("ERROR", level_counts.get("ERROR", 0))
+    with lm_col5:
+        latest_ts = log_entries[-1]["timestamp"]
+        # Show just time portion if available
+        if "T" in latest_ts:
+            latest_display = latest_ts.split("T")[1][:8]
+        else:
+            latest_display = latest_ts[:19]
+        st.metric("Latest", latest_display)
+
+    # Render log entries as styled HTML
+    html_lines = []
+    for entry in log_entries:
+        ts = entry["timestamp"]
+        # Extract HH:MM:SS from ISO timestamp
+        if "T" in ts:
+            time_str = ts.split("T")[1][:8]
+        else:
+            time_str = ts[:8]
+
+        level = entry["level"]
+        message = entry["message"]
+
+        # Flatten data dict to key=value pairs
+        data = entry.get("data", {})
+        if data and isinstance(data, dict):
+            kv_pairs = " ".join(f"{k}={v}" for k, v in data.items())
+        else:
+            kv_pairs = ""
+
+        message = _html.escape(str(message))
+        kv_pairs = _html.escape(str(kv_pairs))
+
+        line = (
+            f'<div class="log-entry log-level-{level}">'
+            f'{time_str} [{level}] {message}'
+        )
+        if kv_pairs:
+            line += f' <span style="color:#546E7A">{kv_pairs}</span>'
+        line += '</div>'
+        html_lines.append(line)
+
+    log_html = (
+        '<div class="log-container" id="log-container">'
+        + "\n".join(html_lines)
+        + '</div>'
+        + '<script>var c=document.getElementById("log-container");if(c)c.scrollTop=c.scrollHeight;</script>'
+    )
+    st.markdown(log_html, unsafe_allow_html=True)
 
 st.markdown("---")
 

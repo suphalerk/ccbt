@@ -432,6 +432,85 @@ def get_calibration_stats(db_path: Optional[str] = None) -> dict:
     return stats
 
 
+def get_recent_logs(
+    max_lines: int = 100,
+    min_level: str = "ALL",
+    search: str = "",
+    log_path: Optional[str] = None,
+) -> list[dict]:
+    """Read recent log entries from the trading bot log file.
+
+    Tail-reads from the end of the file for efficiency.
+
+    Args:
+        max_lines: Maximum number of log entries to return.
+        min_level: Minimum log level filter (ALL/DEBUG/INFO/WARNING/ERROR/CRITICAL).
+        search: Text search filter applied to message and data.
+        log_path: Path to the log file.
+
+    Returns:
+        List of dicts with keys: timestamp, level, message, data.
+    """
+    import json as _json
+
+    level_order = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3, "CRITICAL": 4}
+    min_rank = level_order.get(min_level.upper(), -1)  # ALL → -1, passes everything
+
+    path = Path(log_path) if log_path else Path(__file__).resolve().parent.parent / "trading_bot.log"
+    if not path.exists():
+        return []
+
+    # Read last ~64KB from file for efficiency
+    try:
+        file_size = path.stat().st_size
+        if file_size == 0:
+            return []
+
+        read_size = min(file_size, 65536)
+        with open(path, "rb") as f:
+            if file_size > read_size:
+                f.seek(file_size - read_size)
+                # Skip partial first line
+                f.readline()
+            raw_lines = f.read().decode("utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+
+    entries = []
+    search_lower = search.lower() if search else ""
+
+    for line in raw_lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = _json.loads(line)
+        except (ValueError, _json.JSONDecodeError):
+            continue
+
+        level = obj.get("level", "INFO")
+        if min_rank >= 0 and level_order.get(level, 0) < min_rank:
+            continue
+
+        message = obj.get("message", "")
+        data = obj.get("data", {})
+
+        if search_lower:
+            haystack = f"{message} {_json.dumps(data)}".lower()
+            if search_lower not in haystack:
+                continue
+
+        entries.append({
+            "timestamp": obj.get("timestamp", ""),
+            "level": level,
+            "message": message,
+            "data": data,
+        })
+
+    # Return last max_lines entries (most recent at end)
+    return entries[-max_lines:]
+
+
 def get_consecutive_losses(db_path: Optional[str] = None) -> int:
     """Count consecutive losses from the most recent trades.
 
