@@ -96,29 +96,28 @@ class RiskManager:
         return position_size
 
     def get_dynamic_risk_factor(self) -> float:
-        """Adjust risk based on recent performance.
+        """Adjust risk based on recent performance using a continuous linear scale.
 
-        Examines the last 20 trade results and returns a multiplier
-        for position sizing based on win rate.
+        Examines the last 20 trade results and returns a smooth multiplier
+        for position sizing based on win rate. Replaces the previous stepped
+        function (0.7/0.85/1.0) with a continuous linear interpolation:
+        0.5 at 30% win rate, 1.0 at 50% win rate, clamped to [0.5, 1.0].
 
         Returns:
-            Multiplier between 0.2 and 1.0 for position sizing.
+            Multiplier between 0.5 and 1.0 for position sizing.
         """
         results = self.state.recent_results
         if len(results) < 10:
-            return 0.9  # Near full size until enough data
+            return 0.9  # Conservative until enough data
 
         # Use last 20 results (or all if fewer)
         recent = results[-20:]
         wins = sum(1 for r in recent if r > 0)
         win_rate = wins / len(recent)
 
-        if win_rate > 0.48:
-            return 1.0
-        elif win_rate >= 0.40:
-            return 0.85
-        else:
-            return 0.7
+        # Linear scale: 0.5 at 30% WR, 1.0 at 50% WR, capped at [0.5, 1.0]
+        factor = 0.5 + (win_rate - 0.30) * (0.5 / 0.20)
+        return max(0.5, min(1.0, factor))
 
     def can_trade(self, current_balance: float, num_open_positions: int) -> tuple[bool, str]:
         """Check if trading is allowed based on all risk rules.

@@ -55,18 +55,23 @@ def check_entry_conditions(
     rsi_max = config["rsi_max"]
     atr_min = config.get("atr_min", 0.0)
     volume_mult = config.get("volume_mult", 1.2)
+    volume_max_mult = config.get("volume_max_mult")  # None means no upper bound
 
     # RSI filter — directional for trend-following
     if pd.isna(row.get("rsi")):
         return False
 
     if signal_type == SignalType.LONG:
-        # Longs: RSI 48-75 — confirmed uptrend momentum, not overbought
-        if not (rsi_min + 3 <= row["rsi"] <= rsi_max + 10):
+        # Longs: use explicit config keys with fallback to derived values
+        long_rsi_min = config.get("rsi_long_min", rsi_min + 3)
+        long_rsi_max = config.get("rsi_long_max", rsi_max + 10)
+        if not (long_rsi_min <= row["rsi"] <= long_rsi_max):
             return False
     elif signal_type == SignalType.SHORT:
-        # Shorts: RSI 25-52 — confirmed downtrend weakness
-        if not (rsi_min - 20 <= row["rsi"] <= rsi_max - 13):
+        # Shorts: use explicit config keys with fallback to derived values
+        short_rsi_min = config.get("rsi_short_min", rsi_min - 20)
+        short_rsi_max = config.get("rsi_short_max", rsi_max - 13)
+        if not (short_rsi_min <= row["rsi"] <= short_rsi_max):
             return False
     else:
         if not (rsi_min <= row["rsi"] <= rsi_max):
@@ -76,9 +81,11 @@ def check_entry_conditions(
     if pd.isna(row.get("atr")) or row["atr"] < atr_min:
         return False
 
-    # Volume filter
+    # Volume filter — lower bound (minimum activity) and upper bound (exhaustion)
     if pd.notna(row.get("volume_ma")) and row.get("volume_ma", 0) > 0:
         if row["volume"] < row["volume_ma"] * volume_mult:
+            return False
+        if volume_max_mult is not None and row["volume"] > row["volume_ma"] * volume_max_mult:
             return False
 
     if signal_type == SignalType.LONG:
@@ -149,7 +156,7 @@ def compute_net_rr(
         Net R:R ratio after fees.
     """
     commission = config.get("commission_rate", 0.00055)
-    slippage = config.get("slippage_rate", 0.0005)
+    slippage = config.get("slippage_rate", 0.0002)
     round_trip_cost = (commission + slippage) * 2  # Entry + exit
 
     risk = abs(entry_price - stop_loss)

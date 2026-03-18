@@ -31,12 +31,16 @@ class BacktestTrade:
     entry_price: float = 0.0
     exit_price: float = 0.0
     size: float = 0.0
+    original_size: float = 0.0
     stop_loss: float = 0.0
     take_profit: float = 0.0
+    tp1_price: float = 0.0
+    tp1_hit: bool = False
     pnl: float = 0.0
     pnl_pct: float = 0.0
     close_reason: str = ""
     risk_amount: float = 0.0
+    partial_pnl: float = 0.0  # PnL from TP1 partial close
 
 
 @dataclass
@@ -67,7 +71,7 @@ class BacktestEngine:
         """
         self.config = config
         self.commission_rate = config.get("commission_rate", 0.00055)
-        self.slippage_rate = config.get("slippage_rate", 0.0015)
+        self.slippage_rate = config.get("slippage_rate", 0.0002)
         self.state = BacktestState(
             balance=initial_balance, initial_balance=initial_balance
         )
@@ -221,13 +225,23 @@ class BacktestEngine:
             commission = position_size * self.commission_rate
             self.state.balance -= commission
 
+            # Compute TP1 price for partial take-profit
+            partial_tp_atr_mult = self.config.get("partial_tp_atr_mult", 2.0)
+            if signal_type == SignalType.LONG:
+                tp1_price = entry_price + partial_tp_atr_mult * atr
+            else:
+                tp1_price = entry_price - partial_tp_atr_mult * atr
+
             self.state.position = BacktestTrade(
                 entry_time=current_time,
                 side="long" if signal_type == SignalType.LONG else "short",
                 entry_price=entry_price,
                 size=position_size,
+                original_size=position_size,
                 stop_loss=sl,
                 take_profit=tp,
+                tp1_price=tp1_price,
+                tp1_hit=False,
                 risk_amount=risk_amount,
             )
             break  # Only one entry per candle
@@ -251,26 +265,116 @@ class BacktestEngine:
         low = row["low"]
 
         # Check stop loss hit (using high/low for intracandle)
+        # Item 10: When both SL and TP hit on same candle, use candle direction as tiebreaker
+        open_price = row["open"]
         if pos.side == "long":
-            if low <= pos.stop_loss:
+            sl_hit = low <= pos.stop_loss
+            tp_hit = high >= pos.take_profit
+            if sl_hit and tp_hit:
+                if close > open_price:  # Bullish candle → TP filled first
+                    self._close_position(pos.take_profit, current_time, "take_profit", risk_mgr)
+                else:
+                    self._close_position(pos.stop_loss, current_time, "stop_loss", risk_mgr)
+                return
+            if sl_hit:
                 self._close_position(pos.stop_loss, current_time, "stop_loss", risk_mgr)
                 return
+        else:
+            sl_hit = high >= pos.stop_loss
+            tp_hit = low <= pos.take_profit
+            if sl_hit and tp_hit:
+                if close < open_price:  # Bearish candle → TP filled first
+                    self._close_position(pos.take_profit, current_time, "take_profit", risk_mgr)
+                else:
+                    self._close_position(pos.stop_loss, current_time, "stop_loss", risk_mgr)
+                return
+            if sl_hit:
+                self._close_position(pos.stop_loss, current_time, "stop_loss", risk_mgr)
+                return
+
+        # --- Item 5: Partial TP1 check (before full TP) ---
+        partial_tp_enabled = self.config.get("partial_tp_enabled", False)
+        if partial_tp_enabled and not pos.tp1_hit and pos.tp1_price > 0:
+            tp1_triggered = (
+                (pos.side == "long" and high >= pos.tp1_price)
+                or (pos.side == "short" and low <= pos.tp1_price)
+            )
+            if tp1_triggered:
+                partial_pct = self.config.get("partial_tp_pct", 0.5)
+                partial_size = pos.original_size * partial_pct
+                partial_exit_price = pos.tp1_price
+
+                # Apply slippage to partial exit
+                slippage_mult = self._get_slippage_multiplier(current_time)
+                effective_slippage = self.slippage_rate * slippage_mult
+                if pos.side == "long":
+                    partial_exit_price *= 1 - effective_slippage
+                    partial_pnl_pct = (partial_exit_price - pos.entry_price) / pos.entry_price
+                else:
+                    partial_exit_price *= 1 + effective_slippage
+                    partial_pnl_pct = (pos.entry_price - partial_exit_price) / pos.entry_price
+
+                partial_pnl = partial_size * partial_pnl_pct
+                # Commission on partial exit
+                partial_pnl -= partial_size * self.commission_rate
+
+                self.state.balance += partial_pnl
+                self.state.daily_pnl += partial_pnl
+                pos.partial_pnl += partial_pnl
+                pos.tp1_hit = True
+                # Reduce position size by partial amount
+                pos.size -= partial_size
+                pos.size = max(pos.size, 0.0)
+
+                # Move SL to breakeven after TP1
+                if self.config.get("move_sl_to_be_after_tp1", True):
+                    if pos.side == "long":
+                        pos.stop_loss = max(pos.stop_loss, pos.entry_price)
+                    else:
+                        pos.stop_loss = min(pos.stop_loss, pos.entry_price)
+
+                logger.debug(
+                    "backtest_partial_tp1",
+                    extra={
+                        "side": pos.side,
+                        "tp1_price": pos.tp1_price,
+                        "partial_pnl": round(partial_pnl, 4),
+                        "remaining_size": pos.size,
+                    },
+                )
+
+        # Full TP check (on remaining position)
+        if pos.side == "long":
             if high >= pos.take_profit:
                 self._close_position(pos.take_profit, current_time, "take_profit", risk_mgr)
                 return
         else:
-            if high >= pos.stop_loss:
-                self._close_position(pos.stop_loss, current_time, "stop_loss", risk_mgr)
-                return
             if low <= pos.take_profit:
                 self._close_position(pos.take_profit, current_time, "take_profit", risk_mgr)
                 return
 
-        # Trailing stop update
+        # Trailing stop update with regime-adaptive multiplier
         if pd.notna(row.get("atr")):
             signal_type = SignalType.LONG if pos.side == "long" else SignalType.SHORT
+            # Determine regime from row if available, else default to trending
+            regime = row.get("regime", "trending") if hasattr(row, "get") else "trending"
+            if not isinstance(regime, str):
+                regime = "trending"
+            regime_trail_config = self.config.copy()
+            if regime == "ranging":
+                regime_trail_config["atr_trail_mult"] = self.config.get(
+                    "atr_trail_mult_ranging", self.config.get("atr_trail_mult", 1.8)
+                )
+            elif regime == "volatile":
+                regime_trail_config["atr_trail_mult"] = self.config.get(
+                    "atr_trail_mult_volatile", self.config.get("atr_trail_mult", 1.8)
+                )
+            else:
+                regime_trail_config["atr_trail_mult"] = self.config.get(
+                    "atr_trail_mult_trending", self.config.get("atr_trail_mult", 1.8)
+                )
             new_sl = compute_trailing_stop(
-                close, pos.stop_loss, row["atr"], signal_type, self.config
+                close, pos.stop_loss, row["atr"], signal_type, regime_trail_config
             )
             pos.stop_loss = new_sl
 
@@ -316,11 +420,13 @@ class BacktestEngine:
         # Update state
         self.state.balance += pnl
         self.state.daily_pnl += pnl
-        risk_mgr.record_trade_result(pnl)
+        # Total PnL includes partial close already booked (partial_pnl already added to balance)
+        total_pnl = pnl + pos.partial_pnl
+        risk_mgr.record_trade_result(total_pnl)
 
         pos.exit_time = exit_time
         pos.exit_price = exit_price
-        pos.pnl = pnl
+        pos.pnl = total_pnl  # Store combined PnL for metrics
         pos.pnl_pct = pnl_pct
         pos.close_reason = reason
         self.state.trades.append(pos)

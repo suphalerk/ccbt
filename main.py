@@ -162,6 +162,7 @@ def check_closed_positions(
     calibration_tracker: Optional[CalibrationTracker],
     symbol: str,
     client=None,
+    last_trade_close: Optional[dict] = None,
 ) -> dict:
     """Detect positions closed by exchange (SL/TP fill) and update state.
 
@@ -289,6 +290,13 @@ def check_closed_positions(
 
             risk_mgr.record_trade_result(estimated_pnl)
 
+            # Record close time for cooldown tracking
+            if last_trade_close is not None:
+                last_trade_close[trade_side] = {
+                    "time": time.time(),
+                    "reason": close_reason,
+                }
+
             if calibration_tracker and info.get("calibration_id"):
                 outcome = "win" if estimated_pnl > 0 else "loss"
                 calibration_tracker.record_outcome(
@@ -414,8 +422,12 @@ async def trading_loop(config: dict) -> None:
     last_daily_reset = datetime.now(tz=timezone.utc).date()
 
     # Track open trades for position monitoring
-    # {trade_id: {side, entry_price, size, sl, tp, calibration_id, signal_type, atr, open_time}}
+    # {trade_id: {side, entry_price, size, original_size, sl, tp, tp1_price, tp1_hit,
+    #             calibration_id, signal_type, atr, regime, open_time}}
     tracked_trades: dict[int, dict] = {}
+
+    # Track last trade close per side for cooldown (5B.1 Item 3)
+    last_trade_close: dict[str, dict] = {}
 
     # Restore tracking for any positions already open on exchange (e.g., after restart)
     # Only restore ONE trade per side to avoid double-counting PnL
@@ -446,15 +458,20 @@ async def trading_loop(config: dict) -> None:
                     except Exception as atr_err:
                         logger.warning("restored_trade_atr_fetch_failed", extra={"trade_id": trade_id, "error": str(atr_err)})
 
+                    size_usdt_restored = db_trade["size"] * db_trade["entry_price"]
                     tracked_trades[trade_id] = {
                         "side": db_trade["side"],
                         "entry_price": db_trade["entry_price"],
-                        "size": db_trade["size"] * db_trade["entry_price"],
+                        "size": size_usdt_restored,
+                        "original_size": size_usdt_restored,
                         "sl": db_trade.get("stop_loss", 0),
                         "tp": db_trade.get("take_profit", 0),
+                        "tp1_price": 0.0,
+                        "tp1_hit": True,  # Mark as hit to avoid partial close on restart
                         "calibration_id": None,
                         "signal_type": SignalType.LONG if db_trade["side"] == "buy" else SignalType.SHORT,
                         "atr": restored_atr,
+                        "regime": "trending",
                         "open_time": time.time(),
                     }
                     restored_sides.add(trade_side)
@@ -489,23 +506,119 @@ async def trading_loop(config: dict) -> None:
                 calibration_tracker=calibration_tracker,
                 symbol=config["symbol"],
                 client=client,
+                last_trade_close=last_trade_close,
             )
 
             # Update trailing stops for open positions
             if tracked_trades:
                 try:
                     current_price = client.get_ticker_price(config["symbol"])
-                    for trade_id, info in tracked_trades.items():
+
+                    # Fetch current ATR for dynamic trailing (Item 6)
+                    current_atr_df = None
+                    try:
+                        current_atr_df = client.get_ohlcv(
+                            config["symbol"], config["timeframe_signal"], limit=30
+                        )
+                    except Exception as e:
+                        logger.warning("trail_atr_fetch_failed", extra={"error": str(e)})
+
+                    for trade_id, info in list(tracked_trades.items()):
                         # Skip trailing stop for restored trades without ATR data
                         if info["atr"] <= 0:
                             continue
                         sig_type = info["signal_type"]
+
+                        # Item 6: Use current ATR instead of entry-time ATR
+                        effective_atr = info["atr"]
+                        if current_atr_df is not None and len(current_atr_df) >= 2:
+                            try:
+                                atr_df_with_ind = add_indicators(current_atr_df, config)
+                                live_atr = atr_df_with_ind.iloc[-2].get("atr", None)
+                                if live_atr and live_atr > 0:
+                                    effective_atr = float(live_atr)
+                            except Exception as e:
+                                logger.warning("trail_atr_compute_failed", extra={"error": str(e)})
+
+                        # Item 7: Regime-adaptive trail multiplier
+                        regime = info.get("regime", "trending")
+                        regime_trail_config = config.copy()
+                        if regime == "ranging":
+                            regime_trail_config["atr_trail_mult"] = config.get(
+                                "atr_trail_mult_ranging", config.get("atr_trail_mult", 1.8)
+                            )
+                        elif regime == "volatile":
+                            regime_trail_config["atr_trail_mult"] = config.get(
+                                "atr_trail_mult_volatile", config.get("atr_trail_mult", 1.8)
+                            )
+                        else:
+                            regime_trail_config["atr_trail_mult"] = config.get(
+                                "atr_trail_mult_trending", config.get("atr_trail_mult", 1.8)
+                            )
+
+                        # Item 5: Partial TP1 check
+                        partial_tp_enabled = config.get("partial_tp_enabled", False)
+                        if partial_tp_enabled and not info.get("tp1_hit", True):
+                            tp1_price = info.get("tp1_price", 0.0)
+                            if tp1_price > 0:
+                                tp1_triggered = (
+                                    (sig_type == SignalType.LONG and current_price >= tp1_price)
+                                    or (sig_type == SignalType.SHORT and current_price <= tp1_price)
+                                )
+                                if tp1_triggered:
+                                    partial_pct = config.get("partial_tp_pct", 0.5)
+                                    original_size_usdt = info.get("original_size", info["size"])
+                                    partial_contracts = (original_size_usdt * partial_pct) / info["entry_price"]
+                                    partial_contracts = round(partial_contracts, 6)
+
+                                    partial_close_ok = False
+                                    try:
+                                        close_side = "sell" if info["side"] == "buy" else "buy"
+                                        client.place_order(
+                                            side=close_side,
+                                            size=partial_contracts,
+                                            reduce_only=True,
+                                        )
+                                        partial_close_ok = True
+                                        logger.info(
+                                            "partial_tp1_closed",
+                                            extra={
+                                                "trade_id": trade_id,
+                                                "tp1_price": tp1_price,
+                                                "current_price": current_price,
+                                                "partial_contracts": partial_contracts,
+                                            },
+                                        )
+                                    except Exception as e:
+                                        logger.warning(
+                                            "partial_tp1_close_failed",
+                                            extra={"trade_id": trade_id, "error": str(e)},
+                                        )
+
+                                    if partial_close_ok:
+                                        info["tp1_hit"] = True
+                                        info["size"] -= partial_contracts * info["entry_price"]
+                                        info["size"] = max(info["size"], 0.0)
+
+                                        if config.get("move_sl_to_be_after_tp1", True):
+                                            breakeven = info["entry_price"]
+                                            be_success = client.modify_sl(
+                                                symbol=config["symbol"],
+                                                side=info["side"],
+                                                new_sl=round(breakeven, 2),
+                                            )
+                                            if be_success:
+                                                info["sl"] = breakeven
+                                                logger.info("sl_moved_to_breakeven", extra={"trade_id": trade_id, "breakeven": breakeven})
+                                            else:
+                                                logger.warning("sl_breakeven_move_failed", extra={"trade_id": trade_id})
+
+                        # Trailing stop update
                         new_sl = compute_trailing_stop(
-                            current_price, info["sl"], info["atr"],
-                            sig_type, config,
+                            current_price, info["sl"], effective_atr,
+                            sig_type, regime_trail_config,
                         )
                         if new_sl != info["sl"]:
-                            # Update SL on exchange, not just locally
                             old_sl = info["sl"]
                             success = client.modify_sl(
                                 symbol=config["symbol"],
@@ -521,6 +634,8 @@ async def trading_loop(config: dict) -> None:
                                         "old_sl": round(old_sl, 2),
                                         "new_sl": round(new_sl, 2),
                                         "current_price": current_price,
+                                        "atr": round(effective_atr, 4),
+                                        "regime": regime,
                                     },
                                 )
                             else:
@@ -565,12 +680,37 @@ async def trading_loop(config: dict) -> None:
             if trade_signal is not None:
                 # Item 1: Enforce 1 trade per side — skip if already tracking a trade on the same side
                 new_side = "buy" if trade_signal.signal_type == SignalType.LONG else "sell"
+                trade_side_label = "long" if new_side == "buy" else "short"
                 already_open_side = any(info["side"] == new_side for info in tracked_trades.values())
                 if already_open_side:
                     logger.info(
                         "trade_skipped_duplicate_side",
                         extra={"side": new_side, "reason": "already_tracking_trade_on_this_side"},
                     )
+
+                # Item 3: Same-side cooldown after close
+                elif trade_side_label in last_trade_close:
+                    lc = last_trade_close[trade_side_label]
+                    tf = config["timeframe_signal"]
+                    candle_secs = (int(tf.replace("h", "")) * 3600) if "h" in tf else (int(tf.replace("m", "")) * 60)
+                    cooldown_candles = config.get(
+                        "cooldown_candles_after_sl" if lc.get("reason") == "stop_loss" else "cooldown_candles_after_close",
+                        4,
+                    )
+                    elapsed = time.time() - lc["time"]
+                    required = cooldown_candles * candle_secs
+                    if elapsed < required:
+                        logger.info(
+                            "trade_skipped_cooldown",
+                            extra={
+                                "side": trade_side_label,
+                                "elapsed_s": int(elapsed),
+                                "required_s": required,
+                                "reason": lc.get("reason", "close"),
+                            },
+                        )
+                        already_open_side = True  # Reuse flag to skip trade
+
                 else:
                     # Validate order through risk manager
                     approved, reason, position_size = risk_mgr.validate_order(
@@ -597,6 +737,28 @@ async def trading_loop(config: dict) -> None:
                         if await _interruptible_sleep(60):
                             break
                         continue
+
+                    # Weekend / low-liquidity filter (Item 8)
+                    now_utc = datetime.now(tz=timezone.utc)
+                    if now_utc.weekday() >= 5:  # Saturday=5, Sunday=6
+                        if not config.get("weekend_trading_enabled", True):
+                            logger.info(
+                                "trade_skipped_weekend",
+                                extra={"day": now_utc.strftime("%A"), "reason": "weekend_trading_enabled=false"},
+                            )
+                            if await _interruptible_sleep(60):
+                                break
+                            continue
+                        weekend_reduction = config.get("weekend_size_reduction", 0.5)
+                        position_size *= weekend_reduction
+                        logger.info(
+                            "weekend_size_reduction_applied",
+                            extra={
+                                "day": now_utc.strftime("%A"),
+                                "reduction_factor": weekend_reduction,
+                                "new_size": round(position_size, 2),
+                            },
+                        )
 
                     side = "buy" if trade_signal.signal_type == SignalType.LONG else "sell"
 
@@ -843,15 +1005,27 @@ async def trading_loop(config: dict) -> None:
 
                     # Track for position monitoring (use actual filled values)
                     actual_size_usdt = actual_size * actual_entry
+
+                    # Compute TP1 price for partial take-profit
+                    partial_tp_atr_mult = config.get("partial_tp_atr_mult", 2.0)
+                    if trade_signal.signal_type == SignalType.LONG:
+                        tp1_price = actual_entry + partial_tp_atr_mult * trade_signal.atr
+                    else:
+                        tp1_price = actual_entry - partial_tp_atr_mult * trade_signal.atr
+
                     tracked_trades[trade_id] = {
                         "side": side,
                         "entry_price": actual_entry,
                         "size": actual_size_usdt,
+                        "original_size": actual_size_usdt,
                         "sl": adjusted_sl,
                         "tp": adjusted_tp,
+                        "tp1_price": tp1_price,
+                        "tp1_hit": False,
                         "calibration_id": calibration_id,
                         "signal_type": trade_signal.signal_type,
                         "atr": trade_signal.atr,
+                        "regime": trade_signal.regime,
                         "open_time": time.time(),
                     }
 

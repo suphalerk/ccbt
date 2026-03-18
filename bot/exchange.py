@@ -218,6 +218,7 @@ class BybitClient:
         size: float,
         sl: Optional[float] = None,
         tp: Optional[float] = None,
+        reduce_only: bool = False,
     ) -> OrderResult:
         """Place a market order with optional stop loss and take profit.
 
@@ -226,6 +227,7 @@ class BybitClient:
             size: Position size in base currency.
             sl: Stop loss price.
             tp: Take profit price.
+            reduce_only: If True, order only reduces an existing position (no new position).
 
         Returns:
             OrderResult with order details.
@@ -233,6 +235,8 @@ class BybitClient:
         params: dict = {}
         # Apply exchange precision to all values
         size = _safe_precision(self.exchange, self.symbol, size, "amount")
+        if reduce_only:
+            params["reduceOnly"] = True
         if sl is not None:
             sl = _safe_precision(self.exchange, self.symbol, sl, "price")
             params["stopLoss"] = {"triggerPrice": sl}

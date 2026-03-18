@@ -245,25 +245,26 @@ class TestDynamicRiskFactor:
         assert rm.get_dynamic_risk_factor() == 1.0
 
     def test_medium_win_rate_returns_reduced(self, config):
-        """Win rate 40-48% should return 0.85."""
+        """Win rate ~42% should return ~0.79 (continuous linear scale)."""
         rm = RiskManager(config, balance=100000.0)
         # Directly set recent_results: 5 wins and 7 losses = 41.6% win rate
+        # Continuous formula: 0.5 + (0.4167 - 0.30) * 2.5 = ~0.792
         rm.state.recent_results = [
             10.0, -5.0, -5.0, 10.0, -5.0, -5.0, 10.0, -5.0, 10.0, -5.0, 10.0, -5.0
         ]
         factor = rm.get_dynamic_risk_factor()
-        assert factor == 0.85
+        assert 0.75 < factor < 0.85  # Continuous value, not stepped
 
     def test_low_win_rate_returns_minimal(self, config):
-        """Win rate < 40% should return 0.7."""
+        """Win rate < 30% should return floor of 0.5."""
         rm = RiskManager(config, balance=100000.0)
         # Directly set recent_results to avoid triggering consecutive loss / daily loss limits
-        # 3 wins out of 13 = 23% win rate
+        # 3 wins out of 13 = 23% win rate → below 30% floor → clamped to 0.5
         rm.state.recent_results = [
             -5.0, -5.0, 10.0, -5.0, -5.0, 10.0, -5.0, -5.0, 10.0, -5.0, -5.0, -5.0, -5.0
         ]
         factor = rm.get_dynamic_risk_factor()
-        assert factor == 0.7
+        assert factor == 0.5
 
     def test_dynamic_factor_applied_in_validate_order(self, config):
         """Dynamic risk factor should scale position size in validate_order."""
