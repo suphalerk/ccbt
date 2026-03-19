@@ -804,7 +804,7 @@ class TradingEngine:
             )
 
         # --- Same-side cooldown after close ---
-        elif trade_side_label in self._last_trade_close:
+        if not already_open_side and trade_side_label in self._last_trade_close:
             lc = self._last_trade_close[trade_side_label]
             tf = config["timeframe_signal"]
             candle_secs = (
@@ -812,8 +812,11 @@ class TradingEngine:
                 if "h" in tf
                 else int(tf.replace("m", "")) * 60
             )
+            # Bug #2 fix: check both "sl" and "stop_loss" for SL reason
+            lc_reason = lc.get("reason", "close")
+            is_sl = lc_reason in ("sl", "stop_loss")
             cooldown_candles = config.get(
-                "cooldown_candles_after_sl" if lc.get("reason") == "stop_loss" else "cooldown_candles_after_close",
+                "cooldown_candles_after_sl" if is_sl else "cooldown_candles_after_close",
                 4,
             )
             elapsed = time.time() - lc["time"]
@@ -860,13 +863,15 @@ class TradingEngine:
                             "side": trade_side_label,
                             "elapsed_s": int(elapsed),
                             "required_s": required,
-                            "reason": lc.get("reason", "close"),
+                            "reason": lc_reason,
                         },
                     )
                     already_open_side = True  # Reuse flag to skip trade
 
-        else:
-            # Validate order through risk manager
+        # Validate order through risk manager (always runs if not skipped)
+        approved = False
+        position_size = 0.0
+        if not already_open_side:
             approved, reason, position_size = self._risk_mgr.validate_order(
                 balance=self._balance,
                 entry_price=trade_signal.entry_price,
