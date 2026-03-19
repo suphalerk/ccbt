@@ -1097,8 +1097,10 @@ class TradingEngine:
                     for vp in verify_positions:
                         if vp.get("side") == ("long" if side == "buy" else "short"):
                             sl_val = float(
-                                vp.get("stopLossPrice")
-                                or vp.get("info", {}).get("stopLoss", 0)
+                                vp.get("stopLossPrice")           # Bybit unified field
+                                or vp.get("stopLoss")             # ccxt unified fallback
+                                or vp.get("info", {}).get("stopPrice")  # Binance raw field
+                                or vp.get("info", {}).get("stopLoss", 0)  # Bybit raw field
                                 or 0
                             )
                             if sl_val > 0:

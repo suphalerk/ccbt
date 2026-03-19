@@ -51,7 +51,7 @@ def result(idx: int, name: str, ok: bool, detail: str) -> None:
     status = "PASS" if ok else "FAIL"
     # Pad name for alignment
     padded = f"{name} ".ljust(40, ".")
-    print(f"[{idx:2d}/17] {padded} {status}  ({detail})")
+    print(f"[{idx:2d}/18] {padded} {status}  ({detail})")
     _results.append((name, ok, detail))
     if ok:
         _passed += 1
@@ -67,7 +67,7 @@ def sleep(seconds: float = 0.5) -> None:
 
 def run_tests() -> None:
     global _total
-    _total = 17
+    _total = 18
 
     print()
     print("=" * 65)
@@ -422,6 +422,95 @@ def run_tests() -> None:
         result(17, "short round-trip", short_found, detail)
     except Exception as e:
         result(17, "short round-trip", False, str(e))
+
+    # ------------------------------------------------------------------
+    # GROUP 8 — modify_sl (Binance cancel-and-recreate)
+    # ------------------------------------------------------------------
+
+    # Test 18: open a long, call modify_sl to set a new SL, verify it lands,
+    #          then clean up (cancel orders + close position).
+    try:
+        live_price = client.get_ticker_price(client.symbol)
+
+        # Open a small long position without SL so we can set one via modify_sl
+        mod_order = client.place_order(
+            side="buy",
+            size=min_trade_size,
+            sl=None,
+            tp=None,
+            reduce_only=False,
+        )
+        sleep(1.0)  # let exchange register the position
+
+        initial_sl = round(live_price * 0.97, 2)   # 3% below — initial SL
+        new_sl = round(live_price * 0.96, 2)        # 4% below — modified SL
+
+        # Set an initial SL via a STOP_MARKET order so modify_sl has something to cancel.
+        # closePosition=True is mutually exclusive with reduceOnly on Binance (error -1106).
+        client.exchange.create_order(
+            client.symbol,
+            "stop_market",
+            "sell",
+            None,
+            None,
+            {
+                "stopPrice": initial_sl,
+                "closePosition": True,
+            },
+        )
+        sleep(0.5)
+
+        # Call modify_sl — should cancel the initial SL and place a new one
+        ok = client.modify_sl(symbol=client.symbol, side="buy", new_sl=new_sl)
+
+        # Verify: a STOP_MARKET algo order with the new triggerPrice should exist.
+        # Binance futures stores closePosition SL orders as conditional algo orders
+        # which do NOT appear in fetch_open_orders — must query the algo endpoint.
+        sl_found = False
+        if ok:
+            sleep(0.5)
+            try:
+                market = client.exchange.market(client.symbol)
+                algo_orders = client.exchange.fapiPrivateGetOpenAlgoOrders(
+                    {"symbol": market["id"]}
+                )
+                for o in algo_orders:
+                    raw_stop = float(o.get("triggerPrice") or 0)
+                    raw_type = (o.get("orderType") or "").upper()
+                    if raw_type in ("STOP_MARKET", "STOP") and abs(raw_stop - new_sl) < 1.0:
+                        sl_found = True
+                        break
+            except Exception:
+                pass
+
+        result(
+            18,
+            "modify_sl (cancel-recreate)",
+            ok and sl_found,
+            f"modify_sl_returned={ok} new_sl_order_found={sl_found} new_sl={new_sl}",
+        )
+
+        # Cleanup: cancel regular + algo orders, then close the position
+        try:
+            client.cancel_all_orders(client.symbol)
+        except Exception:
+            pass
+        try:
+            market = client.exchange.market(client.symbol)
+            client.exchange.fapiPrivateDeleteAlgoOpenOrders({"symbol": market["id"]})
+        except Exception:
+            pass
+        sleep(0.5)
+        positions = client.get_positions()
+        total_longs = sum(
+            float(p.get("contracts", 0))
+            for p in positions
+            if p.get("side", "") == "long"
+        )
+        if total_longs > 0:
+            client.place_order(side="sell", size=total_longs, reduce_only=True)
+    except Exception as e:
+        result(18, "modify_sl (cancel-recreate)", False, str(e))
 
     _print_summary()
 

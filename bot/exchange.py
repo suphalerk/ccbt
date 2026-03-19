@@ -492,12 +492,87 @@ class BybitClient:
             logger.warning("get_closed_pnl_failed", extra={"error": str(e)})
             return []
 
+    def _modify_sl_binance(self, symbol: str, side: str, new_sl: float) -> bool:
+        """Modify stop loss on Binance via cancel-and-recreate pattern.
+
+        Binance futures stores SL orders as conditional algo orders
+        (algoType=CONDITIONAL). They do NOT appear in fetch_open_orders —
+        they are managed via the /fapi/v1/algo/orders family of endpoints.
+
+        Steps:
+        1. Cancel all open conditional algo orders for the symbol.
+        2. Place a new STOP_MARKET closePosition order at new_sl.
+
+        Args:
+            symbol: Normalised ccxt symbol (e.g. 'BTC/USDT:USDT').
+            side: Position side — 'buy' for long, 'sell' for short.
+            new_sl: New stop loss trigger price.
+
+        Returns:
+            True if the new SL was successfully placed.
+        """
+        # Determine the order side for the SL (opposite to position side)
+        sl_order_side = "sell" if side == "buy" else "buy"
+        # Exchange symbol ID (e.g. 'BTCUSDT') required by raw fapi endpoints
+        market = self.exchange.market(symbol)
+        exchange_symbol = market["id"]
+        try:
+            # Step 1: cancel all open conditional (algo) orders for this symbol.
+            # Regular fetch_open_orders does not surface algo orders on Binance
+            # futures — must use the fapi algo-order endpoint directly.
+            try:
+                self._retry(
+                    self.exchange.fapiPrivateDeleteAlgoOpenOrders,
+                    {"symbol": exchange_symbol},
+                )
+                logger.info(
+                    "binance_algo_orders_cancelled",
+                    extra={"symbol": symbol},
+                )
+            except Exception as cancel_err:
+                # -2011 = no orders to cancel; treat as non-fatal
+                if "-2011" in str(cancel_err) or "no open" in str(cancel_err).lower():
+                    logger.info(
+                        "binance_no_algo_orders_to_cancel",
+                        extra={"symbol": symbol},
+                    )
+                else:
+                    raise
+
+            # Step 2: place new STOP_MARKET order.
+            # closePosition=True tells Binance to close the full position when the
+            # trigger fires. Do NOT also pass reduceOnly — Binance rejects the
+            # combination with error -1106.
+            new_sl_price = _safe_precision(self.exchange, symbol, new_sl, "price")
+            self._retry(
+                self.exchange.create_order,
+                symbol,
+                "stop_market",
+                sl_order_side,
+                None,   # amount — closePosition handles sizing
+                None,   # price — market order, no limit price
+                {
+                    "stopPrice": new_sl_price,
+                    "closePosition": True,
+                },
+            )
+            logger.info(
+                "binance_sl_placed",
+                extra={"symbol": symbol, "side": sl_order_side, "new_sl": new_sl_price},
+            )
+            return True
+        except Exception as e:
+            logger.warning(
+                "binance_sl_modify_failed",
+                extra={"symbol": symbol, "new_sl": new_sl, "error": str(e)},
+            )
+            return False
+
     def modify_sl(self, symbol: Optional[str] = None, side: str = "buy", new_sl: float = 0.0) -> bool:
         """Modify the stop loss of an existing position on exchange.
 
-        Uses Bybit's set_trading_stop endpoint to update SL without
-        cancelling and recreating orders. Not supported for Binance
-        (returns False gracefully — caller should cancel and recreate).
+        For Bybit, uses the set_trading_stop v5 endpoint (in-place update).
+        For Binance, uses a cancel-and-recreate pattern (STOP_MARKET order).
 
         Args:
             symbol: Trading pair. Defaults to configured symbol.
@@ -507,13 +582,9 @@ class BybitClient:
         Returns:
             True if successful.
         """
-        if self._exchange_name == "binance":
-            logger.info(
-                "sl_modify_skipped",
-                extra={"reason": "binance_not_supported", "new_sl": new_sl},
-            )
-            return False
         symbol = symbol or self.symbol
+        if self._exchange_name == "binance":
+            return self._modify_sl_binance(symbol, side, new_sl)
         try:
             # Use Bybit v5 private API to modify position SL
             # ccxt generates implicit API methods in camelCase
