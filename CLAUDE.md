@@ -71,7 +71,7 @@ sudo bash deploy/setup.sh dashboard.yourdomain.com
 - **Partial TP**: 30% closed at TP1 (2×ATR), SL moves to breakeven + 0.5×ATR buffer, remaining 70% runs to full TP
 - **R:R**: Minimum 1.0 net R:R after commission (0.04%) + slippage (0.015%)
 - **Adaptive Sizing**: Signal quality score (0-1) determines position size tier — A-grade (>=0.75) gets 2x risk + 1.5x leverage, B-grade (>=0.5) normal, C-grade (>=0.3) half risk, D-grade skipped
-- **Pyramiding**: Up to 5 adds into winning positions — +100% at 0.8×ATR, +75% at 1.5×ATR, +50% at 2.2×ATR, +25% at 2.8×ATR, +25% at 3.5×ATR. SL ratchets up on each add (breakeven→+0.5→+1.0→+1.5→+2.0 ATR). Pyramid adds sized from current balance (compounds). Requires trend still aligned (EMA 9>21)
+- **Pyramiding**: Dynamic N-level pyramid adds into winning positions. Levels 1-7 explicitly configured, 8+ use formula (trigger=0.3+N×0.7 ATR, size=max(25%,100%-(N-1)×15%)). SL ratchets (N-1)×0.5 ATR above entry. Pyramid adds sized from current balance (compounds). Requires trend still aligned (EMA 9>21). Safe config: 5 adds, YOLO: 20 adds.
 - **MTD Accelerator**: Position size scales with month-to-date performance — up 20%+ → 1.5x size, up 10%+ → 1.3x, flat → 1.0x, down 5% → 0.8x, down more → 0.6x
 - **Cooldown**: 4 candles after close, 8 candles after stop loss
 - **Flexible Cooldown**: High-quality signals (score >= 0.7) can override cooldown at 50% reduction. Score = avg(R:R, RSI optimality, volume ratio, regime). Consecutive loss circuit breaker is never overridden.
@@ -138,15 +138,17 @@ Aggressive config for maximum theoretical returns. **Testnet only** — validati
 - **Drawdown calc**: Max drawdown denominator must include `initial_balance + peak_cumulative_pnl`, not just peak PnL
 - **Flexible cooldown**: `compute_signal_quality_score()` bounds are [0,1]; `min_quality_score` clamped to [0.5,1.0]; consecutive loss cooldown in `risk.py` must never be overridden
 - **Adaptive sizing**: `get_tiered_risk()` returns (0,0) for D-grade signals (must skip trade); when disabled, returns (1.0, 1.0) for backward compatibility
-- **Pyramiding**: Only add to winning positions when trend aligned (EMA9 vs EMA21); SL must ratchet up (never lower) on pyramid adds; pyramid adds charge commission on the added size
+- **Pyramiding**: Only add to winning positions when trend aligned (EMA9 vs EMA21); SL must ratchet up (never lower) on pyramid adds; pyramid adds charge commission on the added size; levels 1-7 use explicit config keys (`add_N_atr_mult`, `add_N_size_pct`), levels 8+ use dynamic formula
 - **Regime propagation**: `detect_regime()` must be computed per row in backtest (rolling); backtest stores regime in DataFrame for signal-level gating
 
 ## Environment Variables
 ```
-API_KEY, API_SECRET          — Bybit API credentials
+API_KEY, API_SECRET          — Bybit/Binance API credentials
 ANTHROPIC_API_KEY            — Claude AI access
 CRYPTOPANIC_TOKEN            — News API (optional)
 TELEGRAM_BOT_TOKEN/CHAT_ID  — Monitoring alerts (optional)
+CONFIG_FILE                  — Config file path (default: config.json)
+YOLO_MODE                    — Set to "1" to enable YOLO validation limits
 ```
 
 ## Database Schema (trades.db)
@@ -256,3 +258,9 @@ Iterative optimization loop proven to improve strategy from 10%/yr to 523%/yr:
 ### Proven Findings (BTC 15m)
 **Works**: Pyramiding (4x PnL), adaptive sizing, 10x leverage + SL ratcheting, dual EMA crossover, regime-adaptive trail, trading hours filter
 **Doesn't work**: Mean reversion, MACD, EMA pullback, RSI divergence, weekend trading, looser filters, higher risk alone
+**YOLO-specific**: Adaptive sizing OFF at high leverage (5x better), lower volume threshold 0.7x (80% more trades), wider SL 1.65 ATR, TP 4.0 + trail 5.0
+
+## API Testing
+- `tests/test_api_binance_testnet.py` — 17-endpoint test suite for Binance testnet
+- Tests all API calls: markets, leverage, balance, OHLCV, ticker, funding, OI, orderbook, long/short round-trip, SL/TP, trade history, order cleanup
+- Run: `python tests/test_api_binance_testnet.py`

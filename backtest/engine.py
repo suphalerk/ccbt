@@ -621,28 +621,15 @@ class BacktestEngine:
             and pd.notna(row.get("atr"))
         ):
             atr_val = row["atr"]
-            # Determine which pyramid level we're evaluating next
+            # Determine which pyramid level we're evaluating next (dynamic, supports N levels)
             level = pos.pyramid_count + 1
-            if level == 1:
-                trigger_atr_mult = pyramid_cfg.get("add_1_atr_mult", 1.0)
-                add_size_pct = pyramid_cfg.get("add_1_size_pct", 0.5)
-                new_sl_offset = 0.0  # Move SL to breakeven
-            elif level == 2:
-                trigger_atr_mult = pyramid_cfg.get("add_2_atr_mult", 2.0)
-                add_size_pct = pyramid_cfg.get("add_2_size_pct", 0.25)
-                new_sl_offset = 0.5 * atr_val  # Entry + 0.5×ATR buffer
-            elif level == 3:
-                trigger_atr_mult = pyramid_cfg.get("add_3_atr_mult", pyramid_cfg.get("add_2_atr_mult", 2.0) + 0.5)
-                add_size_pct = pyramid_cfg.get("add_3_size_pct", 0.25)
-                new_sl_offset = 1.0 * atr_val  # Entry + 1.0×ATR lock profit
-            elif level == 4:
-                trigger_atr_mult = pyramid_cfg.get("add_4_atr_mult", 2.8)
-                add_size_pct = pyramid_cfg.get("add_4_size_pct", 0.25)
-                new_sl_offset = 1.5 * atr_val  # Entry + 1.5×ATR lock more profit
-            else:  # level == 5
-                trigger_atr_mult = pyramid_cfg.get("add_5_atr_mult", 3.5)
-                add_size_pct = pyramid_cfg.get("add_5_size_pct", 0.25)
-                new_sl_offset = 2.0 * atr_val  # Entry + 2.0×ATR lock maximum profit
+            # Default escalation: trigger starts at 1.0 ATR, each level +0.7 ATR
+            default_trigger = 0.3 + level * 0.7
+            default_size = max(0.25, 1.0 - (level - 1) * 0.15)  # 1.0, 0.85, 0.70, 0.55, 0.40, 0.25...
+            trigger_atr_mult = pyramid_cfg.get(f"add_{level}_atr_mult", default_trigger)
+            add_size_pct = pyramid_cfg.get(f"add_{level}_size_pct", default_size)
+            # SL offset escalates: 0 for level 1, then +0.5 ATR per level
+            new_sl_offset = max(0, (level - 1) * 0.5) * atr_val
 
             # Check trigger: unrealized profit >= N×ATR
             if pos.side == "long":
