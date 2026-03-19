@@ -330,7 +330,16 @@ def add_trend_filter(
         "open_1h": trend_df["open"],
     }, index=trend_df.index)
 
-    # Merge with backward-looking alignment to avoid look-ahead bias
+    # CRITICAL: Shift all 1H features by 1 period to prevent look-ahead bias.
+    # Without this shift, a 15m candle at 15:15 would see the 1H candle for
+    # 15:00-16:00 which hasn't closed yet. By shifting, we only see the LAST
+    # COMPLETED 1H candle (e.g., 14:00-15:00 at time 15:15).
+    # EMA-based columns (ema_trend, ema9, ema21) are lagging by nature so the
+    # shift has minimal impact, but body_pct, mom, squeeze, vol_ratio are
+    # entirely dependent on the candle's close — shift is essential.
+    trend_feat = trend_feat.shift(1)
+
+    # Merge with backward-looking alignment
     df = pd.merge_asof(
         df.reset_index(), trend_feat.reset_index(),
         on="timestamp" if "timestamp" in df.reset_index().columns else df.reset_index().columns[0],

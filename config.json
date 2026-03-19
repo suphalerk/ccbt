@@ -63,14 +63,30 @@
     "log_overrides": true
   },
   "signals": {
-    "ema_crossover": { "enabled": true },
-    "ema_fast_crossover": { "enabled": true },
-    "ema_pullback": { "enabled": false },
-    "rsi_divergence": { "enabled": false },
-    "bb_breakout": { "enabled": false },
-    "mean_reversion": { "enabled": false },
-    "body_dominance": { "enabled": true },
-    "squeeze_release": { "enabled": true }
+    "ema_crossover": {
+      "enabled": true
+    },
+    "ema_fast_crossover": {
+      "enabled": true
+    },
+    "ema_pullback": {
+      "enabled": false
+    },
+    "rsi_divergence": {
+      "enabled": false
+    },
+    "bb_breakout": {
+      "enabled": false
+    },
+    "mean_reversion": {
+      "enabled": false
+    },
+    "body_dominance": {
+      "enabled": false
+    },
+    "squeeze_release": {
+      "enabled": false
+    }
   },
   "body_dominance_min_body": 0.65,
   "body_dominance_min_mom": 0.02,
@@ -86,7 +102,7 @@
   "ema_slow2": 13,
   "bb_period": 20,
   "bb_std": 2.0,
-  "bb_squeeze_percentile": 0.30,
+  "bb_squeeze_percentile": 0.3,
   "bb_volume_mult": 1.2,
   "swing_lookback": 5,
   "divergence_lookback": 20,
@@ -102,9 +118,21 @@
     "enabled": false,
     "min_quality_for_trade": 0.3,
     "tiers": {
-      "A": {"min_score": 0.75, "risk_mult": 2.0, "leverage_mult": 1.5},
-      "B": {"min_score": 0.5,  "risk_mult": 1.0, "leverage_mult": 1.0},
-      "C": {"min_score": 0.3,  "risk_mult": 0.5, "leverage_mult": 0.8}
+      "A": {
+        "min_score": 0.75,
+        "risk_mult": 2.0,
+        "leverage_mult": 1.5
+      },
+      "B": {
+        "min_score": 0.5,
+        "risk_mult": 1.0,
+        "leverage_mult": 1.0
+      },
+      "C": {
+        "min_score": 0.3,
+        "risk_mult": 0.5,
+        "leverage_mult": 0.8
+      }
     }
   },
   "pyramiding": {
@@ -126,11 +154,26 @@
   "mtd_accelerator": {
     "enabled": false,
     "tiers": [
-      {"min_return": 0.20, "mult": 1.5},
-      {"min_return": 0.10, "mult": 1.3},
-      {"min_return": 0.00, "mult": 1.0},
-      {"min_return": -0.05, "mult": 0.8},
-      {"min_return": -999, "mult": 0.6}
+      {
+        "min_return": 0.2,
+        "mult": 1.5
+      },
+      {
+        "min_return": 0.1,
+        "mult": 1.3
+      },
+      {
+        "min_return": 0.0,
+        "mult": 1.0
+      },
+      {
+        "min_return": -0.05,
+        "mult": 0.8
+      },
+      {
+        "min_return": -999,
+        "mult": 0.6
+      }
     ]
   },
   "ai_layer": {

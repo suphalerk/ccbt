@@ -82,10 +82,10 @@
       "enabled": false
     },
     "body_dominance": {
-      "enabled": true
+      "enabled": false
     },
     "squeeze_release": {
-      "enabled": true
+      "enabled": false
     }
   },
   "body_dominance_min_body": 0.65,
