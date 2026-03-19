@@ -34,7 +34,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy application code
 COPY bot/ ./bot/
 COPY dashboard/ ./dashboard/
-COPY main.py config.json ./
+COPY main.py config.json config_yolo.json ./
 
 # Create data directory for SQLite database and logs
 RUN mkdir -p /app/data /app/logs && \
@@ -53,5 +53,5 @@ HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
         assert age < 300, f'Heartbeat stale: {age:.0f}s old'" \
     || exit 1
 
-# Default command: run the trading bot
+# Default command: run the trading bot (CONFIG_FILE env var selects config)
 CMD ["python", "main.py"]

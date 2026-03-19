@@ -2,6 +2,10 @@
 # Docker Compose for Crypto Trading Bot
 # Services: bot (trading engine) + dashboard (Streamlit UI)
 # Shared volume for SQLite database persistence
+#
+# Config modes:
+#   Standard:  docker compose up -d
+#   YOLO:      CONFIG_FILE=config_yolo.json YOLO_MODE=1 docker compose up -d
 # =============================================================================
 
 services:
@@ -17,11 +21,15 @@ services:
     restart: on-failure:5
     env_file:
       - .env
+    environment:
+      - CONFIG_FILE=${CONFIG_FILE:-config.json}
+      - YOLO_MODE=${YOLO_MODE:-}
     volumes:
       # Persist SQLite database and logs across container restarts
       - bot-data:/app/data
       # Mount config as read-only (allows hot-swap without rebuild)
       - ./config.json:/app/config.json:ro
+      - ./config_yolo.json:/app/config_yolo.json:ro
     # Resource limits to prevent runaway memory/CPU usage
     deploy:
       resources:
@@ -59,6 +67,8 @@ services:
       --server.enableXsrfProtection=true
     env_file:
       - .env
+    environment:
+      - CONFIG_FILE=${CONFIG_FILE:-config.json}
     ports:
       # Expose Streamlit port; nginx will reverse-proxy to this
       - "127.0.0.1:8501:8501"
@@ -66,6 +76,7 @@ services:
       # Share the same data volume so dashboard reads the bot's database
       - bot-data:/app/data
       - ./config.json:/app/config.json:ro
+      - ./config_yolo.json:/app/config_yolo.json:ro
     deploy:
       resources:
         limits:

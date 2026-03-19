@@ -1,8 +1,10 @@
 """Entry point for the crypto trading bot."""
 
+import argparse
 import asyncio
 import json
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
@@ -46,17 +48,26 @@ def load_config(path: str = "config.json") -> dict:
     if missing:
         raise ValueError(f"Missing required config keys: {missing}")
 
+    # YOLO mode uses relaxed validation limits
+    yolo_mode = os.getenv("YOLO_MODE", "").lower() in ("1", "true", "yes")
+    max_leverage = 125 if yolo_mode else 25
+    max_risk = 0.25 if yolo_mode else 0.1
+
     # Validate numeric ranges to prevent dangerous misconfigurations
-    if not 1 <= config["leverage"] <= 25:
-        raise ValueError(f"leverage must be 1-25, got {config['leverage']}")
-    if not 0.001 <= config["risk_per_trade"] <= 0.1:
-        raise ValueError(f"risk_per_trade must be 0.1%-10%, got {config['risk_per_trade']}")
+    if not 1 <= config["leverage"] <= max_leverage:
+        raise ValueError(f"leverage must be 1-{max_leverage}, got {config['leverage']}")
+    if not 0.001 <= config["risk_per_trade"] <= max_risk:
+        raise ValueError(f"risk_per_trade must be 0.1%-{max_risk*100:.0f}%, got {config['risk_per_trade']}")
     if not 0.005 <= config["max_daily_loss"] <= 0.5:
         raise ValueError(f"max_daily_loss must be 0.5%-50%, got {config['max_daily_loss']}")
     if config["atr_sl_mult"] <= 0 or config["atr_tp_mult"] <= 0:
         raise ValueError("atr_sl_mult and atr_tp_mult must be > 0")
     if config.get("atr_trail_mult", config["atr_sl_mult"]) <= 0:
         raise ValueError("atr_trail_mult must be > 0")
+
+    # YOLO mode safety: must be testnet
+    if yolo_mode and not config.get("use_testnet", True):
+        raise ValueError("YOLO mode requires use_testnet=true for safety")
 
     # AI layer validation
     ai_cfg = config.get("ai_layer", {})
@@ -65,6 +76,16 @@ def load_config(path: str = "config.json") -> dict:
             raise ValueError("ai max_tokens must be >= 256")
         if not 0.0 <= ai_cfg.get("confidence_threshold", 0.65) <= 1.0:
             raise ValueError("confidence_threshold must be 0-1")
+
+    if yolo_mode:
+        logger.warning(
+            "yolo_mode_active",
+            extra={
+                "leverage": config["leverage"],
+                "risk_per_trade": config["risk_per_trade"],
+                "config_file": path,
+            },
+        )
 
     return config
 
@@ -89,12 +110,20 @@ async def trading_loop(config: dict) -> None:
 
 def main() -> None:
     """Main entry point."""
+    parser = argparse.ArgumentParser(description="Crypto Trading Bot")
+    parser.add_argument(
+        "--config", default=os.getenv("CONFIG_FILE", "config.json"),
+        help="Path to config file (default: config.json, or CONFIG_FILE env var)",
+    )
+    args = parser.parse_args()
+
     setup_logging()
-    config = load_config()
+    config = load_config(args.config)
 
     logger.info(
         "config_loaded",
         extra={
+            "config_file": args.config,
             "testnet": config.get("use_testnet", True),
             "ai_layer": config.get("ai_layer", {}).get("enabled", False),
         },

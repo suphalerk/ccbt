@@ -41,8 +41,11 @@ tests/                   → pytest unit/integration tests
 ## Key Commands
 
 ```bash
-# Run bot (testnet by default)
+# Run bot (testnet by default, safe config)
 python main.py
+
+# Run bot with YOLO config (testnet only)
+YOLO_MODE=1 python main.py --config config_yolo.json
 
 # Run dashboard
 streamlit run dashboard/app.py
@@ -50,8 +53,11 @@ streamlit run dashboard/app.py
 # Run tests
 pytest tests/ -v
 
-# Docker deployment
+# Docker deployment (safe)
 docker compose up -d --build
+
+# Docker deployment (YOLO, testnet only)
+CONFIG_FILE=config_yolo.json YOLO_MODE=1 docker compose up -d --build
 
 # VPS setup (Ubuntu 22.04)
 sudo bash deploy/setup.sh dashboard.yourdomain.com
@@ -93,9 +99,31 @@ Bot runs fully autonomous — risk management is the primary safety layer:
 - Telegram alerts for critical events (informational, no action required)
 
 ## Configuration
-- `config.json` — All trading parameters (validated on load with safety limits)
+- `config.json` — Safe trading parameters (validated on load with safety limits)
+- `config_yolo.json` — YOLO mode parameters (requires `YOLO_MODE=1` env var to bypass validation limits)
 - `.env` — API keys (Bybit, Anthropic, Telegram, CryptoPanic)
 - `use_testnet: true` must be explicitly changed to go live
+- `--config <path>` or `CONFIG_FILE` env var selects config file
+
+## YOLO Mode
+Aggressive config for maximum theoretical returns. **Testnet only** — validation enforces `use_testnet: true`.
+
+| Parameter | Safe | YOLO | Impact |
+|-----------|------|------|--------|
+| Leverage | 10x | 100x | 10x higher position cap |
+| Risk/trade | 3% | 17% | 5.7x more per trade |
+| Pyramids | 5 adds | 20 adds | More compounding into winners |
+| Adaptive sizing | ON | OFF | Every signal gets full risk |
+| Volume filter | 1.3x MA | 0.7x MA | 80% more trade signals |
+| SL | 1.2 ATR | 1.65 ATR | Wider stops, fewer stop-outs |
+| TP | 3.0 ATR | 4.0 ATR | Lets runners go further |
+| Post-TP1 trail | 3.0 ATR | 5.0 ATR | Wide trail for big moves |
+| Slope filter | 0.02 | OFF | Accepts flat-EMA crossovers |
+| Max consec losses | 5 | 20 | Less circuit breaking |
+| MTD downscale | 0.8x/0.6x | 0.7x/0.4x | Aggressive DD protection |
+
+**Backtest (5yr, $100 start)**: $9.35e+28 theoretical | 473 trades | WR 37% | PF 4.80 | DD 24.1%
+**Reality**: Liquidity caps real returns around $1M-$10M. Numbers above ~$100K are unrealistic due to position sizing vs market depth.
 
 ## Development Rules
 - **Symbol format**: Always normalize BTCUSDT → BTC/USDT:USDT for ccxt

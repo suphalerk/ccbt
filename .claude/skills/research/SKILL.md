@@ -119,35 +119,55 @@ These findings from previous research rounds should guide future work:
 - **Trading hours filter** (skip 00-03 UTC dead hours)
 - **TP extension HURTS** — extending TP on pyramided trades drops Sharpe from 2.01 to 0.30
 
+### YOLO-Specific Findings
+- **Adaptive sizing OFF at high leverage** — A-grade 2x risk mult causes outsized losses that compound negatively; flat sizing = 5x more profit + lower DD
+- **Lower volume threshold (0.7x)** — more trades (370 vs 260) while PF stays high; each extra trade compounds at 100x leverage
+- **Wider SL (1.65 ATR)** — fewer stop-outs = higher PF; with 100x lev, the risk budget absorbs wider SL
+- **TP 4.0 + trail 5.0 post-TP1** — let runners run even further; massive compounding effect
+- **Slope filter OFF** — adds ~30 trades without hurting PF at all
+- **Aggressive MTD downscale (0.7x/0.4x)** — key DD reducer; prevents losing months from compounding down
+- **Max consecutive losses 20** — prevents premature circuit breaker in YOLO mode
+
 ### What Does NOT Work on BTC 15m
 - **Mean reversion** (BB+RSI in ranging) — negative PF, bad on BTC trending markets
 - **MACD momentum** — noisy, PF 0.71
 - **EMA pullback** — structurally unprofitable
 - **RSI divergence** — too few signals (2 in 2 years)
-- **More trades via looser filters** — every added signal dilutes edge
+- **More trades via looser filters** — every added signal dilutes edge (but see YOLO findings: context-dependent)
 - **Weekend trading** — negative edge on BTC
 - **Higher risk alone** — circuit breakers trigger faster, net negative
 - **Blended partial-TP R:R** — mathematically blocks most signals; use full TP distance
+- **Wider long RSI (45-72)** — busts DD at YOLO levels
+- **Regime filter OFF** — 1510 trades but DD 66.5%, PF 1.32
 
 ### Parameter Sensitivities
-- SL multiplier: 1.2 ATR optimal (tested 1.0-2.0 range)
-- TP multiplier: 3.0 ATR optimal (tested 2.0-4.0)
-- Risk per trade: 2.5-3% optimal with adaptive sizing (half-Kelly ~2.1%)
+- SL multiplier: 1.2 ATR optimal for safe; 1.65 ATR optimal for YOLO (tested 1.0-2.0 range)
+- TP multiplier: 3.0 ATR optimal for safe; 4.0 ATR optimal for YOLO (tested 2.0-4.0)
+- Risk per trade: 2.5-3% optimal with adaptive sizing; 16-17% optimal for YOLO without adaptive
 - Cooldown: 4/8 candles optimal; reducing adds bad trades
-- Volume threshold: 1.3x MA optimal; lower = noise
+- Volume threshold: 1.3x MA optimal for safe; 0.7x optimal for YOLO (more trades + high PF)
+- Leverage: DD plateaus ~24% regardless of leverage (SL ratcheting bounds it) — highest possible = best for compounding
 
 ## Available Profiles
 
-| Profile | Risk | Pyramid | MTD | 5yr Return | DD | Status |
-|---------|------|---------|-----|-----------|-----|--------|
-| **Deployed** | 3% | 5 adds, compound | On | +4,336% ($100→$4,436) | 9.5% | Active |
-| Conservative | 2.5% | 3 adds | Off | ~165%/yr | 9.6% | Available |
+| Profile | Risk | Leverage | Pyramid | MTD | 5yr Return | DD | Status |
+|---------|------|----------|---------|-----|-----------|-----|--------|
+| **Deployed** | 3% | 10x | 5 adds, compound | On | +4,336% ($100→$4,436) | 9.5% | Active |
+| Conservative | 2.5% | 10x | 3 adds | Off | ~165%/yr | 9.6% | Available |
+| **YOLO** | 17% | 100x | 20 adds | Aggressive | $100→$9.35e+28 | 24.1% | config_yolo.json |
 
 ### 5-Year Backtest (Deployed Config)
 - $100 → $4,436 over 5 years (Apr 2021 - Mar 2026)
 - 188 trades, WR 29.3%, PF 3.32, DD 9.45%
 - Survives 2022 bear market (-1.5% for the year)
 - Best year: 2025 (+199.7%), Best month: Feb 2026 (+105.3%)
+
+### YOLO Config (config_yolo.json)
+- $100 → $9.35e+28 over 5 years, 473 trades, PF 4.80, DD 24.1%
+- Key changes vs deployed: 100x lev, 17% risk, 20 pyramids, adaptive OFF, vol 0.7x, SL 1.65, TP 4.0, trail 5.0, slope filter OFF, RSI short 28-55, max consec losses 20
+- **Bear market warning**: DD 46.3% in 2021-2023 bear period
+- **Cost sensitive**: 1.5x costs pushes DD to 31%
+- Numbers are theoretical — liquidity constraints would cap real returns far below this
 
 ## Invocation
 
