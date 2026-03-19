@@ -517,25 +517,37 @@ class BybitClient:
         market = self.exchange.market(symbol)
         exchange_symbol = market["id"]
         try:
-            # Step 1: cancel all open conditional (algo) orders for this symbol.
-            # Regular fetch_open_orders does not surface algo orders on Binance
-            # futures — must use the fapi algo-order endpoint directly.
+            # Step 1: Cancel only SL algo orders (not TP).
+            # Fetch open algo orders and cancel only STOP_MARKET ones.
+            cancelled_sl = False
             try:
-                self._retry(
-                    self.exchange.fapiPrivateDeleteAlgoOpenOrders,
+                algo_orders = self._retry(
+                    self.exchange.fapiPrivateGetAlgoOpenOrders,
                     {"symbol": exchange_symbol},
                 )
-                logger.info(
-                    "binance_algo_orders_cancelled",
-                    extra={"symbol": symbol},
-                )
+                orders = algo_orders.get("orders", algo_orders) if isinstance(algo_orders, dict) else algo_orders
+                if isinstance(orders, list):
+                    for ao in orders:
+                        order_type = str(ao.get("type", ao.get("origType", ""))).upper()
+                        if order_type in ("STOP_MARKET", "STOP"):
+                            algo_id = ao.get("algoId", ao.get("orderId"))
+                            if algo_id:
+                                try:
+                                    self._retry(
+                                        self.exchange.fapiPrivateDeleteAlgoOrder,
+                                        {"symbol": exchange_symbol, "algoId": str(algo_id)},
+                                    )
+                                    cancelled_sl = True
+                                except Exception:
+                                    pass
+                if cancelled_sl:
+                    logger.info("binance_sl_order_cancelled", extra={"symbol": symbol})
+                else:
+                    logger.info("binance_no_sl_to_cancel", extra={"symbol": symbol})
             except Exception as cancel_err:
-                # -2011 = no orders to cancel; treat as non-fatal
-                if "-2011" in str(cancel_err) or "no open" in str(cancel_err).lower():
-                    logger.info(
-                        "binance_no_algo_orders_to_cancel",
-                        extra={"symbol": symbol},
-                    )
+                err_str = str(cancel_err).lower()
+                if "-2011" in str(cancel_err) or "no open" in err_str or "not found" in err_str:
+                    logger.info("binance_no_algo_orders", extra={"symbol": symbol})
                 else:
                     raise
 
@@ -562,10 +574,23 @@ class BybitClient:
             )
             return True
         except Exception as e:
-            logger.warning(
+            logger.error(
                 "binance_sl_modify_failed",
                 extra={"symbol": symbol, "new_sl": new_sl, "error": str(e)},
             )
+            # If we cancelled the old SL but failed to place new one,
+            # attempt emergency SL placement with original price
+            if cancelled_sl:
+                try:
+                    emergency_sl = _safe_precision(self.exchange, symbol, new_sl, "price")
+                    self.exchange.create_order(
+                        symbol, "stop_market", sl_order_side, None, None,
+                        {"stopPrice": emergency_sl, "closePosition": True},
+                    )
+                    logger.warning("binance_emergency_sl_placed", extra={"sl": emergency_sl})
+                    return True
+                except Exception as e2:
+                    logger.error("binance_emergency_sl_failed", extra={"error": str(e2)})
             return False
 
     def modify_sl(self, symbol: Optional[str] = None, side: str = "buy", new_sl: float = 0.0) -> bool:
@@ -605,10 +630,8 @@ class BybitClient:
             if method is not None:
                 self._retry(method, params=params)
             else:
-                # Last resort: use generic private API call
-                self._retry(
-                    self.exchange.privatePostV5PositionTradingStop,
-                    params=params,
+                raise AttributeError(
+                    "ccxt Bybit instance has no privatePostV5PositionTradingStop method"
                 )
 
             logger.info(

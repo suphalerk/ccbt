@@ -63,17 +63,23 @@ def compute_metrics(
     gross_loss = abs(losses.sum()) if len(losses) > 0 else 0.0
     profit_factor = gross_profit / gross_loss if gross_loss > 0 else float("inf")
 
-    # Sharpe ratio (annualized, assuming ~96 trades per day on 15m candles)
-    # Use daily returns approximation
+    # Sharpe ratio (annualized using actual trade frequency)
     mean_return = np.mean(returns)
     std_return = np.std(returns, ddof=1) if len(returns) > 1 else 1.0
-    daily_rf = risk_free_rate / 365
-    sharpe = (mean_return - daily_rf) / std_return * np.sqrt(365) if std_return > 0 else 0.0
+    trades_per_year = max(1, len(returns))  # actual trades in the dataset
+    # Estimate years from trade timestamps if available
+    if "entry_time" in trades.columns and "exit_time" in trades.columns and len(trades) >= 2:
+        span_days = (pd.to_datetime(trades["exit_time"].iloc[-1]) - pd.to_datetime(trades["entry_time"].iloc[0])).days
+        if span_days > 0:
+            trades_per_year = len(returns) / (span_days / 365.25)
+    annualization = np.sqrt(trades_per_year)
+    daily_rf = risk_free_rate / trades_per_year if trades_per_year > 0 else 0
+    sharpe = (mean_return - daily_rf) / std_return * annualization if std_return > 0 else 0.0
 
     # Sortino ratio (only downside deviation)
     downside_returns = returns[returns < 0]
     downside_std = np.std(downside_returns, ddof=1) if len(downside_returns) > 1 else 1.0
-    sortino = (mean_return - daily_rf) / downside_std * np.sqrt(365) if downside_std > 0 else 0.0
+    sortino = (mean_return - daily_rf) / downside_std * annualization if downside_std > 0 else 0.0
 
     # Max drawdown (as percentage of equity at peak, not just cumulative PnL)
     cumulative = np.cumsum(pnls)

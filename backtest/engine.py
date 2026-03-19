@@ -52,6 +52,7 @@ class BacktestTrade:
     # Pyramiding tracking
     pyramid_count: int = 0
     pyramid_sizes: list = field(default_factory=list)
+    avg_entry_price: float = 0.0  # Weighted average entry (for PnL calc with pyramids)
 
 
 @dataclass
@@ -498,6 +499,7 @@ class BacktestEngine:
                 entry_time=current_time,
                 side="long" if signal_type == SignalType.LONG else "short",
                 entry_price=entry_price,
+                avg_entry_price=entry_price,
                 size=position_size,
                 original_size=position_size,
                 stop_loss=sl,
@@ -611,9 +613,18 @@ class BacktestEngine:
                     },
                 )
 
+        # Full TP check BEFORE pyramiding — prevents phantom pyramid adds
+        # on the same candle that hits TP.
+        if pos.side == "long":
+            if high >= pos.take_profit:
+                self._close_position(pos.take_profit, current_time, "take_profit", risk_mgr, candle_idx)
+                return
+        else:
+            if low <= pos.take_profit:
+                self._close_position(pos.take_profit, current_time, "take_profit", risk_mgr, candle_idx)
+                return
+
         # --- Pyramiding: add to winning position (Feature 2) ---
-        # Evaluated before full-TP so the add can happen on the same candle that
-        # reaches the pyramid threshold (but position is only closed at full TP).
         pyramid_cfg = self.config.get("pyramiding", {})
         if (
             pyramid_cfg.get("enabled", False)
@@ -647,9 +658,10 @@ class BacktestEngine:
                 )
 
             if trend_aligned and unrealized >= trigger_atr_mult * atr_val:
-                # Change 1: Size adds from current balance (compounds with account growth),
-                # not from original_size (which was fixed at entry time).
-                sl_pct = abs(pos.entry_price - pos.stop_loss) / pos.entry_price
+                # Size adds from current balance. Use SL distance from current
+                # close price (not original entry) to avoid inflated sizing when
+                # SL has been ratcheted close to entry.
+                sl_pct = abs(close - pos.stop_loss) / close if close > 0 else 0
                 if sl_pct > 0:
                     add_risk = (
                         self.state.balance
@@ -670,6 +682,12 @@ class BacktestEngine:
                     commission_add = add_size * self.commission_rate
                     self.state.balance -= commission_add
 
+                    # Update weighted average entry price before changing size
+                    old_size = pos.size
+                    pos.avg_entry_price = (
+                        (pos.avg_entry_price * old_size + close * add_size)
+                        / (old_size + add_size)
+                    )
                     pos.size += add_size
                     pos.pyramid_count += 1
                     pos.pyramid_sizes.append(round(add_size, 4))
@@ -705,16 +723,6 @@ class BacktestEngine:
                         },
                     )
         # --- End pyramiding ---
-
-        # Full TP check (on remaining position)
-        if pos.side == "long":
-            if high >= pos.take_profit:
-                self._close_position(pos.take_profit, current_time, "take_profit", risk_mgr, candle_idx)
-                return
-        else:
-            if low <= pos.take_profit:
-                self._close_position(pos.take_profit, current_time, "take_profit", risk_mgr, candle_idx)
-                return
 
         # Trailing stop update with regime-adaptive multiplier
         if pd.notna(row.get("atr")):
@@ -775,11 +783,12 @@ class BacktestEngine:
         else:
             exit_price *= 1 + effective_slippage
 
-        # Calculate PnL
+        # Calculate PnL using weighted average entry for pyramid accuracy
+        ref_price = pos.avg_entry_price if pos.avg_entry_price > 0 else pos.entry_price
         if pos.side == "long":
-            pnl_pct = (exit_price - pos.entry_price) / pos.entry_price
+            pnl_pct = (exit_price - ref_price) / ref_price
         else:
-            pnl_pct = (pos.entry_price - exit_price) / pos.entry_price
+            pnl_pct = (ref_price - exit_price) / ref_price
 
         pnl = pos.size * pnl_pct
 
@@ -799,7 +808,8 @@ class BacktestEngine:
         pos.exit_time = exit_time
         pos.exit_price = exit_price
         pos.pnl = total_pnl  # Store combined PnL for metrics
-        pos.pnl_pct = pnl_pct
+        # Use total PnL percentage (including partial TP) for Sharpe/Sortino accuracy
+        pos.pnl_pct = total_pnl / pos.risk_amount if pos.risk_amount > 0 else pnl_pct
         pos.close_reason = reason
         self.state.trades.append(pos)
         self.state.position = None
