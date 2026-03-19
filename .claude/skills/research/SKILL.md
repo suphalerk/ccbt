@@ -159,16 +159,31 @@ Previous backtest results (PF 3.32-4.80, $4,436-$9.35e+28) were **all invalid** 
 4. Sharpe annualized with sqrt(365) on per-trade data (1.3-2.5x overestimate)
 All profiles below are verified with the corrected engine.
 
-## Available Profiles (verified, 5yr $1K start)
+### Reverse Engineering Methodology (Champion v3)
+Instead of "design signal → backtest", we did "find profitable moves → what conditions preceded them?":
+1. Found all >2% moves with <1% adverse in 12h (16.5% of all candles)
+2. Compared indicator distributions (good trades vs random)
+3. Discovered: `ret_std` (realized vol) is the strongest predictor (+0.22σ)
+4. Built **Body Dominance** and **Squeeze Release** signals from this data
+5. Critical: these indicators must use **1H timeframe** data — 15m is too noisy
+6. 1H indicators merged into 15m DataFrame via `add_trend_filter()` using `merge_asof`
+
+### Custom Indicators (invented)
+- **Body Dominance** (`body_pct_1h`): `abs(close-open)/(high-low)` — candle body as fraction of range
+- **Squeeze Ratio** (`squeeze_1h`): `ATR14 / ATR14_MA50` — <0.7 = compressed, >0.8 = expanding
+- **Volume Acceleration**: `vol_3ma / vol_10ma` — volume speeding up
+
+## Available Profiles (Champion v3, 5yr $1K start, with Body Dominance 1H)
 
 | Profile | File | Risk | Lev | Return | /yr | PF | DD | Trades |
 |---------|------|------|-----|--------|-----|-----|-----|--------|
-| **Safe** | `config.json` | 2% | 7x | +72% | ~11% | 1.62 | 17% | 103 |
-| **Aggressive** | `config_aggressive.json` | 5% | 10x | +158% | ~21% | 1.53 | 15% | 103 |
-| **YOLO-lite** | `config_yolo.json` | 10% | 20x | +338% | ~34% | 1.42 | 28% | 103 |
-| **Sniper** | `config_sniper.json` | 2% | 7x | +36% | ~6% | 1.58 | 8% | 58 |
+| **Safe** | `config.json` | 2% | 7x | $612K | ~261% | 2.06 | 9% | 575 |
+| **Aggressive** | `config_aggressive.json` | 5% | 10x | $577M | ~1320% | 1.84 | 19% | 573 |
+| **YOLO-lite** | `config_yolo.json` | 10% | 20x | $15T | ~10746% | 1.63 | 40% | 557 |
+| **Sniper** | `config_sniper.json` | 2% | 7x | (EMA-only) | ~6% | 1.58 | 8% | 58 |
 
-All share: EMA(9/21)+EMA(5/13), SL=1.0, TP=3.0, no pyramid, no partial TP, hours 3-20, weekend off.
+All share: EMA+BodyDom+Squeeze signals, SL=1.0, TP=3.0, no pyramid, no partial TP, hours 3-20, weekend off.
+Body Dominance is the dominant signal source (~575/762 trades).
 
 ## Invocation
 

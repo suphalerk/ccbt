@@ -80,8 +80,20 @@
     },
     "mean_reversion": {
       "enabled": false
+    },
+    "body_dominance": {
+      "enabled": true
+    },
+    "squeeze_release": {
+      "enabled": true
     }
   },
+  "body_dominance_min_body": 0.65,
+  "body_dominance_min_mom": 0.02,
+  "body_dominance_min_vol": 1.5,
+  "squeeze_release_low": 0.7,
+  "squeeze_release_high": 0.8,
+  "squeeze_release_min_mom4": 0.0,
   "mr_rsi_oversold": 30,
   "mr_rsi_overbought": 70,
   "mr_atr_sl_mult": 1.0,

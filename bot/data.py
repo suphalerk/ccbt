@@ -201,6 +201,20 @@ def add_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     df.iloc[:warmup, df.columns.get_loc("ema_cross_up")] = False
     df.iloc[:warmup, df.columns.get_loc("ema_cross_down")] = False
 
+    # Body dominance indicator: ratio of candle body to total range
+    # Guards against zero-range doji candles with epsilon floor
+    candle_range = (df["high"] - df["low"]).clip(lower=1e-10)
+    df["body_pct"] = (df["close"] - df["open"]).abs() / candle_range
+
+    # Momentum indicators
+    df["mom10"] = df["close"] / df["close"].shift(10) - 1
+    df["mom4"] = df["close"] / df["close"].shift(4) - 1
+
+    # Squeeze indicator: current ATR relative to its 50-period mean
+    # Values < 0.7 = compressed (squeeze), values > 0.8 = expanding (release)
+    atr_ma50 = df["atr"].rolling(window=50).mean()
+    df["squeeze"] = df["atr"] / atr_ma50.clip(lower=1e-10)
+
     logger.info("indicators_computed", extra={"rows": len(df)})
     return df
 
@@ -295,17 +309,37 @@ def add_trend_filter(
     trend_df = trend_df.copy()
 
     trend_df["ema_trend"] = compute_ema(trend_df["close"], config["ema_trend"])
-    trend_ema = trend_df[["ema_trend"]].rename(columns={"ema_trend": "ema_trend_1h"})
+
+    # Compute 1H indicators for body_dominance and squeeze_release signals
+    ema9_1h = compute_ema(trend_df["close"], 9)
+    ema21_1h = compute_ema(trend_df["close"], 21)
+    hl_range = trend_df["high"] - trend_df["low"]
+    body = abs(trend_df["close"] - trend_df["open"])
+    atr_1h = compute_atr(trend_df["high"], trend_df["low"], trend_df["close"], config.get("atr_period", 14))
+
+    trend_feat = pd.DataFrame({
+        "ema_trend_1h": trend_df["ema_trend"],
+        "ema9_1h": ema9_1h,
+        "ema21_1h": ema21_1h,
+        "body_pct_1h": body / hl_range.replace(0, np.nan).ffill().clip(lower=0.01),
+        "mom10_1h": trend_df["close"] / trend_df["close"].shift(10) - 1,
+        "mom4_1h": trend_df["close"] / trend_df["close"].shift(4) - 1,
+        "squeeze_1h": atr_1h / atr_1h.rolling(50).mean(),
+        "vol_ratio_1h": trend_df["volume"] / trend_df["volume"].rolling(20).mean(),
+        "close_1h": trend_df["close"],
+        "open_1h": trend_df["open"],
+    }, index=trend_df.index)
 
     # Merge with backward-looking alignment to avoid look-ahead bias
     df = pd.merge_asof(
-        df.reset_index(), trend_ema.reset_index(),
+        df.reset_index(), trend_feat.reset_index(),
         on="timestamp" if "timestamp" in df.reset_index().columns else df.reset_index().columns[0],
         direction="backward",
     )
     if "timestamp" in df.columns:
         df = df.set_index("timestamp")
-    df["ema_trend_1h"] = df["ema_trend_1h"].ffill()
+    for col in trend_feat.columns:
+        df[col] = df[col].ffill()
     df["above_trend"] = df["close"] > df["ema_trend_1h"]
     df["below_trend"] = df["close"] < df["ema_trend_1h"]
 

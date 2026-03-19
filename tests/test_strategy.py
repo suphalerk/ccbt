@@ -8,8 +8,10 @@ from bot.data import add_indicators, compute_atr, compute_ema, compute_rsi, dete
 from bot.strategy import (
     SignalType,
     TradeSignal,
+    check_body_dominance_conditions,
     check_entry_conditions,
     check_mean_reversion_conditions,
+    check_squeeze_release_conditions,
     compute_levels,
     compute_net_rr,
     compute_signal_quality_score,
@@ -764,3 +766,335 @@ class TestMeanReversionConditions:
         assert mr_sl > tf_sl
         # MR TP is closer to entry (lower for longs)
         assert mr_tp < tf_tp
+
+
+class TestBodyDominanceConditions:
+    """Test body dominance signal conditions."""
+
+    @pytest.fixture
+    def bd_config(self):
+        return {
+            "atr_min": 0.001,
+            "body_dominance_min_body": 0.65,
+            "body_dominance_min_mom": 0.02,
+            "body_dominance_min_vol": 1.5,
+        }
+
+    def _long_row(
+        self,
+        body_pct=0.70,
+        mom10=0.03,
+        volume=300.0,
+        volume_ma=150.0,
+        atr=500.0,
+        open_price=59500.0,
+        close=60000.0,
+    ):
+        """Build a row that passes body dominance LONG."""
+        return pd.Series({
+            "atr": atr,
+            "body_pct": body_pct,
+            "mom10": mom10,
+            "volume": volume,
+            "volume_ma": volume_ma,
+            "open": open_price,
+            "close": close,
+        })
+
+    def _short_row(
+        self,
+        body_pct=0.70,
+        mom10=-0.03,
+        volume=300.0,
+        volume_ma=150.0,
+        atr=500.0,
+        open_price=60500.0,
+        close=60000.0,
+    ):
+        """Build a row that passes body dominance SHORT."""
+        return pd.Series({
+            "atr": atr,
+            "body_pct": body_pct,
+            "mom10": mom10,
+            "volume": volume,
+            "volume_ma": volume_ma,
+            "open": open_price,
+            "close": close,
+        })
+
+    def test_valid_long(self, bd_config):
+        """All conditions met should pass for LONG."""
+        row = self._long_row()
+        assert check_body_dominance_conditions(row, bd_config, SignalType.LONG)
+
+    def test_valid_short(self, bd_config):
+        """All conditions met should pass for SHORT."""
+        row = self._short_row()
+        assert check_body_dominance_conditions(row, bd_config, SignalType.SHORT)
+
+    def test_rejects_small_body(self, bd_config):
+        """body_pct below threshold must be rejected."""
+        row = self._long_row(body_pct=0.40)
+        assert not check_body_dominance_conditions(row, bd_config, SignalType.LONG)
+
+    def test_rejects_bearish_candle_for_long(self, bd_config):
+        """Bearish candle (close < open) must be rejected for LONG."""
+        row = self._long_row(open_price=60500.0, close=60000.0)  # close < open
+        assert not check_body_dominance_conditions(row, bd_config, SignalType.LONG)
+
+    def test_rejects_bullish_candle_for_short(self, bd_config):
+        """Bullish candle (close > open) must be rejected for SHORT."""
+        row = self._short_row(open_price=59500.0, close=60000.0)  # close > open
+        assert not check_body_dominance_conditions(row, bd_config, SignalType.SHORT)
+
+    def test_rejects_weak_momentum_long(self, bd_config):
+        """mom10 below min_mom must be rejected for LONG."""
+        row = self._long_row(mom10=0.01)  # below 0.02
+        assert not check_body_dominance_conditions(row, bd_config, SignalType.LONG)
+
+    def test_rejects_weak_momentum_short(self, bd_config):
+        """mom10 above -min_mom must be rejected for SHORT."""
+        row = self._short_row(mom10=-0.01)  # above -0.02
+        assert not check_body_dominance_conditions(row, bd_config, SignalType.SHORT)
+
+    def test_rejects_low_volume(self, bd_config):
+        """Volume below vol_ma * min_vol must be rejected."""
+        row = self._long_row(volume=100.0, volume_ma=200.0)  # ratio = 0.5 < 1.5
+        assert not check_body_dominance_conditions(row, bd_config, SignalType.LONG)
+
+    def test_rejects_low_atr(self, bd_config):
+        """ATR below atr_min must be rejected."""
+        row = self._long_row(atr=0.0001)
+        assert not check_body_dominance_conditions(row, bd_config, SignalType.LONG)
+
+    def test_rejects_nan_body_pct(self, bd_config):
+        """NaN body_pct should be rejected gracefully."""
+        row = self._long_row()
+        row["body_pct"] = float("nan")
+        assert not check_body_dominance_conditions(row, bd_config, SignalType.LONG)
+
+    def test_rejects_nan_mom10(self, bd_config):
+        """NaN mom10 should be rejected gracefully."""
+        row = self._long_row()
+        row["mom10"] = float("nan")
+        assert not check_body_dominance_conditions(row, bd_config, SignalType.LONG)
+
+    def test_trend_filter_long_rejected(self, bd_config):
+        """above_trend=False must reject LONG."""
+        row = self._long_row()
+        row["above_trend"] = False
+        assert not check_body_dominance_conditions(row, bd_config, SignalType.LONG)
+
+    def test_trend_filter_short_rejected(self, bd_config):
+        """below_trend=False must reject SHORT."""
+        row = self._short_row()
+        row["below_trend"] = False
+        assert not check_body_dominance_conditions(row, bd_config, SignalType.SHORT)
+
+
+class TestSqueezeReleaseConditions:
+    """Test squeeze release signal conditions."""
+
+    @pytest.fixture
+    def sq_config(self):
+        return {
+            "atr_min": 0.001,
+            "squeeze_release_low": 0.7,
+            "squeeze_release_high": 0.8,
+            "squeeze_release_min_mom4": 0.0,
+        }
+
+    def _long_row(
+        self,
+        squeeze=0.85,
+        mom4=0.005,
+        close=60000.0,
+        ema_slow=59000.0,
+        atr=500.0,
+    ):
+        """Build a row that passes squeeze release LONG."""
+        return pd.Series({
+            "atr": atr,
+            "squeeze": squeeze,
+            "mom4": mom4,
+            "close": close,
+            "ema_slow": ema_slow,
+        })
+
+    def _short_row(
+        self,
+        squeeze=0.85,
+        mom4=-0.005,
+        close=60000.0,
+        ema_slow=61000.0,
+        atr=500.0,
+    ):
+        """Build a row that passes squeeze release SHORT."""
+        return pd.Series({
+            "atr": atr,
+            "squeeze": squeeze,
+            "mom4": mom4,
+            "close": close,
+            "ema_slow": ema_slow,
+        })
+
+    def _prev_squeezed(self, squeeze=0.60):
+        """Build a prev_row that is in squeeze."""
+        return pd.Series({"squeeze": squeeze})
+
+    def test_valid_long(self, sq_config):
+        """All conditions met should pass for LONG."""
+        row = self._long_row()
+        prev = self._prev_squeezed()
+        assert check_squeeze_release_conditions(row, prev, sq_config, SignalType.LONG)
+
+    def test_valid_short(self, sq_config):
+        """All conditions met should pass for SHORT."""
+        row = self._short_row()
+        prev = self._prev_squeezed()
+        assert check_squeeze_release_conditions(row, prev, sq_config, SignalType.SHORT)
+
+    def test_rejects_when_prev_not_squeezed(self, sq_config):
+        """If previous squeeze >= squeeze_low, reject (was not in squeeze)."""
+        row = self._long_row()
+        prev = pd.Series({"squeeze": 0.75})  # >= 0.7, not in squeeze
+        assert not check_squeeze_release_conditions(row, prev, sq_config, SignalType.LONG)
+
+    def test_rejects_when_current_not_expanding(self, sq_config):
+        """If current squeeze <= squeeze_high, release has not started."""
+        row = self._long_row(squeeze=0.75)  # <= 0.8
+        prev = self._prev_squeezed()
+        assert not check_squeeze_release_conditions(row, prev, sq_config, SignalType.LONG)
+
+    def test_rejects_price_below_ema_for_long(self, sq_config):
+        """LONG: close below ema_slow must be rejected."""
+        row = self._long_row(close=58000.0, ema_slow=59000.0)
+        prev = self._prev_squeezed()
+        assert not check_squeeze_release_conditions(row, prev, sq_config, SignalType.LONG)
+
+    def test_rejects_price_above_ema_for_short(self, sq_config):
+        """SHORT: close above ema_slow must be rejected."""
+        row = self._short_row(close=62000.0, ema_slow=61000.0)
+        prev = self._prev_squeezed()
+        assert not check_squeeze_release_conditions(row, prev, sq_config, SignalType.SHORT)
+
+    def test_rejects_negative_mom4_for_long(self, sq_config):
+        """LONG: mom4 <= 0 must be rejected."""
+        row = self._long_row(mom4=-0.001)
+        prev = self._prev_squeezed()
+        assert not check_squeeze_release_conditions(row, prev, sq_config, SignalType.LONG)
+
+    def test_rejects_positive_mom4_for_short(self, sq_config):
+        """SHORT: mom4 >= 0 must be rejected."""
+        row = self._short_row(mom4=0.001)
+        prev = self._prev_squeezed()
+        assert not check_squeeze_release_conditions(row, prev, sq_config, SignalType.SHORT)
+
+    def test_rejects_low_atr(self, sq_config):
+        """ATR below atr_min must be rejected."""
+        row = self._long_row(atr=0.0001)
+        prev = self._prev_squeezed()
+        assert not check_squeeze_release_conditions(row, prev, sq_config, SignalType.LONG)
+
+    def test_rejects_nan_squeeze(self, sq_config):
+        """NaN squeeze in current row must be rejected gracefully."""
+        row = self._long_row()
+        row["squeeze"] = float("nan")
+        prev = self._prev_squeezed()
+        assert not check_squeeze_release_conditions(row, prev, sq_config, SignalType.LONG)
+
+    def test_rejects_nan_prev_squeeze(self, sq_config):
+        """NaN squeeze in prev_row must be rejected gracefully."""
+        row = self._long_row()
+        prev = pd.Series({"squeeze": float("nan")})
+        assert not check_squeeze_release_conditions(row, prev, sq_config, SignalType.LONG)
+
+    def test_trend_filter_long_rejected(self, sq_config):
+        """above_trend=False must reject LONG."""
+        row = self._long_row()
+        row["above_trend"] = False
+        prev = self._prev_squeezed()
+        assert not check_squeeze_release_conditions(row, prev, sq_config, SignalType.LONG)
+
+    def test_trend_filter_short_rejected(self, sq_config):
+        """below_trend=False must reject SHORT."""
+        row = self._short_row()
+        row["below_trend"] = False
+        prev = self._prev_squeezed()
+        assert not check_squeeze_release_conditions(row, prev, sq_config, SignalType.SHORT)
+
+
+class TestNewIndicators:
+    """Test that add_indicators computes the new indicator columns correctly."""
+
+    def _make_df(self, n: int = 100) -> pd.DataFrame:
+        np.random.seed(7)
+        dates = pd.date_range("2024-01-01", periods=n, freq="15min")
+        close = 60000 + np.cumsum(np.random.randn(n) * 50)
+        open_ = close + np.random.randn(n) * 30
+        high = np.maximum(close, open_) + np.abs(np.random.randn(n) * 20)
+        low = np.minimum(close, open_) - np.abs(np.random.randn(n) * 20)
+        return pd.DataFrame(
+            {"open": open_, "high": high, "low": low, "close": close,
+             "volume": np.random.uniform(100, 500, n)},
+            index=dates,
+        )
+
+    @pytest.fixture
+    def base_config(self):
+        return {
+            "ema_fast": 9, "ema_slow": 21, "ema_trend": 50,
+            "rsi_period": 14, "rsi_min": 45, "rsi_max": 65,
+            "atr_period": 14, "atr_min": 0.001,
+        }
+
+    def test_body_pct_column_present(self, base_config):
+        """add_indicators must produce a body_pct column."""
+        from bot.data import add_indicators
+        df = add_indicators(self._make_df(), base_config)
+        assert "body_pct" in df.columns
+
+    def test_body_pct_bounded_0_to_1(self, base_config):
+        """body_pct must always be in [0, 1]."""
+        from bot.data import add_indicators
+        df = add_indicators(self._make_df(), base_config)
+        valid = df["body_pct"].dropna()
+        assert (valid >= 0.0).all()
+        assert (valid <= 1.0).all()
+
+    def test_mom10_column_present(self, base_config):
+        """add_indicators must produce a mom10 column."""
+        from bot.data import add_indicators
+        df = add_indicators(self._make_df(), base_config)
+        assert "mom10" in df.columns
+
+    def test_mom4_column_present(self, base_config):
+        """add_indicators must produce a mom4 column."""
+        from bot.data import add_indicators
+        df = add_indicators(self._make_df(), base_config)
+        assert "mom4" in df.columns
+
+    def test_squeeze_column_present(self, base_config):
+        """add_indicators must produce a squeeze column."""
+        from bot.data import add_indicators
+        df = add_indicators(self._make_df(), base_config)
+        assert "squeeze" in df.columns
+
+    def test_squeeze_positive(self, base_config):
+        """squeeze must be positive for all non-NaN rows."""
+        from bot.data import add_indicators
+        df = add_indicators(self._make_df(200), base_config)
+        valid = df["squeeze"].dropna()
+        assert (valid > 0).all()
+
+    def test_mom10_nan_first_10_rows(self, base_config):
+        """First 10 rows of mom10 should be NaN (shift window)."""
+        from bot.data import add_indicators
+        df = add_indicators(self._make_df(), base_config)
+        assert df["mom10"].iloc[:10].isna().all()
+
+    def test_mom4_nan_first_4_rows(self, base_config):
+        """First 4 rows of mom4 should be NaN (shift window)."""
+        from bot.data import add_indicators
+        df = add_indicators(self._make_df(), base_config)
+        assert df["mom4"].iloc[:4].isna().all()

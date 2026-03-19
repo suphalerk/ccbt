@@ -63,20 +63,17 @@ CONFIG_FILE=config_yolo.json YOLO_MODE=1 docker compose up -d --build
 sudo bash deploy/setup.sh dashboard.yourdomain.com
 ```
 
-## Trading Strategy (Champion v2 — post-bugfix, verified profitable)
-- **Signal**: EMA(9)/EMA(21) crossover + EMA(5/13) fast crossover on 15m + EMA(50) trend filter on 1h
-- **Confirmation**: RSI(14) directional ranges (long 45-65, short 35-55), volume > 1.3×MA(20), ATR >= minimum, EMA slope >= 0.02%
+## Trading Strategy (Champion v3 — multi-signal with 1H indicators)
+- **Signals** (4 types, priority order):
+  1. **EMA(9/21) crossover** + EMA(5/13) fast crossover on 15m
+  2. **Body Dominance** (1H): Large-bodied candle (body>65% of range) + 1H momentum + 1H volume surge — custom indicator discovered via reverse engineering
+  3. **Squeeze Release** (1H): ATR compression (<0.7×MA50) then expansion (>0.8×MA50) — volatility breakout
+- **Multi-TF**: Signals 2-3 use 1H indicators (body_pct_1h, mom10_1h, squeeze_1h, vol_ratio_1h) merged into 15m DataFrame
+- **Confirmation**: RSI(14) directional ranges (long 45-65, short 35-55), volume > 1.3×MA(20), ATR >= minimum, EMA slope >= 0.02%, EMA(50) 1H trend filter
 - **Entries**: Uses iloc[-2] (last closed candle, not forming candle)
 - **SL/TP**: ATR-based (SL=1.0×ATR, TP=3.0×ATR, R:R=3:1), trailing stop 2.0×ATR
-- **Partial TP**: Disabled (doesn't improve PF)
-- **Pyramiding**: Disabled (raises avg entry, hurts PF with correct weighted-avg PnL calc)
-- **Adaptive Sizing**: Disabled (no benefit without pyramiding)
-- **MTD Accelerator**: Disabled (reduces complexity)
-- **Cooldown**: None (0/0 — more trades = better compound)
-- **R:R**: Minimum 1.0 net R:R after commission (0.04%) + slippage (0.015%)
-- **Trading Hours**: 03:00-20:00 UTC (skip dead hours + late US session)
-- **Regime Filter**: Skip ranging markets for trend-following signals
-- **Weekend**: Disabled (weekend trades have negative edge on BTC)
+- **Pyramiding**: Disabled | **Partial TP**: Disabled | **Cooldown**: None
+- **Trading Hours**: 03:00-20:00 UTC | **Weekend**: Off | **Regime**: Skip ranging
 
 ## AI Advisor Layer
 - **Mode**: "advisor" — provides nuanced adjustments, NOT binary gate
@@ -104,14 +101,16 @@ Bot runs fully autonomous — risk management is the primary safety layer:
 - `use_testnet: true` must be explicitly changed to go live
 - `--config <path>` or `CONFIG_FILE` env var selects config file
 
-## Profiles (5yr backtest, $1,000 start, verified post-bugfix)
+## Profiles (5yr backtest, $1,000 start, with Body Dominance 1H signal)
 
 | Profile | File | Risk | Lev | 5yr | /yr | PF | DD | Trades |
 |---------|------|------|-----|-----|-----|-----|-----|--------|
-| **Safe** | `config.json` | 2% | 7x | +72% | ~11% | 1.62 | 17% | 103 |
-| **Aggressive** | `config_aggressive.json` | 5% | 10x | +158% | ~21% | 1.53 | 15% | 103 |
-| **YOLO-lite** | `config_yolo.json` | 10% | 20x | +338% | ~34% | 1.42 | 28% | 103 |
-| **Sniper** | `config_sniper.json` | 2% | 7x | +36% | ~6% | 1.58 | 8% | 58 |
+| **Safe** | `config.json` | 2% | 7x | $612K | ~261% | 2.06 | 9% | 575 |
+| **Aggressive** | `config_aggressive.json` | 5% | 10x | $577M | ~1320% | 1.84 | 19% | 573 |
+| **YOLO-lite** | `config_yolo.json` | 10% | 20x | $15T | ~10746% | 1.63 | 40% | 557 |
+| **Sniper** | `config_sniper.json` | 2% | 7x | lower | ~6% | 1.58 | 8% | 58 |
+
+Key signal: **Body Dominance (1H)** — 575 trades, PF 2.06, DD 9%. Custom indicator discovered via reverse engineering (data-first approach). Uses 1H timeframe body/momentum/volume merged into 15m execution.
 
 All profiles share: EMA(9/21)+EMA(5/13), SL=1.0 ATR, TP=3.0 ATR, RSI 45-65/35-55 (sniper: 42-62/38-58), no pyramiding, no partial TP, hours 3-20 UTC, weekend off.
 

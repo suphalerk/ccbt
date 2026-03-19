@@ -403,6 +403,142 @@ def check_mean_reversion_conditions(
     return True
 
 
+def check_body_dominance_conditions(
+    row: pd.Series, config: dict, signal_type: SignalType
+) -> bool:
+    """Check body dominance entry conditions.
+
+    Large-bodied candles (body > 65% of range) with momentum and volume surge
+    signal strong directional conviction. The candle direction must match the
+    signal direction.
+
+    Args:
+        row: Current candle row with indicators (body_pct, mom10, volume_ma).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if all body dominance conditions are satisfied.
+    """
+    if pd.isna(row.get("atr")):
+        return False
+    if row["atr"] < config.get("atr_min", 0.0):
+        return False
+
+    min_body = config.get("body_dominance_min_body", 0.65)
+    min_mom = config.get("body_dominance_min_mom", 0.02)
+    min_vol = config.get("body_dominance_min_vol", 1.5)
+
+    # Prefer 1H indicators when available (signal discovered on 1H data)
+    body = row.get("body_pct_1h") if pd.notna(row.get("body_pct_1h")) else row.get("body_pct")
+    mom = row.get("mom10_1h") if pd.notna(row.get("mom10_1h")) else row.get("mom10")
+    vol_r = row.get("vol_ratio_1h")
+    close_h = row.get("close_1h") if pd.notna(row.get("close_1h")) else row.get("close")
+    open_h = row.get("open_1h") if pd.notna(row.get("open_1h")) else row.get("open")
+
+    if pd.isna(body) or pd.isna(mom):
+        return False
+    if body < min_body:
+        return False
+
+    if signal_type == SignalType.LONG:
+        if close_h <= open_h:
+            return False
+        if mom < min_mom:
+            return False
+        if "above_trend" in row.index and pd.notna(row["above_trend"]):
+            if not row["above_trend"]:
+                return False
+    elif signal_type == SignalType.SHORT:
+        if close_h >= open_h:
+            return False
+        if mom > -min_mom:
+            return False
+        if "below_trend" in row.index and pd.notna(row["below_trend"]):
+            if not row["below_trend"]:
+                return False
+
+    # Volume surge — prefer 1H ratio when available
+    if pd.notna(vol_r) and vol_r > 0:
+        if vol_r < min_vol:
+            return False
+    else:
+        vol_ma = row.get("volume_ma")
+        if pd.notna(vol_ma) and vol_ma > 0:
+            if row["volume"] < vol_ma * min_vol:
+                return False
+
+    return True
+
+
+def check_squeeze_release_conditions(
+    row: pd.Series, prev_row: pd.Series, config: dict, signal_type: SignalType
+) -> bool:
+    """Check squeeze release (ATR expansion) entry conditions.
+
+    When ATR has been compressed (squeeze < low_threshold) and then expands
+    (squeeze > high_threshold), a directional breakout is starting.
+
+    Args:
+        row: Current candle row with indicators (squeeze, ema_slow, mom4).
+        prev_row: Previous candle row (for squeeze_prev check).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if squeeze release conditions are satisfied.
+    """
+    if pd.isna(row.get("atr")):
+        return False
+    if row["atr"] < config.get("atr_min", 0.0):
+        return False
+
+    squeeze_low = config.get("squeeze_release_low", 0.7)
+    squeeze_high = config.get("squeeze_release_high", 0.8)
+    min_mom4 = config.get("squeeze_release_min_mom4", 0.0)
+
+    # Prefer 1H squeeze when available (signal discovered on 1H data)
+    sq_now = row.get("squeeze_1h") if pd.notna(row.get("squeeze_1h")) else row.get("squeeze")
+    sq_prev = prev_row.get("squeeze_1h") if pd.notna(prev_row.get("squeeze_1h")) else prev_row.get("squeeze")
+    mom4 = row.get("mom4_1h") if pd.notna(row.get("mom4_1h")) else row.get("mom4")
+
+    if pd.isna(sq_now) or pd.isna(sq_prev) or pd.isna(mom4):
+        return False
+
+    if sq_prev >= squeeze_low:
+        return False
+    if sq_now <= squeeze_high:
+        return False
+
+    if signal_type == SignalType.LONG:
+        # Price above EMA21 (trend confirmation)
+        ema_slow = row.get("ema_slow")
+        if pd.notna(ema_slow) and row["close"] <= ema_slow:
+            return False
+        # Short-term momentum must be positive (use 1H mom4 if available)
+        if mom4 <= min_mom4:
+            return False
+        # Trend alignment via higher timeframe if available
+        if "above_trend" in row.index and pd.notna(row["above_trend"]):
+            if not row["above_trend"]:
+                return False
+
+    elif signal_type == SignalType.SHORT:
+        # Price below EMA21
+        ema_slow = row.get("ema_slow")
+        if pd.notna(ema_slow) and row["close"] >= ema_slow:
+            return False
+        # Short-term momentum must be negative (use 1H mom4 if available)
+        if mom4 >= -min_mom4:
+            return False
+        # Trend alignment
+        if "below_trend" in row.index and pd.notna(row["below_trend"]):
+            if not row["below_trend"]:
+                return False
+
+    return True
+
+
 def check_bb_breakout_conditions(
     row: pd.Series, config: dict, signal_type: SignalType
 ) -> bool:
@@ -590,6 +726,8 @@ def generate_signal(
         row_only_checks.append(("bb_breakout", check_bb_breakout_conditions))
     if signals_config.get("mean_reversion", {}).get("enabled", False):
         row_only_checks.append(("mean_reversion", check_mean_reversion_conditions))
+    if signals_config.get("body_dominance", {}).get("enabled", False):
+        row_only_checks.append(("body_dominance", check_body_dominance_conditions))
 
     for source, check_fn in row_only_checks:
         for signal_type in (SignalType.LONG, SignalType.SHORT):
@@ -669,6 +807,46 @@ def generate_signal(
                 extra={
                     "type": signal_type.value,
                     "source": "rsi_divergence",
+                    "entry": entry_price,
+                    "sl": sl,
+                    "tp": tp,
+                    "gross_rr": round(gross_rr, 2),
+                    "net_rr": round(net_rr, 2),
+                    "rsi": round(row["rsi"], 2),
+                },
+            )
+            return signal, df
+
+    # Squeeze release needs the previous closed candle (df.iloc[-3]) for squeeze_prev
+    if signals_config.get("squeeze_release", {}).get("enabled", False) and len(df) >= 3:
+        prev_row = df.iloc[-3]
+        for signal_type in (SignalType.LONG, SignalType.SHORT):
+            if not check_squeeze_release_conditions(row, prev_row, config, signal_type):
+                continue
+
+            atr = row["atr"]
+            sl, tp = compute_levels(entry_price, atr, signal_type, config)
+            net_rr = compute_net_rr(entry_price, sl, tp, config)
+            if net_rr < min_rr:
+                continue
+
+            signal = TradeSignal(
+                signal_type=signal_type,
+                entry_price=entry_price,
+                stop_loss=sl,
+                take_profit=tp,
+                atr=atr,
+                rsi=row["rsi"],
+                risk_reward_ratio=net_rr,
+                regime=regime,
+                signal_source="squeeze_release",
+            )
+            gross_rr = abs(tp - entry_price) / abs(entry_price - sl) if abs(entry_price - sl) > 0 else 0
+            logger.info(
+                "signal_generated",
+                extra={
+                    "type": signal_type.value,
+                    "source": "squeeze_release",
                     "entry": entry_price,
                     "sl": sl,
                     "tp": tp,

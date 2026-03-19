@@ -14,11 +14,13 @@ from bot.risk import RiskManager
 from bot.strategy import (
     SignalType,
     check_bb_breakout_conditions,
+    check_body_dominance_conditions,
     check_entry_conditions,
     check_fast_crossover_conditions,
     check_mean_reversion_conditions,
     check_pullback_conditions,
     check_rsi_divergence_conditions,
+    check_squeeze_release_conditions,
     compute_levels,
     compute_net_rr,
     compute_signal_quality_score,
@@ -344,6 +346,23 @@ class BacktestEngine:
             if signal_source is None and signals_config.get("mean_reversion", {}).get("enabled", False):
                 if check_mean_reversion_conditions(signal_row, self.config, signal_type):
                     signal_source = "mean_reversion"
+
+            # Body dominance: trend-following, gated out in ranging regime
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("body_dominance", {}).get("enabled", False):
+                    if check_body_dominance_conditions(signal_row, self.config, signal_type):
+                        signal_source = "body_dominance"
+
+            # Squeeze release: needs the candle before signal_row for squeeze_prev
+            # signal_row is at candle_idx-1; the row before it is at candle_idx-2
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("squeeze_release", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        squeeze_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_squeeze_release_conditions(
+                            signal_row, squeeze_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "squeeze_release"
 
             if signal_source is None:
                 continue
