@@ -9,8 +9,10 @@ from bot.strategy import (
     SignalType,
     TradeSignal,
     check_entry_conditions,
+    check_mean_reversion_conditions,
     compute_levels,
     compute_net_rr,
+    compute_signal_quality_score,
     compute_trailing_stop,
     generate_signal,
 )
@@ -274,9 +276,9 @@ class TestEntryConditions:
         assert check_entry_conditions(row, config, SignalType.SHORT)
 
     def test_long_allows_higher_rsi(self, config):
-        """Longs should allow RSI up to 75 (trend momentum)."""
+        """Longs should allow RSI up to 72 (trend momentum, not overbought)."""
         row = pd.Series({
-            "rsi": 72.0,  # Above old rsi_max=65 but within long range
+            "rsi": 70.0,  # Above old rsi_max=65 but within long range (<=72)
             "atr": 500.0,
             "volume": 300.0,
             "volume_ma": 200.0,
@@ -286,9 +288,9 @@ class TestEntryConditions:
         assert check_entry_conditions(row, config, SignalType.LONG)
 
     def test_short_rejects_high_rsi(self, config):
-        """Shorts should reject RSI above 52."""
+        """Shorts should reject RSI above rsi_short_max (config default 55, fallback 52)."""
         row = pd.Series({
-            "rsi": 55.0,  # Above short max (52)
+            "rsi": 60.0,  # Above short max range
             "atr": 500.0,
             "volume": 300.0,
             "volume_ma": 200.0,
@@ -318,6 +320,18 @@ class TestEntryConditions:
             "volume_ma": 200.0,
             "ema_cross_up": True,
             "above_trend": True,
+        })
+        assert not check_entry_conditions(row, config, SignalType.LONG)
+
+    def test_rsi_long_max_72_rejects_overbought(self):
+        """RSI > 72 should reject long entries (prevent overbought entries)."""
+        config = {
+            "rsi_min": 45, "rsi_max": 65, "rsi_long_min": 45, "rsi_long_max": 72,
+            "atr_min": 0.001, "volume_mult": 1.0,
+        }
+        row = pd.Series({
+            "rsi": 75.0, "atr": 500.0, "volume": 300.0,
+            "volume_ma": 200.0, "ema_cross_up": True, "above_trend": True,
         })
         assert not check_entry_conditions(row, config, SignalType.LONG)
 
@@ -447,3 +461,306 @@ class TestRegimeIntegration:
             regime="trending",
         )
         assert signal.regime == "trending"
+
+
+class TestPostTP1TrailingStop:
+    """Test trailing stop with post-TP1 wider multiplier."""
+
+    def test_post_tp1_uses_wider_trail(self):
+        """After TP1, trail should use atr_trail_mult_post_tp1 (wider)."""
+        config = {"atr_sl_mult": 1.5, "atr_trail_mult": 1.8, "atr_trail_mult_post_tp1": 2.5}
+        atr = 500.0
+        current_price = 61000.0
+        current_sl = 59000.0
+
+        # Normal trail: 61000 - 1.8*500 = 60100
+        normal_sl = compute_trailing_stop(current_price, current_sl, atr, SignalType.LONG, config, post_tp1=False)
+        assert normal_sl == pytest.approx(60100.0)
+
+        # Post-TP1 trail: 61000 - 2.5*500 = 59750
+        post_tp1_sl = compute_trailing_stop(current_price, current_sl, atr, SignalType.LONG, config, post_tp1=True)
+        assert post_tp1_sl == pytest.approx(59750.0)
+
+        # Post-TP1 trail should be wider (lower SL for long)
+        assert post_tp1_sl < normal_sl
+
+    def test_post_tp1_short_uses_wider_trail(self):
+        """After TP1 on short, trail should be wider (higher SL)."""
+        config = {"atr_sl_mult": 1.5, "atr_trail_mult": 1.8, "atr_trail_mult_post_tp1": 2.5}
+        atr = 500.0
+        current_price = 59000.0
+        current_sl = 61000.0
+
+        # Normal trail: 59000 + 1.8*500 = 59900
+        normal_sl = compute_trailing_stop(current_price, current_sl, atr, SignalType.SHORT, config, post_tp1=False)
+        assert normal_sl == pytest.approx(59900.0)
+
+        # Post-TP1 trail: 59000 + 2.5*500 = 60250
+        post_tp1_sl = compute_trailing_stop(current_price, current_sl, atr, SignalType.SHORT, config, post_tp1=True)
+        assert post_tp1_sl == pytest.approx(60250.0)
+
+    def test_no_post_tp1_config_falls_back(self):
+        """Without atr_trail_mult_post_tp1, post_tp1=True uses default trail."""
+        config = {"atr_sl_mult": 1.5, "atr_trail_mult": 1.8}
+        atr = 500.0
+        normal_sl = compute_trailing_stop(61000, 59000, atr, SignalType.LONG, config, post_tp1=False)
+        post_sl = compute_trailing_stop(61000, 59000, atr, SignalType.LONG, config, post_tp1=True)
+        assert normal_sl == post_sl  # Same when no post_tp1 config
+
+
+class TestFullTPNetRR:
+    """Test net R:R calculation based on full TP distance.
+
+    Partial TP is an execution strategy decoupled from signal filtering —
+    compute_net_rr always uses the full TP distance regardless of partial TP config.
+    """
+
+    def test_partial_tp_config_ignored_in_rr(self):
+        """partial_tp_enabled flag must not change the R:R result."""
+        config_no_partial = {
+            "commission_rate": 0.0004, "slippage_rate": 0.00015,
+            "partial_tp_enabled": False,
+        }
+        config_partial = {
+            "commission_rate": 0.0004, "slippage_rate": 0.00015,
+            "partial_tp_enabled": True, "partial_tp_pct": 0.3,
+            "partial_tp_atr_mult": 2.0, "atr_sl_mult": 1.5, "atr_tp_mult": 3.0,
+        }
+        entry = 60000.0
+        sl = 60000 - 500 * 1.5  # 59250
+        tp = 60000 + 500 * 3.0  # 61500
+
+        rr_no_partial = compute_net_rr(entry, sl, tp, config_no_partial)
+        rr_partial = compute_net_rr(entry, sl, tp, config_partial)
+
+        # Both configs must produce the same R:R — partial TP is not a filter
+        assert rr_no_partial == pytest.approx(rr_partial, rel=0.001)
+        assert rr_no_partial > 0
+
+    def test_full_tp_rr_formula(self):
+        """R:R must use full TP distance and correct fee defaults."""
+        config = {"commission_rate": 0.0004, "slippage_rate": 0.00015}
+        entry = 60000.0
+        sl = 59100.0
+        tp = 62700.0
+        rr = compute_net_rr(entry, sl, tp, config)
+        # Expected formula: (reward - fee_impact) / (risk + fee_impact)
+        round_trip_cost = (0.0004 + 0.00015) * 2
+        risk = abs(entry - sl)
+        reward = abs(tp - entry)
+        fee_impact = entry * round_trip_cost
+        expected = (reward - fee_impact) / (risk + fee_impact)
+        assert rr == pytest.approx(expected, rel=0.001)
+
+    def test_rr_uses_full_tp_not_tp1(self):
+        """R:R result must equal the full-TP R:R, not the TP1 (partial) R:R."""
+        config = {
+            "commission_rate": 0.0, "slippage_rate": 0.0,
+            "partial_tp_enabled": True, "partial_tp_pct": 0.5,
+            "partial_tp_atr_mult": 2.0, "atr_sl_mult": 1.5, "atr_tp_mult": 3.0,
+        }
+        entry = 60000.0
+        atr = 500.0
+        sl = entry - atr * 1.5   # 59250, risk = 750
+        tp = entry + atr * 3.0   # 61500, full reward = 1500
+
+        rr = compute_net_rr(entry, sl, tp, config)
+        # Full TP: reward=1500, risk=750 → RR=2.0 (zero fees)
+        assert rr == pytest.approx(1500 / 750, rel=0.01)
+        # Should NOT be the old blended value (1250/750 ≈ 1.667)
+        assert rr != pytest.approx(1250 / 750, rel=0.01)
+
+
+class TestSignalQualityScore:
+    """Test signal quality scoring for flexible cooldown."""
+
+    @pytest.fixture
+    def base_config(self):
+        return {"min_rr_ratio": 1.5}
+
+    def test_perfect_signal_scores_high(self, base_config):
+        """Trending + net_rr=3.0 + RSI optimal + volume 2x → score >= 0.85."""
+        score = compute_signal_quality_score(
+            net_rr=3.0, rsi=58.0, volume_ratio=2.0,
+            regime="trending", signal_type=SignalType.LONG, config=base_config,
+        )
+        assert score >= 0.85
+
+    def test_mediocre_signal_scores_low(self, base_config):
+        """Ranging + net_rr=min + RSI edge + volume 1x → score < 0.5."""
+        score = compute_signal_quality_score(
+            net_rr=1.5, rsi=48.0, volume_ratio=1.0,
+            regime="ranging", signal_type=SignalType.LONG, config=base_config,
+        )
+        assert score < 0.5
+
+    def test_score_bounded_0_to_1(self, base_config):
+        """Extreme inputs → 0.0 <= score <= 1.0."""
+        for rr in [0.0, 1.5, 5.0, 100.0]:
+            for rsi in [0.0, 50.0, 100.0]:
+                for vol in [0.0, 1.0, 10.0]:
+                    for regime in ["trending", "volatile", "ranging", "unknown"]:
+                        score = compute_signal_quality_score(
+                            rr, rsi, vol, regime, SignalType.LONG, base_config,
+                        )
+                        assert 0.0 <= score <= 1.0, f"Score {score} out of bounds for rr={rr}, rsi={rsi}, vol={vol}, regime={regime}"
+
+    def test_rr_scales_linearly(self, base_config):
+        """Higher net_rr → higher score (monotonic)."""
+        scores = []
+        for rr in [1.5, 2.0, 2.5, 3.0]:
+            score = compute_signal_quality_score(
+                rr, 58.0, 1.5, "trending", SignalType.LONG, base_config,
+            )
+            scores.append(score)
+        for i in range(1, len(scores)):
+            assert scores[i] >= scores[i - 1]
+
+    def test_regime_affects_score(self, base_config):
+        """Trending > volatile > ranging."""
+        kwargs = dict(net_rr=2.5, rsi=58.0, volume_ratio=1.5,
+                      signal_type=SignalType.LONG, config=base_config)
+        s_trending = compute_signal_quality_score(regime="trending", **kwargs)
+        s_volatile = compute_signal_quality_score(regime="volatile", **kwargs)
+        s_ranging = compute_signal_quality_score(regime="ranging", **kwargs)
+        assert s_trending > s_volatile > s_ranging
+
+    def test_rsi_optimal_for_long(self, base_config):
+        """RSI 58 scores higher than RSI 48 or 68 for longs."""
+        kwargs = dict(net_rr=2.5, volume_ratio=1.5, regime="trending",
+                      signal_type=SignalType.LONG, config=base_config)
+        s_optimal = compute_signal_quality_score(rsi=58.0, **kwargs)
+        s_low = compute_signal_quality_score(rsi=48.0, **kwargs)
+        s_high = compute_signal_quality_score(rsi=68.0, **kwargs)
+        assert s_optimal > s_low
+        assert s_optimal > s_high
+
+    def test_rsi_optimal_for_short(self, base_config):
+        """RSI 40 scores higher than RSI 30 or 50 for shorts."""
+        kwargs = dict(net_rr=2.5, volume_ratio=1.5, regime="trending",
+                      signal_type=SignalType.SHORT, config=base_config)
+        s_optimal = compute_signal_quality_score(rsi=40.0, **kwargs)
+        s_low = compute_signal_quality_score(rsi=30.0, **kwargs)
+        s_high = compute_signal_quality_score(rsi=50.0, **kwargs)
+        assert s_optimal > s_low
+        assert s_optimal > s_high
+
+
+class TestMeanReversionConditions:
+    """Test mean-reversion signal conditions."""
+
+    @pytest.fixture
+    def mr_config(self):
+        return {
+            "atr_min": 0.001,
+            "mr_rsi_oversold": 30,
+            "mr_rsi_overbought": 70,
+        }
+
+    def _long_row(self, rsi=25.0, regime="ranging", close=100.0, low=98.0, bb_lower=99.0, atr=1.0):
+        """Helper: build a row that should pass mean-reversion LONG."""
+        return pd.Series({
+            "rsi": rsi,
+            "atr": atr,
+            "regime": regime,
+            "close": close,
+            "low": low,
+            "high": close + 1.0,
+            "bb_lower": bb_lower,
+            "bb_upper": close + 5.0,
+        })
+
+    def _short_row(self, rsi=75.0, regime="ranging", close=100.0, high=102.0, bb_upper=101.0, atr=1.0):
+        """Helper: build a row that should pass mean-reversion SHORT."""
+        return pd.Series({
+            "rsi": rsi,
+            "atr": atr,
+            "regime": regime,
+            "close": close,
+            "low": close - 1.0,
+            "high": high,
+            "bb_lower": close - 5.0,
+            "bb_upper": bb_upper,
+        })
+
+    def test_valid_long_in_ranging(self, mr_config):
+        """All conditions met: bounce off lower BB in ranging regime."""
+        row = self._long_row()
+        assert check_mean_reversion_conditions(row, mr_config, SignalType.LONG)
+
+    def test_valid_short_in_ranging(self, mr_config):
+        """All conditions met: rejection at upper BB in ranging regime."""
+        row = self._short_row()
+        assert check_mean_reversion_conditions(row, mr_config, SignalType.SHORT)
+
+    def test_rejects_when_regime_is_trending(self, mr_config):
+        """Mean-reversion must NOT fire in trending regime."""
+        row = self._long_row(regime="trending")
+        assert not check_mean_reversion_conditions(row, mr_config, SignalType.LONG)
+
+    def test_rejects_when_regime_is_volatile(self, mr_config):
+        """Mean-reversion must NOT fire in volatile regime."""
+        row = self._long_row(regime="volatile")
+        assert not check_mean_reversion_conditions(row, mr_config, SignalType.LONG)
+
+    def test_long_rejects_when_rsi_not_oversold(self, mr_config):
+        """Long mean-reversion: RSI above oversold threshold must be rejected."""
+        row = self._long_row(rsi=40.0)  # 40 > mr_rsi_oversold=30
+        assert not check_mean_reversion_conditions(row, mr_config, SignalType.LONG)
+
+    def test_short_rejects_when_rsi_not_overbought(self, mr_config):
+        """Short mean-reversion: RSI below overbought threshold must be rejected."""
+        row = self._short_row(rsi=60.0)  # 60 < mr_rsi_overbought=70
+        assert not check_mean_reversion_conditions(row, mr_config, SignalType.SHORT)
+
+    def test_long_rejects_when_no_bb_touch(self, mr_config):
+        """Long: close did not touch or go below lower BB."""
+        # low > bb_lower: no touch
+        row = self._long_row(close=105.0, low=103.0, bb_lower=99.0)
+        assert not check_mean_reversion_conditions(row, mr_config, SignalType.LONG)
+
+    def test_long_rejects_when_close_below_bb_lower(self, mr_config):
+        """Long: close is still below BB lower (no bounce confirmation)."""
+        # low touched BB, but close is still below — not a confirmed bounce
+        row = self._long_row(close=98.0, low=97.0, bb_lower=99.0)
+        assert not check_mean_reversion_conditions(row, mr_config, SignalType.LONG)
+
+    def test_short_rejects_when_no_bb_touch(self, mr_config):
+        """Short: close did not touch or go above upper BB."""
+        row = self._short_row(close=95.0, high=97.0, bb_upper=101.0)
+        assert not check_mean_reversion_conditions(row, mr_config, SignalType.SHORT)
+
+    def test_short_rejects_when_close_above_bb_upper(self, mr_config):
+        """Short: close is still above BB upper (no rejection confirmation)."""
+        row = self._short_row(close=103.0, high=104.0, bb_upper=101.0)
+        assert not check_mean_reversion_conditions(row, mr_config, SignalType.SHORT)
+
+    def test_rejects_when_atr_below_min(self, mr_config):
+        """Should reject when ATR is below minimum threshold."""
+        row = self._long_row(atr=0.0001)
+        assert not check_mean_reversion_conditions(row, mr_config, SignalType.LONG)
+
+    def test_rejects_when_rsi_missing(self, mr_config):
+        """Should reject gracefully when RSI is NaN."""
+        row = self._long_row()
+        row["rsi"] = float("nan")
+        assert not check_mean_reversion_conditions(row, mr_config, SignalType.LONG)
+
+    def test_rejects_when_bb_lower_missing(self, mr_config):
+        """Should reject gracefully when Bollinger Band is NaN."""
+        row = self._long_row()
+        row["bb_lower"] = float("nan")
+        assert not check_mean_reversion_conditions(row, mr_config, SignalType.LONG)
+
+    def test_mr_sl_tp_tighter_than_trend_following(self):
+        """MR SL/TP multipliers should produce tighter levels than trend-following."""
+        atr = 500.0
+        entry = 60000.0
+        # Trend-following levels
+        tf_sl, tf_tp = compute_levels(entry, atr, SignalType.LONG, {"atr_sl_mult": 1.5, "atr_tp_mult": 3.0})
+        # Mean-reversion levels
+        mr_sl, mr_tp = compute_levels(entry, atr, SignalType.LONG, {"atr_sl_mult": 1.0, "atr_tp_mult": 1.5})
+        # MR SL is closer to entry (higher for longs)
+        assert mr_sl > tf_sl
+        # MR TP is closer to entry (lower for longs)
+        assert mr_tp < tf_tp

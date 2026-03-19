@@ -16,8 +16,8 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# Graceful shutdown event — set by signal handlers, read by TradingEngine
-shutdown_event = asyncio.Event()
+# Graceful shutdown event — created lazily inside the running event loop
+shutdown_event: asyncio.Event = None  # type: ignore[assignment]
 
 REQUIRED_CONFIG_KEYS = [
     "symbol", "timeframe_signal", "timeframe_trend", "leverage",
@@ -81,6 +81,8 @@ async def trading_loop(config: dict) -> None:
     Args:
         config: Bot configuration.
     """
+    global shutdown_event
+    shutdown_event = asyncio.Event()  # Create inside the running loop
     engine = TradingEngine(config=config, shutdown_event=shutdown_event)
     await engine.run()
 

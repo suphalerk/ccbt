@@ -20,7 +20,7 @@ from bot.exchange import BybitClient
 from bot.logger import CalibrationTracker, TradeJournal
 from bot.news_fetcher import NewsFetcher
 from bot.risk import RiskManager
-from bot.strategy import SignalType, compute_net_rr, compute_trailing_stop, generate_signal
+from bot.strategy import SignalType, compute_net_rr, compute_signal_quality_score, compute_trailing_stop, generate_signal
 
 logger = logging.getLogger(__name__)
 
@@ -659,7 +659,12 @@ class TradingEngine:
                                 info["size"] = max(info["size"], 0.0)
 
                                 if config.get("move_sl_to_be_after_tp1", True):
-                                    breakeven = info["entry_price"]
+                                    be_buffer = config.get("breakeven_buffer_atr_mult", 0.0)
+                                    buffer = be_buffer * effective_atr
+                                    if info["side"] == "buy":
+                                        breakeven = info["entry_price"] + buffer
+                                    else:
+                                        breakeven = info["entry_price"] - buffer
                                     be_success = self._client.modify_sl(
                                         symbol=config["symbol"],
                                         side=info["side"],
@@ -677,10 +682,11 @@ class TradingEngine:
                                             extra={"trade_id": trade_id},
                                         )
 
-                # Trailing stop update
+                # Trailing stop update (use wider trail after TP1)
                 new_sl = compute_trailing_stop(
                     current_price, info["sl"], effective_atr,
                     sig_type, regime_trail_config,
+                    post_tp1=info.get("tp1_hit", False),
                 )
                 if new_sl != info["sl"]:
                     old_sl = info["sl"]
@@ -764,6 +770,27 @@ class TradingEngine:
         if trade_signal is None:
             return False
 
+        # Trading hours filter — skip entries during low-liquidity dead hours
+        trading_hours = config.get("trading_hours", {})
+        if trading_hours.get("enabled", False):
+            current_hour = datetime.now(timezone.utc).hour
+            start_hour = trading_hours.get("start_utc", 0)
+            end_hour = trading_hours.get("end_utc", 24)
+            if start_hour < end_hour:
+                if not (start_hour <= current_hour < end_hour):
+                    logger.info(
+                        "trade_skipped_trading_hours",
+                        extra={"hour_utc": current_hour, "start": start_hour, "end": end_hour},
+                    )
+                    return False
+            else:  # Wraps around midnight
+                if end_hour <= current_hour < start_hour:
+                    logger.info(
+                        "trade_skipped_trading_hours",
+                        extra={"hour_utc": current_hour, "start": start_hour, "end": end_hour},
+                    )
+                    return False
+
         # --- Duplicate side check ---
         new_side = "buy" if trade_signal.signal_type == SignalType.LONG else "sell"
         trade_side_label = "long" if new_side == "buy" else "short"
@@ -792,16 +819,51 @@ class TradingEngine:
             elapsed = time.time() - lc["time"]
             required = cooldown_candles * candle_secs
             if elapsed < required:
-                logger.info(
-                    "trade_skipped_cooldown",
-                    extra={
-                        "side": trade_side_label,
-                        "elapsed_s": int(elapsed),
-                        "required_s": required,
-                        "reason": lc.get("reason", "close"),
-                    },
-                )
-                already_open_side = True  # Reuse flag to skip trade
+                # Check flexible cooldown override
+                flex_cfg = config.get("flexible_cooldown", {})
+                override_applied = False
+                if flex_cfg.get("enabled", False):
+                    reduction = max(0.0, min(flex_cfg.get("cooldown_reduction_factor", 0.5), 1.0))
+                    reduced_required = required * reduction
+                    if elapsed >= reduced_required:
+                        # Compute signal quality score
+                        signal_row = enriched_signal_df.iloc[-2]
+                        vol_ma = signal_row.get("volume_ma", 0)
+                        volume_ratio = signal_row["volume"] / vol_ma if vol_ma and vol_ma > 0 else 1.0
+                        min_quality = max(0.5, min(flex_cfg.get("min_quality_score", 0.7), 1.0))
+                        score = compute_signal_quality_score(
+                            trade_signal.risk_reward_ratio,
+                            trade_signal.rsi,
+                            volume_ratio,
+                            trade_signal.regime,
+                            trade_signal.signal_type,
+                            config,
+                        )
+                        if score >= min_quality:
+                            override_applied = True
+                            if flex_cfg.get("log_overrides", True):
+                                logger.info(
+                                    "flexible_cooldown_override",
+                                    extra={
+                                        "quality_score": round(score, 3),
+                                        "min_quality": min_quality,
+                                        "elapsed_s": int(elapsed),
+                                        "required_s": required,
+                                        "reduced_required_s": int(reduced_required),
+                                        "side": trade_side_label,
+                                    },
+                                )
+                if not override_applied:
+                    logger.info(
+                        "trade_skipped_cooldown",
+                        extra={
+                            "side": trade_side_label,
+                            "elapsed_s": int(elapsed),
+                            "required_s": required,
+                            "reason": lc.get("reason", "close"),
+                        },
+                    )
+                    already_open_side = True  # Reuse flag to skip trade
 
         else:
             # Validate order through risk manager

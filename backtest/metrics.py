@@ -23,7 +23,11 @@ class BacktestMetrics:
     monthly_returns: list = field(default_factory=list)
 
 
-def compute_metrics(trades: pd.DataFrame, risk_free_rate: float = 0.0) -> BacktestMetrics:
+def compute_metrics(
+    trades: pd.DataFrame,
+    risk_free_rate: float = 0.0,
+    initial_balance: float = 10000.0,
+) -> BacktestMetrics:
     """Compute full backtest metrics from trade results.
 
     Args:
@@ -71,13 +75,13 @@ def compute_metrics(trades: pd.DataFrame, risk_free_rate: float = 0.0) -> Backte
     downside_std = np.std(downside_returns, ddof=1) if len(downside_returns) > 1 else 1.0
     sortino = (mean_return - daily_rf) / downside_std * np.sqrt(365) if downside_std > 0 else 0.0
 
-    # Max drawdown
+    # Max drawdown (as percentage of equity at peak, not just cumulative PnL)
     cumulative = np.cumsum(pnls)
-    peak = np.maximum.accumulate(cumulative)
-    drawdown = peak - cumulative
+    equity = initial_balance + cumulative
+    peak_equity = np.maximum.accumulate(equity)
+    drawdown = peak_equity - equity
     max_dd = np.max(drawdown) if len(drawdown) > 0 else 0.0
-    # As percentage of peak
-    peak_at_max_dd = peak[np.argmax(drawdown)] if len(drawdown) > 0 else 1.0
+    peak_at_max_dd = peak_equity[np.argmax(drawdown)] if len(drawdown) > 0 else initial_balance
     max_dd_pct = max_dd / peak_at_max_dd if peak_at_max_dd > 0 else 0.0
 
     # Average R:R actual

@@ -58,15 +58,20 @@ sudo bash deploy/setup.sh dashboard.yourdomain.com
 ```
 
 ## Trading Strategy
-- **Signal**: EMA(9)/EMA(21) crossover on 15m + EMA(50) trend filter on 1h
-- **Confirmation**: RSI(14) directional ranges (long 48-68, short 30-50), volume > MA(20), ATR >= minimum
+- **Signal**: EMA(9)/EMA(21) crossover + EMA(5/13) fast crossover on 15m + EMA(50) trend filter on 1h
+- **Confirmation**: RSI(14) directional ranges (long 48-68, short 30-52), volume > MA(20), ATR >= minimum, EMA slope filter
 - **Entries**: Uses iloc[-2] (last closed candle, not forming candle)
-- **SL/TP**: ATR-based (SL=1.5×ATR, TP=3.0×ATR, Trail=1.8×ATR, post-TP1 trail=2.5×ATR)
-- **Partial TP**: 30% closed at TP1 (2×ATR), SL moves to breakeven + 0.2×ATR buffer, remaining 70% runs to full TP
-- **R:R**: Minimum 1.5 blended net R:R after commission (0.055%) + slippage (0.02%) + partial TP weighting
+- **SL/TP**: ATR-based (SL=1.2×ATR, TP=3.0×ATR, Trail=2.0×ATR, post-TP1 trail=3.0×ATR)
+- **Partial TP**: 30% closed at TP1 (2×ATR), SL moves to breakeven + 0.5×ATR buffer, remaining 70% runs to full TP
+- **R:R**: Minimum 1.0 net R:R after commission (0.04%) + slippage (0.015%)
+- **Adaptive Sizing**: Signal quality score (0-1) determines position size tier — A-grade (>=0.75) gets 2x risk + 1.5x leverage, B-grade (>=0.5) normal, C-grade (>=0.3) half risk, D-grade skipped
+- **Pyramiding**: Up to 5 adds into winning positions — +100% at 0.8×ATR, +75% at 1.5×ATR, +50% at 2.2×ATR, +25% at 2.8×ATR, +25% at 3.5×ATR. SL ratchets up on each add (breakeven→+0.5→+1.0→+1.5→+2.0 ATR). Pyramid adds sized from current balance (compounds). Requires trend still aligned (EMA 9>21)
+- **MTD Accelerator**: Position size scales with month-to-date performance — up 20%+ → 1.5x size, up 10%+ → 1.3x, flat → 1.0x, down 5% → 0.8x, down more → 0.6x
 - **Cooldown**: 4 candles after close, 8 candles after stop loss
-- **Flexible Cooldown**: High-quality signals (score >= 0.7) can override cooldown at 50% reduction (disabled by default). Score = avg(R:R, RSI optimality, volume ratio, regime). Consecutive loss circuit breaker is never overridden.
-- **Weekend**: Size reduced 50% when enabled; can be fully disabled
+- **Flexible Cooldown**: High-quality signals (score >= 0.7) can override cooldown at 50% reduction. Score = avg(R:R, RSI optimality, volume ratio, regime). Consecutive loss circuit breaker is never overridden.
+- **Trading Hours**: Skip 00:00-02:59 UTC (low-edge dead hours)
+- **Regime Filter**: Skip ranging markets for trend-following signals
+- **Weekend**: Disabled (weekend trades have negative edge on BTC)
 
 ## AI Advisor Layer
 - **Mode**: "advisor" — provides nuanced adjustments, NOT binary gate
@@ -77,9 +82,10 @@ sudo bash deploy/setup.sh dashboard.yourdomain.com
 
 ## Risk Management (Autonomous Safety Net)
 Bot runs fully autonomous — risk management is the primary safety layer:
-- 1% risk per trade, 3% max daily loss
+- 3% base risk per trade (tiered by signal quality), 9% max daily loss
+- 10x max leverage (effective leverage varies by tier and regime)
 - Max 2 concurrent positions, max 5 consecutive losses
-- Dynamic sizing based on win rate and market regime
+- Dynamic sizing based on win rate, market regime, and signal quality score
 - Circuit breakers: daily loss halt, API error halt, cooldown timer
 - SL verification with 3 retries on exchange
 - Graceful shutdown on SIGINT/SIGTERM (closes all positions)
@@ -95,7 +101,7 @@ Bot runs fully autonomous — risk management is the primary safety layer:
 - **Symbol format**: Always normalize BTCUSDT → BTC/USDT:USDT for ccxt
 - **Candle data**: Use iloc[-2] for signals (last closed candle)
 - **EMA warmup**: Ensure sufficient bars before generating signals
-- **Fees**: Always include commission + slippage in R:R calculations (use blended R:R when partial TP enabled)
+- **Fees**: Always include commission + slippage in R:R calculations (use full TP distance, not blended partial TP)
 - **Risk-first**: Never bypass circuit breakers or skip SL placement
 - **AI layer**: Advisor adjustments are multiplied by calibration influence factor
 - **Trailing stops**: Must only ratchet in profit direction (up for longs, down for shorts); use wider trail after TP1
@@ -103,6 +109,9 @@ Bot runs fully autonomous — risk management is the primary safety layer:
 - **Backtest time**: Always pass simulated time to `can_trade(current_time=...)` — never use wall-clock `time.time()` in backtest
 - **Drawdown calc**: Max drawdown denominator must include `initial_balance + peak_cumulative_pnl`, not just peak PnL
 - **Flexible cooldown**: `compute_signal_quality_score()` bounds are [0,1]; `min_quality_score` clamped to [0.5,1.0]; consecutive loss cooldown in `risk.py` must never be overridden
+- **Adaptive sizing**: `get_tiered_risk()` returns (0,0) for D-grade signals (must skip trade); when disabled, returns (1.0, 1.0) for backward compatibility
+- **Pyramiding**: Only add to winning positions when trend aligned (EMA9 vs EMA21); SL must ratchet up (never lower) on pyramid adds; pyramid adds charge commission on the added size
+- **Regime propagation**: `detect_regime()` must be computed per row in backtest (rolling); backtest stores regime in DataFrame for signal-level gating
 
 ## Environment Variables
 ```
@@ -190,8 +199,32 @@ claude --agent trader-expert
 ### Manual-Only (invoke with /command)
 | Skill | Command | Purpose |
 |-------|---------|---------|
+| research | `/research` | Iterative strategy optimization loop (agent team + backtest) |
 | scenario-analyzer | `/scenario-analyzer "event"` | 18-month scenario projections |
 | strategy-pivot-designer | `/strategy-pivot-designer` | Strategy stagnation diagnosis + pivots |
 | edge-pipeline-orchestrator | `/edge-pipeline-orchestrator` | Full strategy development pipeline |
 
 Sources: [tradermonty/claude-trading-skills](https://github.com/tradermonty/claude-trading-skills), [SkillsMP](https://skillsmp.com/)
+
+## Research Methodology (`/research`)
+
+Iterative optimization loop proven to improve strategy from 10%/yr to 523%/yr:
+
+### Loop
+1. **Baseline** — backtest current config, record metrics
+2. **Agent team analysis** — spawn trader-expert + SA in parallel to identify bottlenecks and propose changes
+3. **Isolate & test** — sweep each change individually, then combine winners
+4. **Implement** — backend-dev agent codes changes, run tests
+5. **Verify** — disabled = no regression, enabled = improvement confirmed
+6. **Iterate or stop** — repeat until target met or diminishing returns
+
+### Rules
+- Test one variable at a time before combining
+- Full 2-year dataset, no cherry-picking periods
+- Check per-signal-source breakdown (combined PF can hide bad sources)
+- More trades with lower PF = worse (fee drag eats edge)
+- Always compare vs baseline, not vs previous round
+
+### Proven Findings (BTC 15m)
+**Works**: Pyramiding (4x PnL), adaptive sizing, 10x leverage + SL ratcheting, dual EMA crossover, regime-adaptive trail, trading hours filter
+**Doesn't work**: Mean reversion, MACD, EMA pullback, RSI divergence, weekend trading, looser filters, higher risk alone

@@ -104,15 +104,98 @@ def add_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     # Volume MA
     df["volume_ma"] = compute_volume_ma(df["volume"])
 
-    # EMA crossover detection
+    # EMA slope: rate of change of slow EMA over last N candles (%)
+    # Used to filter crossovers when the slow EMA is flat (whipsaw risk)
+    ema_slope_period = config.get("ema_slope_period", 5)
+    df["ema_slope"] = (
+        df["ema_slow"].diff(ema_slope_period)
+        / df["ema_slow"].shift(ema_slope_period)
+        * 100
+    )
+
+    # Bollinger Bands
+    bb_period = config.get("bb_period", 20)
+    bb_std = config.get("bb_std", 2.0)
+    df["bb_mid"] = df["close"].rolling(window=bb_period).mean()
+    df["bb_std_val"] = df["close"].rolling(window=bb_period).std()
+    df["bb_upper"] = df["bb_mid"] + bb_std * df["bb_std_val"]
+    df["bb_lower"] = df["bb_mid"] - bb_std * df["bb_std_val"]
+    df["bb_width"] = (df["bb_upper"] - df["bb_lower"]) / df["bb_mid"]
+    # BB width percentile: is current squeeze unusually tight?
+    df["bb_width_pct"] = df["bb_width"].rolling(window=120).rank(pct=True)
+
+    # Swing high/low detection for RSI divergence
+    swing_lookback = config.get("swing_lookback", 5)
+    window_size = 2 * swing_lookback + 1
+    df["swing_low"] = df["low"] == df["low"].rolling(window=window_size, center=True).min()
+    df["swing_high"] = df["high"] == df["high"].rolling(window=window_size, center=True).max()
+
+    # EMA pullback detection — tighter proximity threshold (0.1% default, configurable)
+    pullback_pct = config.get("pullback_proximity_pct", 0.001)
+    long_pullback = (
+        (df["low"] <= df["ema_slow"] * (1 + pullback_pct)) &  # Price touched within pct of EMA slow
+        (df["close"] > df["ema_slow"]) &                       # But closed above
+        (df["ema_fast"] > df["ema_slow"])                      # Trend is bullish
+    )
+    short_pullback = (
+        (df["high"] >= df["ema_slow"] * (1 - pullback_pct)) &  # Price touched within pct of EMA slow
+        (df["close"] < df["ema_slow"]) &                        # But closed below
+        (df["ema_fast"] < df["ema_slow"])                       # Trend is bearish
+    )
+
+    # Require trend established for N candles before pullback is valid
+    pullback_trend_bars = config.get("pullback_trend_bars", 10)
+    ema_bull_trend = (df["ema_fast"] > df["ema_slow"]).rolling(window=pullback_trend_bars).min().astype(bool)
+    ema_bear_trend = (df["ema_fast"] < df["ema_slow"]).rolling(window=pullback_trend_bars).min().astype(bool)
+    df["pullback_long"] = long_pullback & ema_bull_trend
+    df["pullback_short"] = short_pullback & ema_bear_trend
+
+    # Secondary fast EMA pair for more crossover opportunities
+    ema_fast2_period = config.get("ema_fast2", 5)
+    ema_slow2_period = config.get("ema_slow2", 13)
+    if ema_fast2_period and ema_slow2_period:
+        df["ema_fast2"] = compute_ema(df["close"], ema_fast2_period)
+        df["ema_slow2"] = compute_ema(df["close"], ema_slow2_period)
+
+        crossover_lookback2 = config.get("crossover_lookback", 2)
+        exact_cross_up2 = (df["ema_fast2"] > df["ema_slow2"]) & (
+            df["ema_fast2"].shift(1) <= df["ema_slow2"].shift(1)
+        )
+        exact_cross_down2 = (df["ema_fast2"] < df["ema_slow2"]) & (
+            df["ema_fast2"].shift(1) >= df["ema_slow2"].shift(1)
+        )
+        df["ema_cross_up2"] = (
+            exact_cross_up2.rolling(window=crossover_lookback2, min_periods=1).max().astype(bool)
+            & (df["ema_fast2"] > df["ema_slow2"])
+        )
+        df["ema_cross_down2"] = (
+            exact_cross_down2.rolling(window=crossover_lookback2, min_periods=1).max().astype(bool)
+            & (df["ema_fast2"] < df["ema_slow2"])
+        )
+        warmup2 = max(ema_fast2_period, ema_slow2_period) + 10
+        df.iloc[:warmup2, df.columns.get_loc("ema_cross_up2")] = False
+        df.iloc[:warmup2, df.columns.get_loc("ema_cross_down2")] = False
+
+    # EMA crossover detection with lookback window
     # Suppress crossovers during EMA warmup period to avoid spurious signals
     # Add buffer beyond ema_slow for better EMA convergence
     warmup = max(config["ema_fast"], config["ema_slow"]) + 10
-    df["ema_cross_up"] = (df["ema_fast"] > df["ema_slow"]) & (
+    crossover_lookback = config.get("crossover_lookback", 3)
+
+    exact_cross_up = (df["ema_fast"] > df["ema_slow"]) & (
         df["ema_fast"].shift(1) <= df["ema_slow"].shift(1)
     )
-    df["ema_cross_down"] = (df["ema_fast"] < df["ema_slow"]) & (
+    exact_cross_down = (df["ema_fast"] < df["ema_slow"]) & (
         df["ema_fast"].shift(1) >= df["ema_slow"].shift(1)
+    )
+
+    df["ema_cross_up"] = (
+        exact_cross_up.rolling(window=crossover_lookback, min_periods=1).max().astype(bool)
+        & (df["ema_fast"] > df["ema_slow"])
+    )
+    df["ema_cross_down"] = (
+        exact_cross_down.rolling(window=crossover_lookback, min_periods=1).max().astype(bool)
+        & (df["ema_fast"] < df["ema_slow"])
     )
     # Zero out crossovers in warmup rows
     df.iloc[:warmup, df.columns.get_loc("ema_cross_up")] = False

@@ -1,4 +1,9 @@
-"""Bybit exchange wrapper using ccxt for order management and data fetching."""
+"""Exchange wrapper using ccxt for order management and data fetching.
+
+Supports Bybit (default) and Binance futures testnet.
+For Binance testnet, ccxt sandbox mode is broken (blocked in ccxt 4.5.44+),
+so API URLs are manually overridden to https://testnet.binancefuture.com.
+"""
 
 import os
 import time
@@ -52,46 +57,67 @@ def _safe_precision(exchange, symbol: str, value: float, kind: str = "amount") -
 
 
 class BybitClient:
-    """Bybit Perpetual Futures client wrapping ccxt with retry logic and rate limiting."""
+    """Perpetual Futures client wrapping ccxt with retry logic and rate limiting.
+
+    Supports Bybit (default) and Binance futures. Set config["exchange"] to
+    "bybit" or "binance". Binance testnet bypasses the broken ccxt sandbox
+    mode by directly overriding API URLs.
+    """
 
     MAX_RETRIES = 3
     RATE_LIMIT_DELAY = 0.1  # 10 req/sec = 100ms between requests
 
+    # Binance futures testnet base URL
+    _BINANCE_TESTNET_BASE = "https://testnet.binancefuture.com"
+
     def __init__(self, config: dict) -> None:
-        """Initialize the Bybit client.
+        """Initialize the exchange client.
 
         Args:
-            config: Bot configuration dictionary.
+            config: Bot configuration dictionary. Reads "exchange" key
+                    ("bybit" or "binance", defaults to "bybit") and
+                    "use_testnet" key.
         """
         self.config = config
         self._last_request_time = 0.0
+        self._exchange_name = config.get("exchange", "bybit").lower()
 
         exchange_params = {
             "apiKey": os.getenv("API_KEY", ""),
             "secret": os.getenv("API_SECRET", ""),
-            "options": {
-                "defaultType": "swap",
-            },
             "enableRateLimit": True,
         }
 
-        if config.get("use_testnet", True):
-            self.exchange = ccxt.bybit(exchange_params)
-            self.exchange.set_sandbox_mode(True)
-            logger.info("exchange_init", extra={"mode": "testnet"})
+        use_testnet = config.get("use_testnet", True)
+
+        if self._exchange_name == "binance":
+            self._init_binance(exchange_params, use_testnet)
         else:
-            self.exchange = ccxt.bybit(exchange_params)
-            logger.warning("exchange_init", extra={"mode": "LIVE", "warning": "REAL MONEY MODE"})
+            self._init_bybit(exchange_params, use_testnet)
 
         self.exchange.load_markets()
+        self._normalize_symbol()
 
-        # Normalize symbol to ccxt unified format
-        # Config may have "BTCUSDT" but ccxt needs "BTC/USDT:USDT" for perp swaps
-        raw_symbol = config["symbol"]
-        if raw_symbol in self.exchange.markets:
+    def _normalize_symbol(self) -> None:
+        """Resolve config symbol to ccxt unified market key.
+
+        Config may have "BTCUSDT" but ccxt needs "BTC/USDT:USDT" for
+        perpetual swaps/futures. Both Bybit and Binance futures use this
+        unified format, so the same logic applies to both exchanges.
+        """
+        raw_symbol = self.config["symbol"]
+        base = raw_symbol.replace("USDT", "")
+        perp_symbol = f"{base}/USDT:USDT"
+        if perp_symbol in self.exchange.markets:
+            self.symbol = perp_symbol
+            logger.info(
+                "symbol_normalized",
+                extra={"config_symbol": raw_symbol, "ccxt_symbol": perp_symbol},
+            )
+        elif raw_symbol in self.exchange.markets:
             self.symbol = raw_symbol
         else:
-            # Try to find matching market by stripping/reformatting
+            # Try to find matching market by exchange ID
             matched = None
             for market_symbol, market in self.exchange.markets.items():
                 if market.get("id", "") == raw_symbol or market.get("id", "") == raw_symbol.upper():
@@ -104,22 +130,64 @@ class BybitClient:
                     extra={"config_symbol": raw_symbol, "ccxt_symbol": matched},
                 )
             else:
-                # Last resort: try common USDT perpetual format
-                # BTCUSDT → BTC/USDT:USDT
-                base = raw_symbol.replace("USDT", "")
-                unified = f"{base}/USDT:USDT"
-                if unified in self.exchange.markets:
-                    self.symbol = unified
-                    logger.info(
-                        "symbol_normalized",
-                        extra={"config_symbol": raw_symbol, "ccxt_symbol": unified},
-                    )
-                else:
-                    self.symbol = raw_symbol
-                    logger.warning(
-                        "symbol_not_found_in_markets",
-                        extra={"symbol": raw_symbol, "falling_back": raw_symbol},
-                    )
+                self.symbol = raw_symbol
+                logger.warning(
+                    "symbol_not_found_in_markets",
+                    extra={"symbol": raw_symbol, "falling_back": raw_symbol},
+                )
+
+    def _init_bybit(self, exchange_params: dict, use_testnet: bool) -> None:
+        """Initialize Bybit exchange (default behaviour, unchanged)."""
+        exchange_params["options"] = {"defaultType": "swap"}
+        if use_testnet:
+            self.exchange = ccxt.bybit(exchange_params)
+            self.exchange.set_sandbox_mode(True)
+            logger.info("exchange_init", extra={"exchange": "bybit", "mode": "testnet"})
+        else:
+            self.exchange = ccxt.bybit(exchange_params)
+            logger.warning(
+                "exchange_init",
+                extra={"exchange": "bybit", "mode": "LIVE", "warning": "REAL MONEY MODE"},
+            )
+
+    def _init_binance(self, exchange_params: dict, use_testnet: bool) -> None:
+        """Initialize Binance futures exchange.
+
+        For testnet, ccxt sandbox mode is explicitly broken (blocked in
+        ccxt >= 4.5.44 for futures), so we manually override the fapi
+        endpoint URLs instead.
+        """
+        exchange_params["options"] = {"defaultType": "future"}
+        self.exchange = ccxt.binance(exchange_params)
+
+        if use_testnet:
+            # Do NOT call set_sandbox_mode(True) — it is broken for futures in
+            # ccxt 4.5.44+. Instead, override the fapi URLs directly.
+            base = self._BINANCE_TESTNET_BASE
+            self.exchange.urls["api"]["fapiPublic"] = f"{base}/fapi/v1"
+            self.exchange.urls["api"]["fapiPublicV2"] = f"{base}/fapi/v2"
+            self.exchange.urls["api"]["fapiPublicV3"] = f"{base}/fapi/v3"
+            self.exchange.urls["api"]["fapiPrivate"] = f"{base}/fapi/v1"
+            self.exchange.urls["api"]["fapiPrivateV2"] = f"{base}/fapi/v2"
+            self.exchange.urls["api"]["fapiPrivateV3"] = f"{base}/fapi/v3"
+            # Testnet does not expose sapi endpoints — disable features that
+            # call them during load_markets() or fetch_balance().
+            self.exchange.has["fetchCurrencies"] = False
+            self.exchange.has["fetchMarginMarkets"] = False
+            # Also redirect sapi URLs to testnet to prevent auth errors
+            self.exchange.urls["api"]["sapi"] = f"{base}/sapi/v1"
+            self.exchange.urls["api"]["sapiV2"] = f"{base}/sapi/v2"
+            self.exchange.urls["api"]["sapiV3"] = f"{base}/sapi/v3"
+            self.exchange.urls["api"]["sapiV4"] = f"{base}/sapi/v4"
+            logger.info(
+                "exchange_init",
+                extra={"exchange": "binance", "mode": "testnet", "base_url": base},
+            )
+        else:
+            logger.warning(
+                "exchange_init",
+                extra={"exchange": "binance", "mode": "LIVE", "warning": "REAL MONEY MODE"},
+            )
 
     def _rate_limit(self) -> None:
         """Enforce rate limiting between API calls."""
@@ -237,12 +305,24 @@ class BybitClient:
         size = _safe_precision(self.exchange, self.symbol, size, "amount")
         if reduce_only:
             params["reduceOnly"] = True
-        if sl is not None:
-            sl = _safe_precision(self.exchange, self.symbol, sl, "price")
-            params["stopLoss"] = {"triggerPrice": sl}
-        if tp is not None:
-            tp = _safe_precision(self.exchange, self.symbol, tp, "price")
-            params["takeProfit"] = {"triggerPrice": tp}
+
+        if self._exchange_name == "binance":
+            # Binance futures uses flat stopPrice / takeProfit params,
+            # not the nested Bybit dict format.
+            if sl is not None:
+                sl = _safe_precision(self.exchange, self.symbol, sl, "price")
+                params["stopLoss"] = sl
+            if tp is not None:
+                tp = _safe_precision(self.exchange, self.symbol, tp, "price")
+                params["takeProfit"] = tp
+        else:
+            # Bybit uses nested triggerPrice dicts
+            if sl is not None:
+                sl = _safe_precision(self.exchange, self.symbol, sl, "price")
+                params["stopLoss"] = {"triggerPrice": sl}
+            if tp is not None:
+                tp = _safe_precision(self.exchange, self.symbol, tp, "price")
+                params["takeProfit"] = {"triggerPrice": tp}
 
         order = self._retry(
             self.exchange.create_order,
@@ -416,7 +496,8 @@ class BybitClient:
         """Modify the stop loss of an existing position on exchange.
 
         Uses Bybit's set_trading_stop endpoint to update SL without
-        cancelling and recreating orders.
+        cancelling and recreating orders. Not supported for Binance
+        (returns False gracefully — caller should cancel and recreate).
 
         Args:
             symbol: Trading pair. Defaults to configured symbol.
@@ -426,6 +507,12 @@ class BybitClient:
         Returns:
             True if successful.
         """
+        if self._exchange_name == "binance":
+            logger.info(
+                "sl_modify_skipped",
+                extra={"reason": "binance_not_supported", "new_sl": new_sl},
+            )
+            return False
         symbol = symbol or self.symbol
         try:
             # Use Bybit v5 private API to modify position SL
@@ -470,7 +557,17 @@ class BybitClient:
             symbol: Trading pair. Defaults to configured symbol.
         """
         symbol = symbol or self.symbol
-        self._retry(self.exchange.set_leverage, leverage, symbol)
+        try:
+            self._retry(self.exchange.set_leverage, leverage, symbol)
+        except Exception as e:
+            # Bybit returns error 110043 if leverage is already set to this value
+            if "not modified" in str(e):
+                logger.info(
+                    "leverage_already_set",
+                    extra={"symbol": symbol, "leverage": leverage},
+                )
+                return
+            raise
         logger.info(
             "leverage_set", extra={"symbol": symbol, "leverage": leverage}
         )

@@ -223,16 +223,16 @@ class TestLeverageCheck:
 class TestDynamicRiskFactor:
     """Test dynamic risk factor based on recent win rate."""
 
-    def test_insufficient_data_returns_conservative(self, config):
-        """With fewer than 10 trades, should return 0.9."""
+    def test_insufficient_data_returns_full(self, config):
+        """With fewer than 10 trades, should return 1.0 (no early-trade drag)."""
         rm = RiskManager(config, balance=100000.0)
         # No trades recorded
-        assert rm.get_dynamic_risk_factor() == 0.9
+        assert rm.get_dynamic_risk_factor() == 1.0
 
         # Record 5 trades (still < 10)
         for _ in range(5):
             rm.record_trade_result(10.0)
-        assert rm.get_dynamic_risk_factor() == 0.9
+        assert rm.get_dynamic_risk_factor() == 1.0
 
     def test_high_win_rate_returns_full(self, config):
         """Win rate > 50% should return 1.0."""
@@ -268,9 +268,9 @@ class TestDynamicRiskFactor:
 
     def test_dynamic_factor_applied_in_validate_order(self, config):
         """Dynamic risk factor should scale position size in validate_order."""
-        # Create manager with no trade history (factor = 0.8)
+        # Create manager with no trade history — factor now returns 1.0 (no early drag)
         rm = RiskManager(config, balance=1000.0)
-        _, _, size_conservative = rm.validate_order(
+        _, _, size_no_history = rm.validate_order(
             balance=1000.0,
             entry_price=60000.0,
             stop_loss=59400.0,
@@ -290,8 +290,8 @@ class TestDynamicRiskFactor:
             num_open_positions=0,
         )
 
-        # Full risk should be ~1.11x conservative risk (1.0/0.9)
-        assert size_full == pytest.approx(size_conservative * (1.0 / 0.9), rel=0.01)
+        # Both should return the same size since early factor is now 1.0
+        assert size_full == pytest.approx(size_no_history, rel=0.01)
 
     def test_volatile_regime_reduces_position(self, config):
         """Volatile regime should further reduce position size by 50%."""
@@ -318,3 +318,75 @@ class TestDynamicRiskFactor:
 
         # Volatile should be half of trending (additional 0.5x regime factor)
         assert size_volatile == pytest.approx(size_trending * 0.5, rel=0.01)
+
+
+class TestSimulatedTime:
+    """Test can_trade() with simulated time for backtesting."""
+
+    def test_cooldown_with_simulated_time(self, config):
+        """Cooldown should use simulated time, not wall-clock."""
+        rm = RiskManager(config, balance=1000.0)
+        # Set cooldown 2 hours from a simulated "now"
+        sim_now = 1_700_000_000.0  # Some arbitrary timestamp
+        rm.state.cooldown_until = sim_now + 3600  # 1 hour from now
+
+        # Should be blocked at sim_now (before cooldown expires)
+        can, reason = rm.can_trade(1000.0, 0, current_time=sim_now)
+        assert not can
+        assert "cooldown" in reason.lower()
+
+        # Should be allowed after cooldown expires
+        can, _ = rm.can_trade(1000.0, 0, current_time=sim_now + 3601)
+        assert can
+
+    def test_cooldown_defaults_to_wall_clock(self, config):
+        """Without current_time, should use time.time() (backward compat)."""
+        rm = RiskManager(config, balance=1000.0)
+        # No cooldown set, should be able to trade
+        can, _ = rm.can_trade(1000.0, 0)
+        assert can
+
+    def test_consecutive_loss_cooldown_uses_simulated_time(self, config):
+        """Consecutive loss cooldown should be set using simulated time."""
+        rm = RiskManager(config, balance=100000.0)
+        # Record enough losses to trigger cooldown
+        for _ in range(config["max_consecutive_losses"]):
+            rm.record_trade_result(-1.0)
+
+        sim_now = 1_700_000_000.0
+        can, reason = rm.can_trade(100000.0, 0, current_time=sim_now)
+        assert not can
+        assert "Consecutive loss" in reason
+
+        # Cooldown should be set relative to sim_now
+        expected_cooldown = sim_now + config["cooldown_hours"] * 3600
+        assert rm.state.cooldown_until == pytest.approx(expected_cooldown, abs=1.0)
+
+    def test_validate_order_passes_simulated_time(self, config):
+        """validate_order should pass current_time to can_trade."""
+        rm = RiskManager(config, balance=1000.0)
+        sim_now = 1_700_000_000.0
+        rm.state.cooldown_until = sim_now + 3600
+
+        # Should be blocked
+        approved, reason, _ = rm.validate_order(
+            balance=1000.0,
+            entry_price=60000.0,
+            stop_loss=59400.0,
+            take_profit=61200.0,
+            num_open_positions=0,
+            current_time=sim_now,
+        )
+        assert not approved
+
+        # Should pass after cooldown
+        approved, _, size = rm.validate_order(
+            balance=1000.0,
+            entry_price=60000.0,
+            stop_loss=59400.0,
+            take_profit=61200.0,
+            num_open_positions=0,
+            current_time=sim_now + 3601,
+        )
+        assert approved
+        assert size > 0
