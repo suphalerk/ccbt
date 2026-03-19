@@ -148,10 +148,11 @@ class RiskManager:
             remaining = int(self.state.cooldown_until - now)
             return False, f"In cooldown period, {remaining}s remaining"
         elif self.state.cooldown_until > 0:
-            # Cooldown expired — clear cooldown timer but do NOT reset
-            # consecutive_losses. Only a winning trade resets that counter
-            # (via record_trade_result). This prevents resuming after cooldown
-            # only to immediately re-trigger the consecutive loss limit.
+            # Cooldown expired — reset consecutive losses so trading can resume.
+            # The cooldown period itself IS the penalty for the losing streak.
+            # Without this reset, the bot enters an infinite cooldown loop
+            # (5 losses → cooldown → still 5 → immediate re-cooldown).
+            self.state.consecutive_losses = 0
             self.state.cooldown_until = 0.0
 
         # Check daily loss limit
