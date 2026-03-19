@@ -140,34 +140,35 @@ These findings from previous research rounds should guide future work:
 - **Wider long RSI (45-72)** — busts DD at YOLO levels
 - **Regime filter OFF** — 1510 trades but DD 66.5%, PF 1.32
 
-### Parameter Sensitivities
-- SL multiplier: 1.2 ATR optimal for safe; 1.65 ATR optimal for YOLO (tested 1.0-2.0 range)
-- TP multiplier: 3.0 ATR optimal for safe; 4.0 ATR optimal for YOLO (tested 2.0-4.0)
-- Risk per trade: 2.5-3% optimal with adaptive sizing; 16-17% optimal for YOLO without adaptive
-- Cooldown: 4/8 candles optimal; reducing adds bad trades
-- Volume threshold: 1.3x MA optimal for safe; 0.7x optimal for YOLO (more trades + high PF)
-- Leverage: DD plateaus ~24% regardless of leverage (SL ratcheting bounds it) — highest possible = best for compounding
+### Parameter Sensitivities (post-bugfix, verified)
+- SL multiplier: **1.0 ATR optimal** (tested 0.7-2.0 range; tighter SL = better R:R)
+- TP multiplier: **3.0 ATR optimal** (tested 2.0-6.0; 3:1 R:R is sweet spot)
+- Risk per trade: 2% safe, 5% aggressive, 10% YOLO-lite (diminishing returns above 10%)
+- Cooldown: **0/0 optimal** — no cooldown gives more trades without hurting PF
+- Volume threshold: 1.3x MA optimal (lower = more noise, higher = too few trades)
+- RSI: Tight ranges (45-65/35-55) dramatically improve PF (1.59 vs 1.03)
+- Trading hours: 3-20 UTC best (skip dead hours + late US session)
+- Pyramiding: **DISABLED** — hurts PF with correct weighted-avg entry PnL calculation
+- Trail-only exit: **fails badly** (PF 0.35-0.88) — fixed TP is essential
 
-## Available Profiles
+### Critical Bugfix Note (2026-03-19)
+Previous backtest results (PF 3.32-4.80, $4,436-$9.35e+28) were **all invalid** due to:
+1. Pyramid PnL used original entry instead of weighted avg (overestimated 30-60%)
+2. Pyramid sizing used ratcheted SL distance (created unrealistically large adds)
+3. Phantom pyramid adds on TP candles (inflated PnL further)
+4. Sharpe annualized with sqrt(365) on per-trade data (1.3-2.5x overestimate)
+All profiles below are verified with the corrected engine.
 
-| Profile | Risk | Leverage | Pyramid | MTD | 5yr Return | DD | Status |
-|---------|------|----------|---------|-----|-----------|-----|--------|
-| **Deployed** | 3% | 10x | 5 adds, compound | On | +4,336% ($100→$4,436) | 9.5% | Active |
-| Conservative | 2.5% | 10x | 3 adds | Off | ~165%/yr | 9.6% | Available |
-| **YOLO** | 17% | 100x | 20 adds | Aggressive | $100→$9.35e+28 | 24.1% | config_yolo.json |
+## Available Profiles (verified, 5yr $1K start)
 
-### 5-Year Backtest (Deployed Config)
-- $100 → $4,436 over 5 years (Apr 2021 - Mar 2026)
-- 188 trades, WR 29.3%, PF 3.32, DD 9.45%
-- Survives 2022 bear market (-1.5% for the year)
-- Best year: 2025 (+199.7%), Best month: Feb 2026 (+105.3%)
+| Profile | File | Risk | Lev | Return | /yr | PF | DD | Trades |
+|---------|------|------|-----|--------|-----|-----|-----|--------|
+| **Safe** | `config.json` | 2% | 7x | +72% | ~11% | 1.62 | 17% | 103 |
+| **Aggressive** | `config_aggressive.json` | 5% | 10x | +158% | ~21% | 1.53 | 15% | 103 |
+| **YOLO-lite** | `config_yolo.json` | 10% | 20x | +338% | ~34% | 1.42 | 28% | 103 |
+| **Sniper** | `config_sniper.json` | 2% | 7x | +36% | ~6% | 1.58 | 8% | 58 |
 
-### YOLO Config (config_yolo.json)
-- $100 → $9.35e+28 over 5 years, 473 trades, PF 4.80, DD 24.1%
-- Key changes vs deployed: 100x lev, 17% risk, 20 pyramids, adaptive OFF, vol 0.7x, SL 1.65, TP 4.0, trail 5.0, slope filter OFF, RSI short 28-55, max consec losses 20
-- **Bear market warning**: DD 46.3% in 2021-2023 bear period
-- **Cost sensitive**: 1.5x costs pushes DD to 31%
-- Numbers are theoretical — liquidity constraints would cap real returns far below this
+All share: EMA(9/21)+EMA(5/13), SL=1.0, TP=3.0, no pyramid, no partial TP, hours 3-20, weekend off.
 
 ## Invocation
 

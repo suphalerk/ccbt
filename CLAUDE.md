@@ -63,19 +63,18 @@ CONFIG_FILE=config_yolo.json YOLO_MODE=1 docker compose up -d --build
 sudo bash deploy/setup.sh dashboard.yourdomain.com
 ```
 
-## Trading Strategy
+## Trading Strategy (Champion v2 — post-bugfix, verified profitable)
 - **Signal**: EMA(9)/EMA(21) crossover + EMA(5/13) fast crossover on 15m + EMA(50) trend filter on 1h
-- **Confirmation**: RSI(14) directional ranges (long 48-68, short 30-52), volume > MA(20), ATR >= minimum, EMA slope filter
+- **Confirmation**: RSI(14) directional ranges (long 45-65, short 35-55), volume > 1.3×MA(20), ATR >= minimum, EMA slope >= 0.02%
 - **Entries**: Uses iloc[-2] (last closed candle, not forming candle)
-- **SL/TP**: ATR-based (SL=1.2×ATR, TP=3.0×ATR, Trail=2.0×ATR, post-TP1 trail=3.0×ATR)
-- **Partial TP**: 30% closed at TP1 (2×ATR), SL moves to breakeven + 0.5×ATR buffer, remaining 70% runs to full TP
+- **SL/TP**: ATR-based (SL=1.0×ATR, TP=3.0×ATR, R:R=3:1), trailing stop 2.0×ATR
+- **Partial TP**: Disabled (doesn't improve PF)
+- **Pyramiding**: Disabled (raises avg entry, hurts PF with correct weighted-avg PnL calc)
+- **Adaptive Sizing**: Disabled (no benefit without pyramiding)
+- **MTD Accelerator**: Disabled (reduces complexity)
+- **Cooldown**: None (0/0 — more trades = better compound)
 - **R:R**: Minimum 1.0 net R:R after commission (0.04%) + slippage (0.015%)
-- **Adaptive Sizing**: Signal quality score (0-1) determines position size tier — A-grade (>=0.75) gets 2x risk + 1.5x leverage, B-grade (>=0.5) normal, C-grade (>=0.3) half risk, D-grade skipped
-- **Pyramiding**: Dynamic N-level pyramid adds into winning positions. Levels 1-7 explicitly configured, 8+ use formula (trigger=0.3+N×0.7 ATR, size=max(25%,100%-(N-1)×15%)). SL ratchets (N-1)×0.5 ATR above entry. Pyramid adds sized from current balance (compounds). Requires trend still aligned (EMA 9>21). Safe config: 5 adds, YOLO: 20 adds.
-- **MTD Accelerator**: Position size scales with month-to-date performance — up 20%+ → 1.5x size, up 10%+ → 1.3x, flat → 1.0x, down 5% → 0.8x, down more → 0.6x
-- **Cooldown**: 4 candles after close, 8 candles after stop loss
-- **Flexible Cooldown**: High-quality signals (score >= 0.7) can override cooldown at 50% reduction. Score = avg(R:R, RSI optimality, volume ratio, regime). Consecutive loss circuit breaker is never overridden.
-- **Trading Hours**: Skip 00:00-02:59 UTC (low-edge dead hours)
+- **Trading Hours**: 03:00-20:00 UTC (skip dead hours + late US session)
 - **Regime Filter**: Skip ranging markets for trend-following signals
 - **Weekend**: Disabled (weekend trades have negative edge on BTC)
 
@@ -88,42 +87,41 @@ sudo bash deploy/setup.sh dashboard.yourdomain.com
 
 ## Risk Management (Autonomous Safety Net)
 Bot runs fully autonomous — risk management is the primary safety layer:
-- 3% base risk per trade (tiered by signal quality), 9% max daily loss
-- 10x max leverage (effective leverage varies by tier and regime)
+- 2% base risk per trade (default profile), 9% max daily loss
+- 7x max leverage (default), effective leverage ~2-3x typical
 - Max 2 concurrent positions, max 5 consecutive losses
-- Dynamic sizing based on win rate, market regime, and signal quality score
-- Circuit breakers: daily loss halt, API error halt, cooldown timer
-- SL verification with 3 retries on exchange
+- Circuit breakers: daily loss halt, API error halt
+- SL verification with 3 retries on exchange (Binance: cancel-recreate pattern)
 - Graceful shutdown on SIGINT/SIGTERM (closes all positions)
-- AI calibration auto-adjusts influence (no human tuning needed)
 - Telegram alerts for critical events (informational, no action required)
 
 ## Configuration
-- `config.json` — Safe trading parameters (validated on load with safety limits)
-- `config_yolo.json` — YOLO mode parameters (requires `YOLO_MODE=1` env var to bypass validation limits)
-- `.env` — API keys (Bybit, Anthropic, Telegram, CryptoPanic)
+- `config.json` — Safe profile (default, suitable for mainnet)
+- `config_aggressive.json` — Aggressive profile (5% risk, 10x leverage)
+- `config_yolo.json` — YOLO-lite profile (10% risk, 20x lev, requires `YOLO_MODE=1`)
+- `config_sniper.json` — Sniper profile (tight RSI, fewer but higher quality trades)
+- `.env` — API keys (Bybit/Binance, Anthropic, Telegram, CryptoPanic)
 - `use_testnet: true` must be explicitly changed to go live
 - `--config <path>` or `CONFIG_FILE` env var selects config file
 
-## YOLO Mode
-Aggressive config for maximum theoretical returns. **Testnet only** — validation enforces `use_testnet: true`.
+## Profiles (5yr backtest, $1,000 start, verified post-bugfix)
 
-| Parameter | Safe | YOLO | Impact |
-|-----------|------|------|--------|
-| Leverage | 10x | 100x | 10x higher position cap |
-| Risk/trade | 3% | 17% | 5.7x more per trade |
-| Pyramids | 5 adds | 20 adds | More compounding into winners |
-| Adaptive sizing | ON | OFF | Every signal gets full risk |
-| Volume filter | 1.3x MA | 0.7x MA | 80% more trade signals |
-| SL | 1.2 ATR | 1.65 ATR | Wider stops, fewer stop-outs |
-| TP | 3.0 ATR | 4.0 ATR | Lets runners go further |
-| Post-TP1 trail | 3.0 ATR | 5.0 ATR | Wide trail for big moves |
-| Slope filter | 0.02 | OFF | Accepts flat-EMA crossovers |
-| Max consec losses | 5 | 20 | Less circuit breaking |
-| MTD downscale | 0.8x/0.6x | 0.7x/0.4x | Aggressive DD protection |
+| Profile | File | Risk | Lev | 5yr | /yr | PF | DD | Trades |
+|---------|------|------|-----|-----|-----|-----|-----|--------|
+| **Safe** | `config.json` | 2% | 7x | +72% | ~11% | 1.62 | 17% | 103 |
+| **Aggressive** | `config_aggressive.json` | 5% | 10x | +158% | ~21% | 1.53 | 15% | 103 |
+| **YOLO-lite** | `config_yolo.json` | 10% | 20x | +338% | ~34% | 1.42 | 28% | 103 |
+| **Sniper** | `config_sniper.json` | 2% | 7x | +36% | ~6% | 1.58 | 8% | 58 |
 
-**Backtest (5yr, $100 start)**: $9.35e+28 theoretical | 473 trades | WR 37% | PF 4.80 | DD 24.1%
-**Reality**: Liquidity caps real returns around $1M-$10M. Numbers above ~$100K are unrealistic due to position sizing vs market depth.
+All profiles share: EMA(9/21)+EMA(5/13), SL=1.0 ATR, TP=3.0 ATR, RSI 45-65/35-55 (sniper: 42-62/38-58), no pyramiding, no partial TP, hours 3-20 UTC, weekend off.
+
+```bash
+# Deploy profiles
+python main.py                                           # Safe (default)
+python main.py --config config_aggressive.json           # Aggressive
+YOLO_MODE=1 python main.py --config config_yolo.json     # YOLO-lite (testnet only)
+python main.py --config config_sniper.json               # Sniper
+```
 
 ## Development Rules
 - **Symbol format**: Always normalize BTCUSDT → BTC/USDT:USDT for ccxt

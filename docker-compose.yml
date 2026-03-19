@@ -29,7 +29,9 @@ services:
       - bot-data:/app/data
       # Mount config as read-only (allows hot-swap without rebuild)
       - ./config.json:/app/config.json:ro
+      - ./config_aggressive.json:/app/config_aggressive.json:ro
       - ./config_yolo.json:/app/config_yolo.json:ro
+      - ./config_sniper.json:/app/config_sniper.json:ro
     # Resource limits to prevent runaway memory/CPU usage
     deploy:
       resources:
@@ -76,7 +78,9 @@ services:
       # Share the same data volume so dashboard reads the bot's database
       - bot-data:/app/data
       - ./config.json:/app/config.json:ro
+      - ./config_aggressive.json:/app/config_aggressive.json:ro
       - ./config_yolo.json:/app/config_yolo.json:ro
+      - ./config_sniper.json:/app/config_sniper.json:ro
     deploy:
       resources:
         limits:

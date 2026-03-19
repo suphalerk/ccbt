@@ -3,8 +3,8 @@
   "symbol": "BTCUSDT",
   "timeframe_signal": "15m",
   "timeframe_trend": "1h",
-  "leverage": 10,
-  "risk_per_trade": 0.03,
+  "leverage": 7,
+  "risk_per_trade": 0.02,
   "max_daily_loss": 0.09,
   "max_positions": 2,
   "max_consecutive_losses": 5,
@@ -18,14 +18,14 @@
   "rsi_min": 45,
   "rsi_max": 65,
   "atr_period": 14,
-  "atr_sl_mult": 1.2,
+  "atr_sl_mult": 1.0,
   "atr_trail_mult": 2.0,
   "atr_trail_mult_trending": 2.0,
   "atr_trail_mult_ranging": 1.5,
   "atr_trail_mult_volatile": 2.5,
   "atr_tp_mult": 3.0,
   "atr_min": 50.0,
-  "partial_tp_enabled": true,
+  "partial_tp_enabled": false,
   "partial_tp_pct": 0.3,
   "partial_tp_atr_mult": 2.0,
   "move_sl_to_be_after_tp1": true,
@@ -33,12 +33,12 @@
   "atr_trail_mult_post_tp1": 3.0,
   "volume_mult": 1.3,
   "volume_max_mult": 3.0,
-  "rsi_long_min": 48,
-  "rsi_long_max": 68,
-  "rsi_short_min": 30,
-  "rsi_short_max": 52,
-  "cooldown_candles_after_close": 4,
-  "cooldown_candles_after_sl": 8,
+  "rsi_long_min": 45,
+  "rsi_long_max": 65,
+  "rsi_short_min": 35,
+  "rsi_short_max": 55,
+  "cooldown_candles_after_close": 0,
+  "cooldown_candles_after_sl": 0,
   "min_rr_ratio": 1.0,
   "commission_rate": 0.0004,
   "slippage_rate": 0.00015,
@@ -50,14 +50,14 @@
   "trading_hours": {
     "enabled": true,
     "start_utc": 3,
-    "end_utc": 24
+    "end_utc": 20
   },
   "regime_filter": {
     "enabled": true,
     "skip_ranging": true
   },
   "flexible_cooldown": {
-    "enabled": true,
+    "enabled": false,
     "min_quality_score": 0.7,
     "cooldown_reduction_factor": 0.5,
     "log_overrides": true
@@ -91,7 +91,7 @@
   "divergence_min_rsi_diff": 5.0,
   "divergence_min_price_pct": 0.005,
   "adaptive_sizing": {
-    "enabled": true,
+    "enabled": false,
     "min_quality_for_trade": 0.3,
     "tiers": {
       "A": {"min_score": 0.75, "risk_mult": 2.0, "leverage_mult": 1.5},
@@ -100,7 +100,7 @@
     }
   },
   "pyramiding": {
-    "enabled": true,
+    "enabled": false,
     "max_adds": 5,
     "add_1_atr_mult": 0.8,
     "add_1_size_pct": 1.0,
@@ -116,7 +116,7 @@
     "tp_extension_min_pyramids": 2
   },
   "mtd_accelerator": {
-    "enabled": true,
+    "enabled": false,
     "tiers": [
       {"min_return": 0.20, "mult": 1.5},
       {"min_return": 0.10, "mult": 1.3},
