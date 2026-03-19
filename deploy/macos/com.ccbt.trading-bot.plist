@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ccbt.trading-bot</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/iceai/Work/ccbt/deploy/macos/start.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/iceai/Work/ccbt</string>
+
+    <!-- Run automatically at login -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart if the process exits -->
+    <key>KeepAlive</key>
+    <dict>
+        <!-- Only keep alive if it exits cleanly (not on a crash loop) -->
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!-- Wait 10 seconds before restarting after a crash -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <!-- Log output -->
+    <key>StandardOutPath</key>
+    <string>/Users/iceai/Library/Logs/ccbt/bot.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/iceai/Library/Logs/ccbt/bot-error.log</string>
+
+    <!-- Prevent system sleep from killing the process -->
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

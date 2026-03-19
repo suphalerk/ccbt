@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 *.pyo
 *.db
+*.db-shm
+*.db-wal
 .venv/
 venv/
 *.egg-info/
@@ -10,3 +12,7 @@ dist/
 build/
 .pytest_cache/
 .mypy_cache/
+trading_bot.log
+logs/
+data/
+.claude/worktrees/
