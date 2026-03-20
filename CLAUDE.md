@@ -104,18 +104,20 @@ Bot runs fully autonomous — risk management is the primary safety layer:
 |---------|------|------|-----|-----|-----|-----|-----|--------|
 | **Safe** | `config.json` | 2% | 7x | +72% | ~11% | 1.62 | 17% | 103 |
 | **Aggressive** | `config_aggressive.json` | 5% | 10x | +158% | ~21% | 1.53 | 15% | 103 |
-| **YOLO-lite** | `config_yolo.json` | 10% | 20x | +338% | ~34% | 1.42 | 28% | 103 |
+| **YOLO** | `config_yolo.json` | 10% | 25x | +421% | ~40% | 1.42 | 29% | 103 |
+| **MAX** | `config_max.json` | 15% | 25x | +300% | ~33% | 1.29 | 36% | 103 |
 | **Sniper** | `config_sniper.json` | 2% | 7x | +36% | ~6% | 1.58 | 8% | 58 |
 
-EMA(9/21)+EMA(5/13) only. Body Dominance/Squeeze disabled (look-ahead bias confirmed).
+Best recent performance (last 6mo): YOLO R10%/L25x = **+461%/yr** (trending market).
 
-All profiles share: EMA(9/21)+EMA(5/13), SL=1.0 ATR, TP=3.0 ATR, RSI 45-65/35-55 (sniper: 42-62/38-58), no pyramiding, no partial TP, hours 3-20 UTC, weekend off.
+All profiles share: EMA(9/21)+EMA(5/13), SL=1.0 ATR, TP=3.0 ATR, RSI 45-65/35-55, no pyramiding, hours 3-20 UTC.
 
 ```bash
 # Deploy profiles
 python main.py                                           # Safe (default)
 python main.py --config config_aggressive.json           # Aggressive
-YOLO_MODE=1 python main.py --config config_yolo.json     # YOLO-lite (testnet only)
+YOLO_MODE=1 python main.py --config config_yolo.json     # YOLO (testnet only)
+YOLO_MODE=1 python main.py --config config_max.json      # MAX RISK (testnet only)
 python main.py --config config_sniper.json               # Sniper
 ```
 
