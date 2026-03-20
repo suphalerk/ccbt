@@ -15,13 +15,40 @@ Systematic iterative optimization methodology for the CCBT trading bot. Combines
 - Hunting for higher returns or lower drawdown
 - Validating changes after code modifications
 
-## Methodology
+## Methodology (Team-Orchestrated)
 
-### Phase 1: Baseline Measurement
+Uses PM-first team orchestration pattern. PM plans → specialists work in parallel → PM synthesizes.
 
-Run the current config as baseline before any changes:
+### Phase 1: PM Plans the Research
 
-```python
+Spawn PM to analyze the research goal and create a structured plan:
+
+```
+Agent(subagent_type="pm", prompt="""
+User wants to research: {research_goal}
+
+Current baseline metrics: {baseline_metrics or 'needs measuring'}
+
+Break this into subtasks for the team. Consider:
+1. Who should measure the baseline? (backend-dev)
+2. Who analyzes the results? (trader-expert, sa, crypto-expert in parallel)
+3. Who implements changes? (backend-dev, possibly multiple instances)
+4. Who reviews? (sa + trader-expert)
+
+Output your delegation plan as structured JSON.
+""")
+```
+
+PM outputs a JSON plan with subtasks, parallel groups, and dependencies.
+
+### Phase 2: Baseline Measurement (Group A)
+
+Backend-dev agent runs the baseline backtest:
+
+```
+Agent(subagent_type="backend-dev", name="baseline-runner", prompt="""
+Run baseline backtest with current config. Code:
+
 from backtest.engine import BacktestEngine
 from backtest.data_loader import load_ohlcv
 import json
@@ -34,74 +61,202 @@ trend_df = load_ohlcv('data/btcusdt_1h_2y.csv')
 
 engine = BacktestEngine(config, initial_balance=100.0)
 result = engine.run(signal_df, trend_df)
+
+Report: Trades, WR, PF, Sharpe, PnL, Max DD, per-signal-source breakdown.
+""")
 ```
 
-Record: Trades, WR, PF, Sharpe, PnL, Max DD, per-signal-source breakdown.
+### Phase 3: Parallel Team Analysis (Group B)
 
-### Phase 2: Agent Team Analysis
+Spawn all analysts simultaneously with `run_in_background=True`:
 
-Spawn specialized agents in parallel:
+```
+# All 3 run in parallel — no dependencies between them
+Agent(subagent_type="trader-expert", name="strategy-analyst",
+      run_in_background=True, prompt="""
+Baseline results: {baseline_metrics}
+Research goal: {goal}
 
-1. **trader-expert**: Analyze current edge, identify weaknesses, propose parameter/strategy changes
-2. **sa** (Solution Architect): Review code architecture, identify highest-impact code changes
-3. **crypto-expert** (optional): Domain context if testing market-specific hypotheses
+Analyze: What's the bottleneck? (frequency? win rate? R:R? sizing?)
+Check SKILL.md 'What Does NOT Work' section — don't re-test failed approaches.
+Propose 3-5 specific parameter/strategy changes ranked by expected impact.
+For each, specify exact config overrides to test.
+""")
 
-Key questions for agents:
-- What's the bottleneck? (frequency? win rate? risk/reward? sizing?)
-- What approaches have been tried and failed? (check conversation history and this skill doc)
-- What's the highest-ROI change with lowest implementation risk?
+Agent(subagent_type="sa", name="arch-analyst",
+      run_in_background=True, prompt="""
+Baseline results: {baseline_metrics}
+Research goal: {goal}
 
-### Phase 3: Hypothesis Testing (Parameter Sweep)
+Review code in bot/strategy.py, bot/risk.py, bot/data.py.
+Identify highest-impact CODE changes (not just params).
+Check for bugs, inefficiencies, or missed opportunities.
+Propose changes with specific file paths and code snippets.
+""")
 
-Test each change INDIVIDUALLY first, then in combination:
+Agent(subagent_type="crypto-expert", name="domain-analyst",
+      run_in_background=True, prompt="""
+Baseline results: {baseline_metrics}
+Research goal: {goal}
 
-```python
-import copy
+Provide domain context: Is the current strategy suited for current market regime?
+Any structural shifts that would change optimal parameters?
+Cross-asset signals or macro factors to consider?
+""")
+```
 
-tests = [
-    ('Change A only', {param_a_overrides}),
-    ('Change B only', {param_b_overrides}),
-    ('A + B combined', {param_a_and_b}),
-]
+### Phase 4: PM Synthesizes Proposals
 
-for name, overrides in tests:
-    config = copy.deepcopy(base_config)
-    config.update(overrides)
-    engine = BacktestEngine(config, initial_balance=100.0)
-    result = engine.run(signal_df, trend_df)
-    # Compare vs baseline
+PM reviews all analyst outputs and prioritizes:
+
+```
+Agent(subagent_type="pm", prompt="""
+Analyst outputs:
+- trader-expert: {strategy_analysis}
+- sa: {arch_analysis}
+- crypto-expert: {domain_analysis}
+
+Prioritize proposals into a test plan:
+1. Rank by expected impact × implementation ease
+2. Group independent tests for parallel execution
+3. Identify which proposals can be parameter-only (fast) vs code changes (slower)
+4. Create delegation plan for hypothesis testing phase.
+""")
+```
+
+### Phase 5: Hypothesis Testing (Group C — Parallel Sweeps)
+
+Spawn multiple backend-dev instances to test hypotheses in parallel:
+
+```
+# Each test runs independently — spawn all at once
+Agent(subagent_type="backend-dev", name="test-hypothesis-A",
+      run_in_background=True, prompt="""
+Test hypothesis A: {description}
+Config overrides: {overrides_a}
+Run backtest, compare vs baseline. Report: PF, PnL, DD, trade count.
+""")
+
+Agent(subagent_type="backend-dev", name="test-hypothesis-B",
+      run_in_background=True, prompt="""
+Test hypothesis B: {description}
+Config overrides: {overrides_b}
+Run backtest, compare vs baseline. Report: PF, PnL, DD, trade count.
+""")
+
+Agent(subagent_type="backend-dev", name="test-hypothesis-C",
+      run_in_background=True, prompt="""
+Test hypothesis C: {description}
+Config overrides: {overrides_c}
+Run backtest, compare vs baseline. Report: PF, PnL, DD, trade count.
+""")
+```
+
+Then test winning combinations:
+```
+Agent(subagent_type="backend-dev", name="test-combined",
+      prompt="Combine winners A+B, test together. Report vs baseline.")
 ```
 
 Rules:
-- **Isolate variables**: Test one change at a time to understand causality
+- **Isolate variables**: Test one change at a time FIRST, then combine winners
 - **No cherry-picking**: Use full 2-year dataset, not just favorable periods
 - **Check per-source breakdown**: A combined PF can hide one good + one bad source
 - **Watch trade count**: More trades with lower PF often = worse (fee drag)
 - **DD matters**: High returns with high DD = fragile
 
-### Phase 4: Implementation
+### Phase 6: Implementation (Group D)
 
-If backtest shows improvement:
-1. **backend-dev agent**: Implement code changes
-2. Run `python3 -m pytest tests/ -v` — all tests must pass
-3. Verify backtest with disabled feature = identical to baseline (no regression)
-4. Verify backtest with enabled feature = improvement confirmed
+If backtest shows improvement, PM delegates implementation:
 
-### Phase 5: Iterate or Stop
+```
+# backend-dev implements, sa reviews — in parallel group D
+Agent(subagent_type="backend-dev", name="implementer",
+      prompt="""
+Implement the winning changes:
+- {change_list}
+- Update config files with new parameters
+- Run pytest tests/ -v — all must pass
+- Verify: disabled = identical to baseline, enabled = improvement confirmed
+""")
 
-**Stop criteria** (any of):
+Agent(subagent_type="backend-dev", name="test-writer",
+      run_in_background=True, prompt="""
+Write/update tests for the new changes:
+- {test_requirements}
+- Ensure edge cases are covered
+""")
+```
+
+Then SA reviews:
+```
+Agent(subagent_type="sa", name="reviewer", prompt="""
+Review the implementation:
+- Code quality, no look-ahead bias, correct fee handling
+- Config changes are backward-compatible
+- No regressions in existing functionality
+""")
+```
+
+### Phase 7: PM Final Review & Iterate
+
+PM reviews all results and decides next action:
+
+```
+Agent(subagent_type="pm", prompt="""
+Round {N} results:
+- Baseline: {baseline}
+- Best result: {best}
+- Improvement: {delta}
+
+Stop criteria (any = stop):
 - Target return achieved
 - Max rounds reached
 - Diminishing returns (< 5% improvement per round)
-- Overfitting risk (too many parameters tuned to same dataset)
+- Overfitting risk (too many params tuned to same dataset)
 
-**Continue criteria**:
+Continue criteria (all = continue):
 - Target not met AND plausible hypotheses remain
 - New approach fundamentally different from what was tried
 
-### Phase 6: Deploy
+Decision: STOP or CONTINUE with next round plan?
+If CONTINUE: output new delegation plan for next round.
+If STOP: output final summary + recommended config changes.
+""")
+```
 
-Update config.json with best parameters, update CLAUDE.md and PRD.md.
+### Phase 8: Deploy
+
+PM delegates final deployment:
+```
+Agent(subagent_type="backend-dev", prompt="Update config.json with best parameters")
+Agent(subagent_type="sa", prompt="Update CLAUDE.md and SKILL.md with new findings")
+```
+
+## Team Orchestration Flow
+
+```
+Round N:
+  PM (plan) ──────────────────────────────────────────────────── PM (synthesize)
+       │                                                              │
+       ├── Group A: backend-dev (baseline)                            │
+       │                                                              │
+       ├── Group B: [trader-expert, sa, crypto-expert] ── parallel ──→│
+       │                                                              │
+       ├── Group C: [backend-dev ×3] (hypothesis tests) ── parallel ─→│
+       │                                                              │
+       ├── Group D: [backend-dev (impl), backend-dev (tests)] ───────→│
+       │            then sa (review)                                  │
+       │                                                              │
+       └── PM decides: STOP → deploy  |  CONTINUE → next round ──────┘
+```
+
+Key principles:
+- **PM always plans first and reviews last** — no specialist works without a plan
+- **Maximize parallelism** — analysts in parallel, hypothesis tests in parallel
+- **Multiple backend-dev instances** — one per hypothesis test for speed
+- **Named agents** — use descriptive names (e.g., "test-hypothesis-A") for tracking
+- **Background execution** — use `run_in_background=True` for parallel groups
 
 ## Key Lessons Learned
 
