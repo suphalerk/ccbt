@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from backtest.metrics import BacktestMetrics, compute_metrics, print_metrics
-from bot.data import add_indicators, add_trend_filter, compute_atr, detect_regime
+from bot.data import add_funding_rate, add_indicators, add_trend_filter, compute_atr, detect_regime
 from bot.risk import RiskManager
 from bot.strategy import (
     SignalType,
@@ -100,6 +100,14 @@ class BacktestEngine:
             balance=initial_balance, initial_balance=initial_balance
         )
 
+        # Signal scorer (Phase 1: OHLCV-based conviction filter)
+        scorer_cfg = config.get("signal_scorer", {})
+        if scorer_cfg.get("enabled", False):
+            from bot.signal_scorer import SignalScorer
+            self._scorer = SignalScorer(config)
+        else:
+            self._scorer = None
+
     @staticmethod
     def _get_slippage_multiplier(timestamp) -> float:
         """Get slippage multiplier based on time-of-day and day-of-week.
@@ -147,6 +155,16 @@ class BacktestEngine:
         df = add_indicators(signal_data, self.config)
         if trend_data is not None and not trend_data.empty:
             df = add_trend_filter(df, trend_data, self.config)
+
+        # Merge funding rate data if a funding file is specified or derivable
+        # from the symbol.  Falls back silently when the file is absent so
+        # existing backtests are not broken.
+        funding_file = self.config.get("funding_file", "")
+        if not funding_file:
+            symbol = self.config.get("symbol", "BTCUSDT").replace("/", "").replace(":", "")
+            funding_file = f"data/{symbol.lower()}_funding_rate.csv"
+        df = add_funding_rate(df, funding_file)
+
         # Store enriched df for multi-signal access in _check_entry
         self._df = df
 
@@ -394,6 +412,33 @@ class BacktestEngine:
             if signal_source is None:
                 continue
 
+            # --- Signal Scorer conviction gate (Phase 1) ---
+            # Runs after binary check passes. When enabled and score is below
+            # entry_threshold, the signal is filtered out. When above threshold,
+            # score_size_mult scales position size (0.5–1.5×).
+            if self._scorer is not None and self._scorer.enabled:
+                direction_str = "long" if signal_type == SignalType.LONG else "short"
+                composite = self._scorer.score(
+                    signal_row,
+                    self._df.iloc[:candle_idx] if hasattr(self, "_df") else pd.DataFrame(),
+                    direction_str,
+                )
+                score_size_mult = self._scorer.get_size_multiplier(composite)
+                if score_size_mult == 0.0:
+                    logger.debug(
+                        "signal_scorer_filtered",
+                        extra={
+                            "signal_source": signal_source,
+                            "direction": direction_str,
+                            "abs_score": round(composite.abs_score, 4),
+                            "threshold": self._scorer.entry_threshold,
+                        },
+                    )
+                    continue
+            else:
+                score_size_mult = 1.0
+            # --- End signal scorer gate ---
+
             atr = signal_row["atr"]
             # Mean-reversion uses tighter SL/TP multipliers
             if signal_source == "mean_reversion":
@@ -457,6 +502,9 @@ class BacktestEngine:
 
             if not approved:
                 continue
+
+            # Apply signal scorer size multiplier (0.5–1.5×; 1.0 when scorer disabled)
+            position_size *= score_size_mult
 
             # --- Adaptive position sizing (Feature 1) ---
             # Compute signal quality score and apply tiered risk/leverage multipliers.

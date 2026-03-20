@@ -512,6 +512,67 @@ def add_price_action_patterns(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     return df
 
 
+def add_funding_rate(
+    df: pd.DataFrame, funding_file: str = "data/btcusdt_funding_rate.csv"
+) -> pd.DataFrame:
+    """Merge funding rate data with signal DataFrame.
+
+    Funding rate updates every 8h (00:00, 08:00, 16:00 UTC).
+    Forward-fill to match 15m candles.
+    Uses shift(1) to prevent look-ahead bias — only the last SETTLED rate
+    is visible at any candle, never the rate being determined right now.
+
+    Args:
+        df: Signal DataFrame with a DatetimeIndex or 'timestamp' column.
+        funding_file: Path to a CSV with columns ``timestamp`` and ``fundingRate``.
+
+    Returns:
+        DataFrame with a ``fundingRate`` column added (0.0 where data unavailable).
+    """
+    import os
+
+    if not os.path.exists(funding_file):
+        logger.debug("funding_file_not_found", extra={"path": funding_file})
+        return df
+
+    funding = pd.read_csv(funding_file, parse_dates=["timestamp"])
+    funding = funding.set_index("timestamp").sort_index()
+
+    # shift(1) so that the rate visible at settlement time T is the
+    # *previous* settled rate — not the one that just settled at T.
+    funding["fundingRate"] = funding["fundingRate"].shift(1)
+
+    df = df.copy()
+    df_reset = df.reset_index()
+
+    # Determine the timestamp column name
+    ts_col = "timestamp" if "timestamp" in df_reset.columns else df_reset.columns[0]
+
+    df_merged = pd.merge_asof(
+        df_reset.sort_values(ts_col),
+        funding.reset_index().rename(columns={"timestamp": ts_col}),
+        on=ts_col,
+        direction="backward",
+    )
+
+    if ts_col == "timestamp":
+        df_merged = df_merged.set_index("timestamp")
+    else:
+        df_merged = df_merged.set_index(ts_col)
+
+    df_merged["fundingRate"] = df_merged["fundingRate"].ffill().fillna(0.0)
+
+    logger.debug(
+        "funding_rate_merged",
+        extra={
+            "rows": len(df_merged),
+            "funding_rows": len(funding),
+            "non_zero": int((df_merged["fundingRate"] != 0).sum()),
+        },
+    )
+    return df_merged
+
+
 def add_trend_filter(
     df: pd.DataFrame, trend_df: pd.DataFrame, config: dict
 ) -> pd.DataFrame:
