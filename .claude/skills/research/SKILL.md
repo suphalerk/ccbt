@@ -202,9 +202,43 @@ Approach: "find profitable moves → what conditions preceded them?"
 | **MAX** | `config_max.json` | 15% | 25x | +300% | ~33% | +441% | 1.29 | 36% | 103 |
 | **Sniper** | `config_sniper.json` | 2% | 7x | +36% | ~6% | — | 1.58 | 8% | 58 |
 
+## Gold (XAU/USD) Research Findings
+
+10 strategies tested on 2.4yr 1H data ($1,999→$4,720):
+
+### Winners
+| Strategy | PF | Trades/yr | Return/yr | DD |
+|----------|-----|----------|----------|-----|
+| **Ichimoku + Trail + Hours(8-20)** | **2.02** | 44 | +46% | 9% |
+| **Ichimoku Long-Only + Trail** | 2.01 | 49 | +56% | 12% |
+| **Momentum Long-Only ROC(10,1.2%)** | 2.70 | 29 | +62% | 14% |
+| Momentum both sides | 1.74 | 44 | +44% | 20% |
+| EMA(12/26) + Volume + Trail | 1.52 | 40 | +18% | 24% |
+| RSI(35/65) + EMA200 | 1.34 | 43 | +18% | 27% |
+
+### Failures
+Session Breakout (PF 0.94), VWAP Reversion (PF 0.75), BB Bounce (PF 0.77),
+Pivot Points (PF 0.84), Asian Range (PF 0.93), EMA Ribbon (PF 1.05)
+
+### Gold-Specific Rules
+- Trailing stop >> fixed TP (gold trends run far)
+- Long-only bias works (+136% in 2.4yr uptrend)
+- SL 2.5 ATR (wider than BTC's 1.0 ATR)
+- Hours 8-20 UTC = free edge (skip Asian noise)
+- Ichimoku Cloud = natural trend filter for gold
+- Mean reversion fails completely on gold
+
+### Gold Data Files
+- data/xauusd_1h_2y.csv (13,691 rows, Yahoo Finance)
+- data/xauusd_1d_10y.csv (2,566 rows, 10yr daily)
+- data/xauusd_15m_60d.csv (4,369 rows, 60 days)
+- research/gold_strategies.py (10 strategy scripts)
+- research/gold_strategies_deep.py (deep parameter sweeps)
+
 ## Invocation
 
 User says `/research` with optional context:
 - `/research` — full optimization loop from current baseline
 - `/research "test lower SL multiplier"` — targeted hypothesis test
 - `/research "compare profiles"` — backtest all 3 profiles side by side
+- `/research "gold ichimoku"` — gold-specific strategy research

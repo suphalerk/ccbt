@@ -1,16 +1,18 @@
-# CCBT — Crypto Trading Bot with Claude AI
+# CCBT — Crypto & Gold Trading Bot with Claude AI
 
 ## Project Overview
-Automated cryptocurrency perpetual futures trading bot for Bybit exchange with Claude AI advisor integration, Streamlit dashboard, and production deployment infrastructure.
+Automated trading bot for BTC perpetual futures (Binance/Bybit via ccxt) and Gold XAU/USD (OANDA forex) with Claude AI advisor integration, Streamlit dashboard, and production deployment infrastructure.
 
-**Language**: Python 3.11 | **Exchange**: Bybit (ccxt) | **AI**: Claude Sonnet via Anthropic SDK | **Dashboard**: Streamlit + Plotly | **DB**: SQLite (WAL mode)
+**Language**: Python 3.11 | **Exchanges**: Binance/Bybit (ccxt) + OANDA (forex) | **AI**: Claude Sonnet via Anthropic SDK | **Dashboard**: Streamlit + Plotly | **DB**: SQLite (WAL mode)
 
 ## Architecture
 
 ```
-main.py                  → Main async trading loop (entry point)
+main.py                  → Main async trading loop — BTC (entry point)
+main_gold.py             → Gold XAU/USD trading loop — OANDA forex
 bot/
-├── exchange.py          → Bybit ccxt wrapper (rate limiting, retries, symbol normalization)
+├── exchange.py          → Bybit/Binance ccxt wrapper (rate limiting, retries)
+├── forex_exchange.py    → OANDA forex wrapper (XAU/USD, same interface as exchange.py)
 ├── strategy.py          → Signal generation (EMA crossover + RSI + ATR + trend filter)
 ├── data.py              → Technical indicators (EMA, RSI, ATR, volume MA, regime detection)
 ├── risk.py              → Risk management (position sizing, circuit breakers, cooldowns)
@@ -72,6 +74,41 @@ sudo bash deploy/setup.sh dashboard.yourdomain.com
 - **MTD Accelerator**: OFF by default (best for trending markets). Enable via `config_yolo.json` for bear markets. Moderate tiers: +15%→2.0x, +5%→1.5x, flat→1.0x, -20%→0.7x, worse→0.5x.
 - **Trading Hours**: 03:00-20:00 UTC | **Weekend**: Off | **Regime**: Skip ranging
 - **Body Dominance / Squeeze Release**: Implemented but disabled — showed PF 2.06 but was look-ahead bias (1H candle not yet closed). With proper lag, PF drops to 0.90. Code retained for future use if a non-biased version is found.
+
+## Gold Trading Strategy (XAU/USD — research complete, pending implementation)
+
+Three strategies validated on 2.4yr XAU/USD 1H data (simple simulator):
+
+### 1. Ichimoku Cloud + Trailing (BEST — PF 2.02, +46%/yr, DD 8.8%)
+- **Signal**: Tenkan(9) crosses Kijun(26) above Cloud = long, below = short
+- **Exit**: Trailing stop 3.0×ATR (no fixed TP — gold trends run far)
+- **SL**: 2.5×ATR (wider than BTC — gold has wider intraday swings)
+- **Hours**: 08:00-20:00 UTC only (London+NY, skip Asian noise)
+- **Long-only variant**: PF 2.01, +56%/yr, DD 12%
+
+### 2. Momentum Long-Only (PF 2.70, +62%/yr, DD 14%)
+- **Signal**: ROC(10) > 1.2% + price above EMA21 = long only
+- **Exit**: SL 2.5×ATR, TP 5.0×ATR
+- 29 trades/yr, highest PF but lowest frequency
+
+### 3. EMA(12/26) + Volume + Trail (PF 1.52, +18%/yr, DD 24%)
+- Most similar to BTC strategy, easiest to implement
+
+### Key differences Gold vs BTC
+| Gold | BTC |
+|------|-----|
+| Trail stop >> fixed TP | Fixed TP better |
+| Long-only bias works (+136% in 2.4yr) | Both sides work |
+| SL 2.5 ATR (wider) | SL 1.0 ATR (tighter) |
+| Ichimoku = best indicator | EMA crossover = best |
+| Hours 8-20 UTC critical | Hours 3-20 UTC |
+| Mean reversion fails completely | Same |
+
+### Forex Integration
+- `bot/forex_exchange.py` — OANDA wrapper (same interface as BybitClient)
+- `main_gold.py` — separate entry point for gold
+- `config_gold_forex.json` — OANDA config (H1 signal, H4 trend, XAU_USD)
+- Requires: OANDA_API_TOKEN + OANDA_ACCOUNT_ID in .env
 
 ## AI Advisor Layer
 - **Mode**: "advisor" — provides nuanced adjustments, NOT binary gate
