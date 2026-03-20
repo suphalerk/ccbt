@@ -219,6 +219,14 @@ def add_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     if "ichimoku_tenkan" in config:
         df = add_ichimoku_indicators(df, config)
 
+    # Price Action patterns — computed when any PA signal is enabled
+    if (
+        config.get("signals", {}).get("pin_bar", {}).get("enabled", False)
+        or config.get("signals", {}).get("engulfing", {}).get("enabled", False)
+        or config.get("signals", {}).get("inside_bar_breakout", {}).get("enabled", False)
+    ):
+        df = add_price_action_patterns(df, config)
+
     logger.info("indicators_computed", extra={"rows": len(df)})
     return df
 
@@ -360,6 +368,145 @@ def add_ichimoku_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
             "kijun_period": kijun_period,
             "senkou_b_period": senkou_b_period,
             "rows": len(df),
+        },
+    )
+    return df
+
+
+def add_price_action_patterns(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """Add Price Action pattern boolean columns to the DataFrame.
+
+    All patterns are computed using fully vectorized pandas operations with no loops.
+    Uses only closed candle OHLCV data — no forming candle look-ahead bias.
+
+    Columns added:
+        pin_bar_bull      — Bullish pin bar (long lower wick, close in upper portion)
+        pin_bar_bear      — Bearish pin bar (long upper wick, close in lower portion)
+        engulfing_bull    — Bullish engulfing candle (current body engulfs prior bear body)
+        engulfing_bear    — Bearish engulfing candle (current body engulfs prior bull body)
+        inside_bar        — Inside bar (current H/L within prior candle's H/L range)
+        ib_breakout_bull  — Inside bar bullish breakout (close above mother bar high)
+        ib_breakout_bear  — Inside bar bearish breakout (close below mother bar low)
+
+    Args:
+        df: DataFrame with open, high, low, close, atr columns already computed.
+        config: Bot configuration with PA-specific parameter overrides.
+
+    Returns:
+        DataFrame with PA boolean columns added.
+    """
+    df = df.copy()
+
+    # --- Shared helper series ---
+    body = (df["close"] - df["open"]).abs()
+    candle_range = (df["high"] - df["low"]).clip(lower=1e-10)
+    lower_wick = df[["close", "open"]].min(axis=1) - df["low"]
+    upper_wick = df["high"] - df[["close", "open"]].max(axis=1)
+
+    # --- Pin Bar parameters ---
+    wick_ratio = config.get("pin_bar_wick_ratio", 2.0)
+    close_position_thresh = config.get("pin_bar_close_position", 0.70)
+    max_upper_wick_pct = config.get("pin_bar_max_upper_wick_pct", 0.30)
+    min_range_atr = config.get("pin_bar_min_range_atr_mult", 0.5)
+
+    # Bullish pin bar: long lower wick, close in upper portion of range
+    df["pin_bar_bull"] = (
+        (lower_wick >= body * wick_ratio)  # Lower wick >= 2x body
+        & ((df["close"] - df["low"]) / candle_range >= close_position_thresh)  # Close in upper 30%
+        & (upper_wick / candle_range <= max_upper_wick_pct)  # Small upper wick
+        & (body > 0)  # Not a perfect doji
+        & (candle_range >= df["atr"] * min_range_atr)  # Minimum size
+    )
+
+    # Bearish pin bar: long upper wick, close in lower portion of range
+    df["pin_bar_bear"] = (
+        (upper_wick >= body * wick_ratio)  # Upper wick >= 2x body
+        & ((df["high"] - df["close"]) / candle_range >= close_position_thresh)  # Close in lower 30%
+        & (lower_wick / candle_range <= max_upper_wick_pct)  # Small lower wick
+        & (body > 0)  # Not a perfect doji
+        & (candle_range >= df["atr"] * min_range_atr)  # Minimum size
+    )
+
+    # --- Engulfing parameters ---
+    engulfing_ratio = config.get("engulfing_body_ratio", 1.3)
+    min_body_pct = config.get("engulfing_min_body_pct", 0.40)
+
+    prev_body = body.shift(1)
+    prev_close = df["close"].shift(1)
+    prev_open = df["open"].shift(1)
+    is_bull = df["close"] > df["open"]
+    is_bear = df["close"] < df["open"]
+    prev_is_bear = prev_close < prev_open
+    prev_is_bull = prev_close > prev_open
+
+    # Bullish engulfing: current bull body fully engulfs prior bear body.
+    # For a bearish prior candle (prev_open > prev_close):
+    #   - current close must exceed the TOP of the prior bear body (prev_open)
+    #   - current open must be BELOW the TOP of the prior bear body (prev_open)
+    #     i.e. open is somewhere inside or below the prior candle.
+    # Note: prev_close is the BOTTOM of a bear candle so requiring open < prev_close
+    # is too strict (almost never hit in a gap-less crypto market). Using prev_open instead.
+    df["engulfing_bull"] = (
+        is_bull
+        & prev_is_bear
+        & (body >= prev_body * engulfing_ratio)  # Current body >= 1.3x prev body
+        & (df["close"] > prev_open)   # Current close > prior bear open (top of bear body)
+        & (df["open"] < prev_open)    # Current open < prior bear open (inside/below bear body)
+        & (body / candle_range >= min_body_pct)  # Min body-to-range ratio
+    )
+
+    # Bearish engulfing: current bear body fully engulfs prior bull body.
+    # For a bullish prior candle (prev_close > prev_open):
+    #   - current open must exceed the BOTTOM of the prior bull body (prev_open)
+    #     i.e. open is somewhere inside or above the prior candle.
+    #   - current close must fall BELOW the BOTTOM of the prior bull body (prev_open)
+    # Note: prev_close is the TOP of a bull candle so requiring open > prev_close
+    # is too strict (almost never hit in a gap-less crypto market). Using prev_open instead.
+    df["engulfing_bear"] = (
+        is_bear
+        & prev_is_bull
+        & (body >= prev_body * engulfing_ratio)  # Current body >= 1.3x prev body
+        & (df["open"] > prev_open)    # Current open > prior bull open (inside/above bull body)
+        & (df["close"] < prev_open)   # Current close < prior bull open (bottom of bull body)
+        & (body / candle_range >= min_body_pct)  # Min body-to-range ratio
+    )
+
+    # --- Inside Bar ---
+    df["inside_bar"] = (df["high"] < df["high"].shift(1)) & (df["low"] > df["low"].shift(1))
+
+    # --- Inside Bar Breakout parameters ---
+    min_mother_atr = config.get("inside_bar_min_mother_range_atr_mult", 0.7)
+
+    # Mother bar is 2 bars back, inside bar is 1 bar back, current = breakout candle
+    mother_high = df["high"].shift(2)
+    mother_low = df["low"].shift(2)
+    mother_range = (mother_high - mother_low).clip(lower=1e-10)
+
+    # Bullish IB breakout: previous bar was inside bar, current closes above mother high
+    df["ib_breakout_bull"] = (
+        df["inside_bar"].shift(1)  # Previous bar was an inside bar
+        & (df["close"] > mother_high)  # Current closes above mother high
+        & (mother_range >= df["atr"] * min_mother_atr)  # Mother bar was significant
+    )
+
+    # Bearish IB breakout: previous bar was inside bar, current closes below mother low
+    df["ib_breakout_bear"] = (
+        df["inside_bar"].shift(1)  # Previous bar was an inside bar
+        & (df["close"] < mother_low)  # Current closes below mother low
+        & (mother_range >= df["atr"] * min_mother_atr)  # Mother bar was significant
+    )
+
+    logger.debug(
+        "price_action_patterns_computed",
+        extra={
+            "rows": len(df),
+            "pin_bar_bull": int(df["pin_bar_bull"].sum()),
+            "pin_bar_bear": int(df["pin_bar_bear"].sum()),
+            "engulfing_bull": int(df["engulfing_bull"].sum()),
+            "engulfing_bear": int(df["engulfing_bear"].sum()),
+            "inside_bar": int(df["inside_bar"].sum()),
+            "ib_breakout_bull": int(df["ib_breakout_bull"].sum()),
+            "ib_breakout_bear": int(df["ib_breakout_bear"].sum()),
         },
     )
     return df

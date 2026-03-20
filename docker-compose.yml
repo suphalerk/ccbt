@@ -32,6 +32,9 @@ services:
       - ./config_aggressive.json:/app/config_aggressive.json:ro
       - ./config_yolo.json:/app/config_yolo.json:ro
       - ./config_sniper.json:/app/config_sniper.json:ro
+      - ./config_doge.json:/app/config_doge.json:ro
+      - ./config_arb.json:/app/config_arb.json:ro
+      - ./config_wif.json:/app/config_wif.json:ro
     # Resource limits to prevent runaway memory/CPU usage
     deploy:
       resources:
@@ -42,6 +45,99 @@ services:
           memory: 128M
           cpus: "0.1"
     # Health check is defined in Dockerfile
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # DOGE Bot Service
+  # ---------------------------------------------------------------------------
+  bot-doge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-doge
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_doge.json
+      - YOLO_MODE=1
+    volumes:
+      - bot-data:/app/data
+      - ./config_doge.json:/app/config_doge.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # ARB Bot Service
+  # ---------------------------------------------------------------------------
+  bot-arb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-arb
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_arb.json
+      - YOLO_MODE=1
+    volumes:
+      - bot-data:/app/data
+      - ./config_arb.json:/app/config_arb.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # WIF Bot Service
+  # ---------------------------------------------------------------------------
+  bot-wif:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-wif
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_wif.json
+      - YOLO_MODE=1
+    volumes:
+      - bot-data:/app/data
+      - ./config_wif.json:/app/config_wif.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
     logging:
       driver: json-file
       options:
@@ -81,6 +177,9 @@ services:
       - ./config_aggressive.json:/app/config_aggressive.json:ro
       - ./config_yolo.json:/app/config_yolo.json:ro
       - ./config_sniper.json:/app/config_sniper.json:ro
+      - ./config_doge.json:/app/config_doge.json:ro
+      - ./config_arb.json:/app/config_arb.json:ro
+      - ./config_wif.json:/app/config_wif.json:ro
     deploy:
       resources:
         limits:

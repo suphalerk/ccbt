@@ -15,10 +15,13 @@ from bot.strategy import (
     SignalType,
     check_bb_breakout_conditions,
     check_body_dominance_conditions,
+    check_engulfing_conditions,
     check_entry_conditions,
     check_fast_crossover_conditions,
     check_ichimoku_conditions,
+    check_inside_bar_breakout_conditions,
     check_mean_reversion_conditions,
+    check_pin_bar_conditions,
     check_pullback_conditions,
     check_rsi_divergence_conditions,
     check_squeeze_release_conditions,
@@ -332,6 +335,18 @@ class BacktestEngine:
                 if signal_source is None and signals_config.get("ema_pullback", {}).get("enabled", True):
                     if check_pullback_conditions(signal_row, self.config, signal_type):
                         signal_source = "ema_pullback"
+
+                if signal_source is None and signals_config.get("pin_bar", {}).get("enabled", False):
+                    if check_pin_bar_conditions(signal_row, self.config, signal_type):
+                        signal_source = "pin_bar"
+
+                if signal_source is None and signals_config.get("engulfing", {}).get("enabled", False):
+                    if check_engulfing_conditions(signal_row, self.config, signal_type):
+                        signal_source = "engulfing"
+
+                if signal_source is None and signals_config.get("inside_bar_breakout", {}).get("enabled", False):
+                    if check_inside_bar_breakout_conditions(signal_row, self.config, signal_type):
+                        signal_source = "inside_bar_breakout"
 
                 if signal_source is None and signals_config.get("bb_breakout", {}).get("enabled", True):
                     if check_bb_breakout_conditions(signal_row, self.config, signal_type):

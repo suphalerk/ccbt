@@ -132,6 +132,9 @@ Bot runs fully autonomous — risk management is the primary safety layer:
 - `config_aggressive.json` — Aggressive profile (5% risk, 10x leverage)
 - `config_yolo.json` — YOLO-lite profile (10% risk, 20x lev, requires `YOLO_MODE=1`)
 - `config_sniper.json` — Sniper profile (tight RSI, fewer but higher quality trades)
+- `config_doge.json` — DOGE/USDT (3% risk, slope=0.01, atr_min=0)
+- `config_arb.json` — ARB/USDT (3% risk, atr_min=0)
+- `config_wif.json` — WIF/USDT (3% risk, atr_min=0)
 - `.env` — API keys (Bybit/Binance, Anthropic, Telegram, CryptoPanic)
 - `use_testnet: true` must be explicitly changed to go live
 - `--config <path>` or `CONFIG_FILE` env var selects config file
@@ -161,10 +164,28 @@ python main.py --config config_sniper.json               # BTC Sniper
 # Deploy Gold bot (runs alongside BTC)
 YOLO_MODE=1 python main.py --config config_gold.json     # XAU/USDT
 
-# Run both simultaneously
-YOLO_MODE=1 python main.py --config config.json &        # BTC bot
-YOLO_MODE=1 python main.py --config config_gold.json &   # Gold bot
+# Deploy altcoin bots (multi-coin day trading portfolio)
+YOLO_MODE=1 python main.py --config config_doge.json     # DOGE (3% risk)
+YOLO_MODE=1 python main.py --config config_arb.json      # ARB (3% risk)
+YOLO_MODE=1 python main.py --config config_wif.json      # WIF (3% risk)
+
+# Run all 4 crypto bots simultaneously (day trading portfolio)
+YOLO_MODE=1 python main.py --config config.json &          # BTC (5% risk)
+YOLO_MODE=1 python main.py --config config_doge.json &     # DOGE (3% risk)
+YOLO_MODE=1 python main.py --config config_arb.json &      # ARB (3% risk)
+YOLO_MODE=1 python main.py --config config_wif.json &      # WIF (3% risk)
 ```
+
+## Multi-Coin Day Trading Portfolio (verified 2yr backtest)
+
+| Coin | Config | Risk | PF | Sharpe | Tr/yr | Notes |
+|------|--------|------|-----|--------|-------|-------|
+| **BTC** | `config.json` | 5% | 1.51 | 1.77 | 38 | Anchor, highest PF |
+| **DOGE** | `config_doge.json` | 3% | 1.50 | 1.54 | 29 | slope=0.01, atr_min=0 |
+| **ARB** | `config_arb.json` | 3% | 1.27 | 0.96 | 21 | Fragile edge, don't tune |
+| **WIF** | `config_wif.json` | 3% | 1.21 | 0.86 | 33 | Meme coin momentum |
+
+Total: ~121 trades/yr across 4 coins. Max simultaneous exposure: 14%.
 
 ## Development Rules
 - **Symbol format**: Always normalize BTCUSDT → BTC/USDT:USDT for ccxt

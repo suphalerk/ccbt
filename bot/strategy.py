@@ -539,6 +539,200 @@ def check_squeeze_release_conditions(
     return True
 
 
+def check_pin_bar_conditions(
+    row: pd.Series, config: dict, signal_type: SignalType
+) -> bool:
+    """Check pin bar entry conditions at EMA pullback zone.
+
+    Pin bar at EMA = stop-hunt reversal pattern. The wick sweeps past EMA
+    (liquidity hunt) then closes back, signaling continuation.
+
+    Args:
+        row: Current candle row with indicators.
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if pin bar conditions are satisfied.
+    """
+    if pd.isna(row.get("rsi")) or pd.isna(row.get("atr")):
+        return False
+    if row["atr"] < config.get("atr_min", 0.0):
+        return False
+
+    # EMA proximity check — pin bar must be near EMA zone
+    ema_prox = config.get("pin_bar_ema_proximity_pct", 0.003)  # 0.3%
+    ema_slow = row.get("ema_slow")
+    if pd.isna(ema_slow) or ema_slow == 0:
+        return False
+
+    if signal_type == SignalType.LONG:
+        if not row.get("pin_bar_bull", False):
+            return False
+        # Wick must touch or pierce EMA zone (lower wick near EMA slow)
+        distance = abs(row["low"] - ema_slow) / ema_slow
+        if distance > ema_prox and row["low"] > ema_slow:
+            return False  # Pin bar wick didn't reach EMA
+        # EMA trend must be bullish
+        if pd.notna(row.get("ema_fast")) and row["ema_fast"] <= row["ema_slow"]:
+            return False
+        # 1h trend filter
+        if "above_trend" in row.index and pd.notna(row["above_trend"]):
+            if not row["above_trend"]:
+                return False
+        # RSI: not overbought (pin bars work best at moderate RSI)
+        rsi_min = config.get("rsi_long_min", 45)
+        rsi_max = config.get("pin_bar_rsi_long_max", 65)
+        if not (rsi_min <= row["rsi"] <= rsi_max):
+            return False
+
+    elif signal_type == SignalType.SHORT:
+        if not row.get("pin_bar_bear", False):
+            return False
+        distance = abs(row["high"] - ema_slow) / ema_slow
+        if distance > ema_prox and row["high"] < ema_slow:
+            return False
+        if pd.notna(row.get("ema_fast")) and row["ema_fast"] >= row["ema_slow"]:
+            return False
+        if "below_trend" in row.index and pd.notna(row["below_trend"]):
+            if not row["below_trend"]:
+                return False
+        rsi_min = config.get("pin_bar_rsi_short_min", 35)
+        rsi_max = config.get("rsi_short_max", 55)
+        if not (rsi_min <= row["rsi"] <= rsi_max):
+            return False
+
+    # Volume: pin bars don't need high volume (stop hunt, not buying pressure)
+    vol_mult = config.get("pin_bar_volume_mult", 0.7)
+    if pd.notna(row.get("volume_ma")) and row.get("volume_ma", 0) > 0:
+        if row["volume"] < row["volume_ma"] * vol_mult:
+            return False
+
+    return True
+
+
+def check_engulfing_conditions(
+    row: pd.Series, config: dict, signal_type: SignalType
+) -> bool:
+    """Check engulfing candle entry conditions in trend direction.
+
+    Engulfing in trend = counter-trend traders get trapped. Their forced
+    exits fuel the continuation move.
+
+    Args:
+        row: Current candle row with indicators.
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if engulfing conditions are satisfied.
+    """
+    if pd.isna(row.get("rsi")) or pd.isna(row.get("atr")):
+        return False
+    if row["atr"] < config.get("atr_min", 0.0):
+        return False
+
+    if signal_type == SignalType.LONG:
+        if not row.get("engulfing_bull", False):
+            return False
+        # EMA trend must be bullish
+        if pd.notna(row.get("ema_fast")) and pd.notna(row.get("ema_slow")):
+            if row["ema_fast"] <= row["ema_slow"]:
+                return False
+        # 1h trend filter
+        if "above_trend" in row.index and pd.notna(row["above_trend"]):
+            if not row["above_trend"]:
+                return False
+        # RSI filter
+        rsi_min = config.get("rsi_long_min", 45)
+        rsi_max = config.get("engulfing_rsi_long_max", 70)
+        if not (rsi_min <= row["rsi"] <= rsi_max):
+            return False
+
+    elif signal_type == SignalType.SHORT:
+        if not row.get("engulfing_bear", False):
+            return False
+        if pd.notna(row.get("ema_fast")) and pd.notna(row.get("ema_slow")):
+            if row["ema_fast"] >= row["ema_slow"]:
+                return False
+        if "below_trend" in row.index and pd.notna(row["below_trend"]):
+            if not row["below_trend"]:
+                return False
+        rsi_min = config.get("engulfing_rsi_short_min", 30)
+        rsi_max = config.get("rsi_short_max", 55)
+        if not (rsi_min <= row["rsi"] <= rsi_max):
+            return False
+
+    # Volume: engulfing needs confirmation
+    vol_mult = config.get("engulfing_volume_mult", 1.0)
+    if pd.notna(row.get("volume_ma")) and row.get("volume_ma", 0) > 0:
+        if row["volume"] < row["volume_ma"] * vol_mult:
+            return False
+
+    return True
+
+
+def check_inside_bar_breakout_conditions(
+    row: pd.Series, config: dict, signal_type: SignalType
+) -> bool:
+    """Check inside bar breakout conditions.
+
+    Inside bar = consolidation/compression. Breakout in trend direction
+    captures expansion phase. Tight SL from IB structure gives excellent R:R.
+
+    Args:
+        row: Current candle row with indicators.
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if inside bar breakout conditions are satisfied.
+    """
+    if pd.isna(row.get("rsi")) or pd.isna(row.get("atr")):
+        return False
+    if row["atr"] < config.get("atr_min", 0.0):
+        return False
+
+    if signal_type == SignalType.LONG:
+        if not row.get("ib_breakout_bull", False):
+            return False
+        # EMA trend bullish
+        if pd.notna(row.get("ema_fast")) and pd.notna(row.get("ema_slow")):
+            if row["ema_fast"] <= row["ema_slow"]:
+                return False
+        # 1h trend filter
+        if "above_trend" in row.index and pd.notna(row["above_trend"]):
+            if not row["above_trend"]:
+                return False
+        # RSI
+        rsi_min = config.get("rsi_long_min", 45)
+        rsi_max = config.get("rsi_long_max", 65)
+        if not (rsi_min <= row["rsi"] <= rsi_max):
+            return False
+
+    elif signal_type == SignalType.SHORT:
+        if not row.get("ib_breakout_bear", False):
+            return False
+        if pd.notna(row.get("ema_fast")) and pd.notna(row.get("ema_slow")):
+            if row["ema_fast"] >= row["ema_slow"]:
+                return False
+        if "below_trend" in row.index and pd.notna(row["below_trend"]):
+            if not row["below_trend"]:
+                return False
+        rsi_min = config.get("rsi_short_min", 35)
+        rsi_max = config.get("rsi_short_max", 55)
+        if not (rsi_min <= row["rsi"] <= rsi_max):
+            return False
+
+    # Volume: breakout needs volume confirmation
+    vol_mult = config.get("inside_bar_breakout_volume_mult", 1.2)
+    if pd.notna(row.get("volume_ma")) and row.get("volume_ma", 0) > 0:
+        if row["volume"] < row["volume_ma"] * vol_mult:
+            return False
+
+    return True
+
+
 def check_bb_breakout_conditions(
     row: pd.Series, config: dict, signal_type: SignalType
 ) -> bool:
@@ -784,6 +978,12 @@ def generate_signal(
         row_only_checks.append(("ema_fast_crossover", check_fast_crossover_conditions))
     if signals_config.get("ema_pullback", {}).get("enabled", True):
         row_only_checks.append(("ema_pullback", check_pullback_conditions))
+    if signals_config.get("pin_bar", {}).get("enabled", False):
+        row_only_checks.append(("pin_bar", check_pin_bar_conditions))
+    if signals_config.get("engulfing", {}).get("enabled", False):
+        row_only_checks.append(("engulfing", check_engulfing_conditions))
+    if signals_config.get("inside_bar_breakout", {}).get("enabled", False):
+        row_only_checks.append(("inside_bar_breakout", check_inside_bar_breakout_conditions))
     if signals_config.get("bb_breakout", {}).get("enabled", True):
         row_only_checks.append(("bb_breakout", check_bb_breakout_conditions))
     if signals_config.get("mean_reversion", {}).get("enabled", False):
