@@ -69,7 +69,7 @@ sudo bash deploy/setup.sh dashboard.yourdomain.com
 - **Entries**: Uses iloc[-2] (last closed candle, not forming candle)
 - **SL/TP**: ATR-based (SL=1.0×ATR, TP=3.0×ATR, R:R=3:1), trailing stop 2.0×ATR
 - **Pyramiding**: Disabled | **Partial TP**: Disabled | **Cooldown**: None
-- **MTD Accelerator**: Super aggressive — winning month +10%→2.5x size, +3%→1.5x, flat→1.0x, losing -10%→0.3x, worse→0.2x. Doubles long-term return (40%→87%/yr) by compounding winners and cutting losers.
+- **MTD Accelerator**: OFF by default (best for trending markets). Enable via `config_yolo.json` for bear markets. Moderate tiers: +15%→2.0x, +5%→1.5x, flat→1.0x, -20%→0.7x, worse→0.5x.
 - **Trading Hours**: 03:00-20:00 UTC | **Weekend**: Off | **Regime**: Skip ranging
 - **Body Dominance / Squeeze Release**: Implemented but disabled — showed PF 2.06 but was look-ahead bias (1H candle not yet closed). With proper lag, PF drops to 0.90. Code retained for future use if a non-biased version is found.
 
@@ -105,11 +105,12 @@ Bot runs fully autonomous — risk management is the primary safety layer:
 |---------|------|------|-----|-----|-----|-----|-----|--------|
 | **Safe** | `config.json` | 2% | 7x | +72% | ~11% | 1.62 | 17% | 103 |
 | **Aggressive** | `config_aggressive.json` | 5% | 10x | +158% | ~21% | 1.53 | 15% | 103 |
-| **YOLO** | `config_yolo.json` | 10% | 25x | +2188% | ~87% | 1.41 | 40% | 103 |
-| **MAX** | `config_max.json` | 15% | 25x | ~higher | ~90%+ | 1.29 | 50%+ | 103 |
-| **Sniper** | `config_sniper.json` | 2% | 7x | +36% | ~6% | 1.58 | 8% | 58 |
+| **YOLO (bear mode)** | `config_yolo.json` | 10% | 25x | +78%/yr | 1.41 | 32% | MTD ON |
+| **MAX** | `config_max.json` | 15% | 25x | +33%/yr | 1.29 | 36% | MTD OFF |
+| **Sniper** | `config_sniper.json` | 2% | 7x | +12%/yr | 1.62 | 17% | MTD OFF |
 
-All profiles now include Super Aggressive MTD Accelerator (2.5x size at +10% MTD, 0.2x at <-10%).
+Default = R10%/L25x NO MTD (+115%/yr recent, +40%/yr 5yr average).
+YOLO config = same params but MTD ON — switch to this during bear/sideways markets.
 
 All profiles share: EMA(9/21)+EMA(5/13), SL=1.0 ATR, TP=3.0 ATR, RSI 45-65/35-55, no pyramiding, hours 3-20 UTC.
 

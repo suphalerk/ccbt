@@ -3,9 +3,9 @@
   "symbol": "BTCUSDT",
   "timeframe_signal": "15m",
   "timeframe_trend": "1h",
-  "leverage": 7,
-  "risk_per_trade": 0.02,
-  "max_daily_loss": 0.09,
+  "leverage": 25,
+  "risk_per_trade": 0.1,
+  "max_daily_loss": 0.3,
   "max_positions": 2,
   "max_consecutive_losses": 5,
   "cooldown_hours": 1,
@@ -152,7 +152,7 @@
     "tp_extension_min_pyramids": 2
   },
   "mtd_accelerator": {
-    "enabled": true,
+    "enabled": false,
     "tiers": [
       {
         "min_return": 0.15,
