@@ -152,27 +152,27 @@
     "tp_extension_min_pyramids": 2
   },
   "mtd_accelerator": {
-    "enabled": false,
+    "enabled": true,
     "tiers": [
       {
-        "min_return": 0.2,
-        "mult": 1.5
+        "min_return": 0.1,
+        "mult": 2.5
       },
       {
-        "min_return": 0.1,
-        "mult": 1.3
+        "min_return": 0.03,
+        "mult": 1.5
       },
       {
         "min_return": 0.0,
         "mult": 1.0
       },
       {
-        "min_return": -0.05,
-        "mult": 0.8
+        "min_return": -0.1,
+        "mult": 0.3
       },
       {
         "min_return": -999,
-        "mult": 0.6
+        "mult": 0.2
       }
     ]
   },
