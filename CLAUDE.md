@@ -115,12 +115,18 @@ YOLO config = same params but MTD ON — switch to this during bear/sideways mar
 All profiles share: EMA(9/21)+EMA(5/13), SL=1.0 ATR, TP=3.0 ATR, RSI 45-65/35-55, no pyramiding, hours 3-20 UTC.
 
 ```bash
-# Deploy profiles
-python main.py                                           # Safe (default)
-python main.py --config config_aggressive.json           # Aggressive
-YOLO_MODE=1 python main.py --config config_yolo.json     # YOLO (testnet only)
-YOLO_MODE=1 python main.py --config config_max.json      # MAX RISK (testnet only)
-python main.py --config config_sniper.json               # Sniper
+# Deploy profiles (BTC)
+python main.py                                           # BTC Safe (default)
+python main.py --config config_aggressive.json           # BTC Aggressive
+YOLO_MODE=1 python main.py --config config_yolo.json     # BTC YOLO (testnet only)
+python main.py --config config_sniper.json               # BTC Sniper
+
+# Deploy Gold bot (runs alongside BTC)
+YOLO_MODE=1 python main.py --config config_gold.json     # XAU/USDT
+
+# Run both simultaneously
+YOLO_MODE=1 python main.py --config config.json &        # BTC bot
+YOLO_MODE=1 python main.py --config config_gold.json &   # Gold bot
 ```
 
 ## Development Rules
