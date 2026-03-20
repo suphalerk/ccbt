@@ -155,11 +155,11 @@
     "enabled": true,
     "tiers": [
       {
-        "min_return": 0.1,
-        "mult": 2.5
+        "min_return": 0.15,
+        "mult": 2.0
       },
       {
-        "min_return": 0.03,
+        "min_return": 0.05,
         "mult": 1.5
       },
       {
@@ -167,12 +167,12 @@
         "mult": 1.0
       },
       {
-        "min_return": -0.1,
-        "mult": 0.3
+        "min_return": -0.2,
+        "mult": 0.7
       },
       {
         "min_return": -999,
-        "mult": 0.2
+        "mult": 0.5
       }
     ]
   },
