@@ -18,12 +18,12 @@
   "rsi_min": 45,
   "rsi_max": 65,
   "atr_period": 14,
-  "atr_sl_mult": 1.2,
-  "atr_trail_mult": 2.0,
-  "atr_trail_mult_trending": 2.0,
-  "atr_trail_mult_ranging": 1.5,
-  "atr_trail_mult_volatile": 2.5,
-  "atr_tp_mult": 3.0,
+  "atr_sl_mult": 2.5,
+  "atr_trail_mult": 3.0,
+  "atr_trail_mult_trending": 3.0,
+  "atr_trail_mult_ranging": 2.0,
+  "atr_trail_mult_volatile": 3.5,
+  "atr_tp_mult": 0,
   "atr_min": 0,
   "partial_tp_enabled": false,
   "partial_tp_pct": 0.3,
@@ -39,7 +39,10 @@
   "rsi_short_max": 52,
   "cooldown_candles_after_close": 4,
   "cooldown_candles_after_sl": 8,
-  "min_rr_ratio": 1.0,
+  "ichimoku_tenkan": 9,
+  "ichimoku_kijun": 26,
+  "ichimoku_senkou_b": 52,
+  "min_rr_ratio": 0,
   "commission_rate": 0.0,
   "slippage_rate": 0.0002,
   "crossover_lookback": 2,
@@ -53,8 +56,8 @@
     "end_utc": 20
   },
   "regime_filter": {
-    "enabled": true,
-    "skip_ranging": true
+    "enabled": false,
+    "skip_ranging": false
   },
   "flexible_cooldown": {
     "enabled": false,
@@ -64,10 +67,10 @@
   },
   "signals": {
     "ema_crossover": {
-      "enabled": true
+      "enabled": false
     },
     "ema_fast_crossover": {
-      "enabled": true
+      "enabled": false
     },
     "ema_pullback": {
       "enabled": false
@@ -86,6 +89,9 @@
     },
     "squeeze_release": {
       "enabled": false
+    },
+    "ichimoku_cloud": {
+      "enabled": true
     }
   },
   "body_dominance_min_body": 0.65,

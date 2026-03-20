@@ -32,6 +32,15 @@ COLORS = {
     "log_error": "#FF1744",
     "log_critical": "#FF1744",
     "log_bg": "#151A22",
+    # Signal source colors for chart legends
+    "signal_ema_crossover": "#FFD600",      # Yellow
+    "signal_ema_fast_crossover": "#FF9800", # Orange
+    "signal_ichimoku_cloud": "#9C27B0",     # Purple
+    "signal_rsi_divergence": "#E91E63",     # Pink
+    "signal_squeeze_release": "#00BCD4",    # Teal
+    "signal_bb_breakout": "#8BC34A",        # Light green
+    "signal_mean_reversion": "#FF5722",     # Deep orange
+    "signal_body_dominance": "#607D8B",     # Blue-grey
 }
 
 DARK_LAYOUT = dict(

@@ -215,6 +215,10 @@ def add_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     atr_ma50 = df["atr"].rolling(window=50).mean()
     df["squeeze"] = df["atr"] / atr_ma50.clip(lower=1e-10)
 
+    # Ichimoku Cloud — only computed when ichimoku_tenkan key is present in config
+    if "ichimoku_tenkan" in config:
+        df = add_ichimoku_indicators(df, config)
+
     logger.info("indicators_computed", extra={"rows": len(df)})
     return df
 
@@ -287,6 +291,78 @@ def detect_regime(df: pd.DataFrame, atr_period: int = 14, lookback: int = 20) ->
         if has_clear_direction:
             return "trending"
         return "ranging"
+
+
+def add_ichimoku_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """Add Ichimoku Cloud indicators to the DataFrame.
+
+    Columns added:
+        tenkan    — Tenkan-sen (conversion line): (highest_high + lowest_low) / 2 over tenkan period
+        kijun     — Kijun-sen (base line): same over kijun period
+        span_a    — Senkou Span A raw (before display shift): (tenkan + kijun) / 2
+        span_b    — Senkou Span B raw (before display shift): (H+L)/2 over senkou_b period
+        cloud_top    — max(span_a_shifted_back, span_b_shifted_back) at current bar
+        cloud_bottom — min(span_a_shifted_back, span_b_shifted_back) at current bar
+
+    Signal logic uses the cloud at current time, which equals span_a/span_b values
+    from 26 bars ago (i.e. span_a.shift(26) and span_b.shift(26) shifted backward).
+
+    Args:
+        df: DataFrame with high, low, close columns.
+        config: Bot configuration with ichimoku_tenkan, ichimoku_kijun, ichimoku_senkou_b keys.
+
+    Returns:
+        DataFrame with Ichimoku columns added.
+    """
+    tenkan_period = config.get("ichimoku_tenkan", 9)
+    kijun_period = config.get("ichimoku_kijun", 26)
+    senkou_b_period = config.get("ichimoku_senkou_b", 52)
+    cloud_shift = kijun_period  # Standard Ichimoku: cloud is projected forward by kijun bars
+
+    # Tenkan-sen: midpoint of highest high and lowest low over tenkan period
+    df["tenkan"] = (
+        df["high"].rolling(window=tenkan_period).max()
+        + df["low"].rolling(window=tenkan_period).min()
+    ) / 2
+
+    # Kijun-sen: midpoint of highest high and lowest low over kijun period
+    df["kijun"] = (
+        df["high"].rolling(window=kijun_period).max()
+        + df["low"].rolling(window=kijun_period).min()
+    ) / 2
+
+    # Senkou Span A (raw, unshifted): average of tenkan and kijun
+    span_a_raw = (df["tenkan"] + df["kijun"]) / 2
+
+    # Senkou Span B (raw, unshifted): midpoint of highest high and lowest low over senkou_b period
+    span_b_raw = (
+        df["high"].rolling(window=senkou_b_period).max()
+        + df["low"].rolling(window=senkou_b_period).min()
+    ) / 2
+
+    # Store raw spans for reference
+    df["span_a"] = span_a_raw
+    df["span_b"] = span_b_raw
+
+    # For SIGNAL LOGIC: cloud at current bar = span_a/span_b from cloud_shift bars ago.
+    # The Ichimoku cloud is projected forward by cloud_shift bars in display, so to see
+    # where the cloud is NOW we look at the span values from cloud_shift bars back.
+    span_a_current = span_a_raw.shift(cloud_shift)
+    span_b_current = span_b_raw.shift(cloud_shift)
+
+    df["cloud_top"] = pd.concat([span_a_current, span_b_current], axis=1).max(axis=1)
+    df["cloud_bottom"] = pd.concat([span_a_current, span_b_current], axis=1).min(axis=1)
+
+    logger.debug(
+        "ichimoku_indicators_computed",
+        extra={
+            "tenkan_period": tenkan_period,
+            "kijun_period": kijun_period,
+            "senkou_b_period": senkou_b_period,
+            "rows": len(df),
+        },
+    )
+    return df
 
 
 def add_trend_filter(

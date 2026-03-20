@@ -324,7 +324,7 @@ if recent_trades.empty:
 else:
     # Trade log table
     display_cols = [
-        "timestamp", "side", "entry_price", "exit_price", "pnl", "pnl_pct",
+        "timestamp", "side", "signal_source", "entry_price", "exit_price", "pnl", "pnl_pct",
         "duration_seconds", "ai_decision", "status", "close_reason",
     ]
     available_cols = [c for c in display_cols if c in recent_trades.columns]

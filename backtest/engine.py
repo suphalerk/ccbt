@@ -17,6 +17,7 @@ from bot.strategy import (
     check_body_dominance_conditions,
     check_entry_conditions,
     check_fast_crossover_conditions,
+    check_ichimoku_conditions,
     check_mean_reversion_conditions,
     check_pullback_conditions,
     check_rsi_divergence_conditions,
@@ -364,6 +365,17 @@ class BacktestEngine:
                         ):
                             signal_source = "squeeze_release"
 
+            # Ichimoku Cloud: needs signal_row and the row before it for crossover detection
+            # signal_row is at candle_idx-1; prev is at candle_idx-2
+            if signal_source is None:
+                if signals_config.get("ichimoku_cloud", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        ichimoku_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_ichimoku_conditions(
+                            signal_row, ichimoku_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "ichimoku_cloud"
+
             if signal_source is None:
                 continue
 
@@ -375,6 +387,14 @@ class BacktestEngine:
                 sl, tp = compute_levels(
                     entry_price, atr, signal_type,
                     {"atr_sl_mult": sl_mult, "atr_tp_mult": tp_mult},
+                )
+            elif signal_source == "ichimoku_cloud":
+                # When atr_tp_mult is 0, set TP very far so trailing stop is the real exit
+                tp_mult = self.config.get("atr_tp_mult", 3.0)
+                tp_mult_effective = 100.0 if tp_mult == 0 else tp_mult
+                sl, tp = compute_levels(
+                    entry_price, atr, signal_type,
+                    {**self.config, "atr_tp_mult": tp_mult_effective},
                 )
             else:
                 sl, tp = compute_levels(entry_price, atr, signal_type, self.config)

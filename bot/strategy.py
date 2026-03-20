@@ -599,6 +599,68 @@ def check_bb_breakout_conditions(
     return True
 
 
+def check_ichimoku_conditions(
+    row: pd.Series, prev_row: pd.Series, config: dict, signal_type: SignalType
+) -> bool:
+    """Check Ichimoku Cloud entry conditions.
+
+    LONG: Tenkan crosses above Kijun AND close is above the cloud top.
+    SHORT: Tenkan crosses below Kijun AND close is below the cloud bottom.
+
+    Requires Ichimoku columns (tenkan, kijun, cloud_top, cloud_bottom) to be
+    present in the DataFrame (added by add_ichimoku_indicators()).
+
+    Args:
+        row: Current candle row with Ichimoku indicators.
+        prev_row: Previous candle row (for crossover detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if Ichimoku conditions are satisfied.
+    """
+    # Guard: all required columns must be present and non-NaN
+    required = ("tenkan", "kijun", "cloud_top", "cloud_bottom", "atr")
+    for col in required:
+        if pd.isna(row.get(col)):
+            return False
+        if pd.isna(prev_row.get(col)):
+            return False
+
+    # ATR minimum volatility check
+    atr_min = config.get("atr_min", 0.0)
+    if row["atr"] < atr_min:
+        return False
+
+    tenkan = row["tenkan"]
+    kijun = row["kijun"]
+    prev_tenkan = prev_row["tenkan"]
+    prev_kijun = prev_row["kijun"]
+    close = row["close"]
+    cloud_top = row["cloud_top"]
+    cloud_bottom = row["cloud_bottom"]
+
+    if signal_type == SignalType.LONG:
+        # Tenkan crosses above Kijun
+        crosses_above = tenkan > kijun and prev_tenkan <= prev_kijun
+        if not crosses_above:
+            return False
+        # Price must be above the cloud
+        if close <= cloud_top:
+            return False
+
+    elif signal_type == SignalType.SHORT:
+        # Tenkan crosses below Kijun
+        crosses_below = tenkan < kijun and prev_tenkan >= prev_kijun
+        if not crosses_below:
+            return False
+        # Price must be below the cloud
+        if close >= cloud_bottom:
+            return False
+
+    return True
+
+
 def compute_levels(
     entry_price: float, atr: float, signal_type: SignalType, config: dict
 ) -> tuple[float, float]:
@@ -772,6 +834,59 @@ def generate_signal(
                     "gross_rr": round(gross_rr, 2),
                     "net_rr": round(net_rr, 2),
                     "rsi": round(row["rsi"], 2),
+                },
+            )
+            return signal, df
+
+    # Ichimoku Cloud: needs current row AND previous closed candle for crossover detection
+    if signals_config.get("ichimoku_cloud", {}).get("enabled", False) and len(df) >= 3:
+        prev_row = df.iloc[-3]
+        for signal_type in (SignalType.LONG, SignalType.SHORT):
+            if not check_ichimoku_conditions(row, prev_row, config, signal_type):
+                continue
+
+            atr = row["atr"]
+            tp_mult = config.get("atr_tp_mult", 3.0)
+            # When atr_tp_mult is 0, use a very far TP so trailing stop is the effective exit
+            if tp_mult == 0:
+                tp_mult_effective = 100.0
+            else:
+                tp_mult_effective = tp_mult
+            sl, tp = compute_levels(
+                entry_price, atr, signal_type,
+                {**config, "atr_tp_mult": tp_mult_effective},
+            )
+            min_rr_check = config.get("min_rr_ratio", 2.0)
+            if min_rr_check > 0:
+                net_rr = compute_net_rr(entry_price, sl, tp, config)
+                if net_rr < min_rr_check:
+                    continue
+            else:
+                net_rr = 0.0
+
+            signal = TradeSignal(
+                signal_type=signal_type,
+                entry_price=entry_price,
+                stop_loss=sl,
+                take_profit=tp,
+                atr=atr,
+                rsi=row.get("rsi", 50.0) if not pd.isna(row.get("rsi", float("nan"))) else 50.0,
+                risk_reward_ratio=net_rr,
+                regime=regime,
+                signal_source="ichimoku_cloud",
+            )
+            gross_rr = abs(tp - entry_price) / abs(entry_price - sl) if abs(entry_price - sl) > 0 else 0
+            logger.info(
+                "signal_generated",
+                extra={
+                    "type": signal_type.value,
+                    "source": "ichimoku_cloud",
+                    "entry": entry_price,
+                    "sl": sl,
+                    "tp": tp,
+                    "gross_rr": round(gross_rr, 2),
+                    "net_rr": round(net_rr, 2),
+                    "rsi": round(signal.rsi, 2),
                 },
             )
             return signal, df
