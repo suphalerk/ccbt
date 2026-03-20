@@ -159,31 +159,48 @@ Previous backtest results (PF 3.32-4.80, $4,436-$9.35e+28) were **all invalid** 
 4. Sharpe annualized with sqrt(365) on per-trade data (1.3-2.5x overestimate)
 All profiles below are verified with the corrected engine.
 
-### Reverse Engineering Methodology (Champion v3)
-Instead of "design signal → backtest", we did "find profitable moves → what conditions preceded them?":
-1. Found all >2% moves with <1% adverse in 12h (16.5% of all candles)
-2. Compared indicator distributions (good trades vs random)
-3. Discovered: `ret_std` (realized vol) is the strongest predictor (+0.22σ)
-4. Built **Body Dominance** and **Squeeze Release** signals from this data
-5. Critical: these indicators must use **1H timeframe** data — 15m is too noisy
-6. 1H indicators merged into 15m DataFrame via `add_trend_filter()` using `merge_asof`
+### Reverse Engineering Methodology (tested, had look-ahead bias)
+Approach: "find profitable moves → what conditions preceded them?"
+1. Found all >2% moves with <1% adverse in 12h (16.5% of candles)
+2. Compared indicator distributions → `ret_std` strongest predictor (+0.22σ)
+3. Built Body Dominance + Squeeze Release signals
+4. **RESULT**: PF 2.06 — but was look-ahead bias (1H candle not closed yet)
+5. After lag fix (shift 1H data by 1 period): PF dropped to 0.90 (no edge)
+6. **LESSON**: Any 1H indicator used on 15m MUST be shifted by 1 period
 
-### Custom Indicators (invented)
-- **Body Dominance** (`body_pct_1h`): `abs(close-open)/(high-low)` — candle body as fraction of range
-- **Squeeze Ratio** (`squeeze_1h`): `ATR14 / ATR14_MA50` — <0.7 = compressed, >0.8 = expanding
-- **Volume Acceleration**: `vol_3ma / vol_10ma` — volume speeding up
+### Strategies Tested & Failed
+| Strategy | PF | Why it failed |
+|----------|-----|---------------|
+| Donchian Breakout | 0.70 | Too many false breakouts |
+| Momentum Breakout | 0.42-0.62 | Noise on 15m |
+| BB Squeeze Breakout | 0.63-0.73 | No edge on BTC |
+| RSI Extreme + Trend | 0.87-0.93 | Near-breakeven |
+| VWAP Deviation | 0.77-0.87 | Mean reversion fails on BTC |
+| EMA Fan | 0.66-0.82 | Too late entry |
+| ATR Expansion | varies | Marginal |
+| Body Dominance (lagged) | 0.90 | No edge after bias fix |
+| Squeeze Release (lagged) | 1.02 | Minimal edge |
+| AI/ML Filter | same | RSI filter already does the job |
+| Multi-asset (ETH/SOL) | 0.90-1.25 | BTC has best edge |
 
-## Available Profiles (Champion v3, 5yr $1K start, with Body Dominance 1H)
+### What Actually Works
+- EMA(9/21) + EMA(5/13) crossover = PF 1.42-1.62
+- Tight RSI (45-65/35-55) = key quality filter
+- SL 1.0 ATR / TP 3.0 ATR = optimal R:R
+- No cooldown = more trades
+- Hours 3-20 UTC, weekend off
+- R10%/L25x = max return sweet spot
+- Strategy is BTC-specific trend-follower (fails in sideways)
 
-| Profile | File | Risk | Lev | Return | /yr | PF | DD | Trades |
-|---------|------|------|-----|--------|-----|-----|-----|--------|
-| **Safe** | `config.json` | 2% | 7x | $612K | ~261% | 2.06 | 9% | 575 |
-| **Aggressive** | `config_aggressive.json` | 5% | 10x | $577M | ~1320% | 1.84 | 19% | 573 |
-| **YOLO-lite** | `config_yolo.json` | 10% | 20x | $15T | ~10746% | 1.63 | 40% | 557 |
-| **Sniper** | `config_sniper.json` | 2% | 7x | (EMA-only) | ~6% | 1.58 | 8% | 58 |
+## Available Profiles (verified, 5yr $1K start, no bias)
 
-All share: EMA+BodyDom+Squeeze signals, SL=1.0, TP=3.0, no pyramid, no partial TP, hours 3-20, weekend off.
-Body Dominance is the dominant signal source (~575/762 trades).
+| Profile | File | Risk | Lev | 5yr | /yr | Last 6mo | PF | DD | Trades |
+|---------|------|------|-----|-----|-----|----------|-----|-----|--------|
+| **Safe** | `config.json` | 2% | 7x | +72% | ~11% | +154% | 1.62 | 17% | 103 |
+| **Aggressive** | `config_aggressive.json` | 5% | 10x | +158% | ~21% | +154% | 1.53 | 15% | 103 |
+| **YOLO** | `config_yolo.json` | 10% | 25x | +421% | ~40% | +461% | 1.42 | 29% | 103 |
+| **MAX** | `config_max.json` | 15% | 25x | +300% | ~33% | +441% | 1.29 | 36% | 103 |
+| **Sniper** | `config_sniper.json` | 2% | 7x | +36% | ~6% | — | 1.58 | 8% | 58 |
 
 ## Invocation
 
