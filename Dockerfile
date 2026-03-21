@@ -46,12 +46,18 @@ USER botuser
 
 # Health check: verify the bot process is running and heartbeat is recent
 # The heartbeat file is written by the bot every loop iteration
-HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
-    CMD python -c "import time; from pathlib import Path; \
-        hb = Path('/app/data/heartbeat'); \
-        assert hb.exists(), 'No heartbeat file'; \
-        age = time.time() - float(hb.read_text().strip()); \
-        assert age < 300, f'Heartbeat stale: {age:.0f}s old'" \
+HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
+    CMD python -c "\
+import json, os, time; \
+from pathlib import Path; \
+cfg = json.load(open(os.getenv('CONFIG_FILE', 'config.json'))); \
+sym = cfg['symbol'].replace('/','').replace(':',''); \
+tf = cfg.get('timeframe_signal','1h'); \
+secs = int(tf.replace('h',''))*3600 if 'h' in tf else int(tf.replace('m',''))*60; \
+hb = Path(f'/app/data/heartbeat_{sym}'); \
+assert hb.exists(), f'No heartbeat for {sym}'; \
+age = time.time() - float(hb.read_text().strip()); \
+assert age < secs + 300, f'Stale: {age:.0f}s'" \
     || exit 1
 
 # Default command: run the trading bot (CONFIG_FILE env var selects config)

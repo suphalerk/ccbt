@@ -18,6 +18,7 @@ from bot.context_builder import ContextBuilder
 from bot.data import add_indicators
 from bot.exchange import BybitClient
 from bot.logger import CalibrationTracker, TradeJournal
+from bot.mode import BotMode, read_bot_mode
 from bot.news_fetcher import NewsFetcher
 from bot.risk import RiskManager
 from bot.strategy import SignalType, compute_net_rr, compute_signal_quality_score, compute_trailing_stop, generate_signal
@@ -347,6 +348,10 @@ class TradingEngine:
         self._ai_enabled: bool = False
         self._log_all_decisions: bool = True
 
+        # Symbol clean for heartbeat and mode files
+        self._symbol_clean = config["symbol"].replace("/", "").replace(":", "")
+        self._current_mode = BotMode.NORMAL
+
     # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
@@ -444,7 +449,94 @@ class TradingEngine:
         # --- Main loop ---
         while not self._shutdown_event.is_set():
             try:
+                # Check bot mode (filesystem-based control from dashboard)
+                new_mode = read_bot_mode(self._symbol_clean)
+                if new_mode != self._current_mode:
+                    logger.warning(
+                        "bot_mode_changed",
+                        extra={
+                            "from": self._current_mode.value,
+                            "to": new_mode.value,
+                            "symbol": config["symbol"],
+                        },
+                    )
+                    self._current_mode = new_mode
+
+                # Handle PANIC mode — close everything immediately
+                if self._current_mode == BotMode.PANIC:
+                    logger.critical("panic_mode_activated", extra={"symbol": config["symbol"]})
+                    try:
+                        self._client.cancel_all_orders()
+                        self._client.close_all_positions()
+                        # Log panic closures for tracked trades
+                        for trade_id, info in self._tracked_trades.items():
+                            try:
+                                current_price = self._client.get_ticker_price(config["symbol"])
+                                trade_side = "long" if info["side"] == "buy" else "short"
+                                if trade_side == "long":
+                                    pnl = (current_price - info["entry_price"]) / info["entry_price"] * info["size"]
+                                else:
+                                    pnl = (info["entry_price"] - current_price) / info["entry_price"] * info["size"]
+                                pnl_pct = pnl / info["size"] * 100 if info["size"] > 0 else 0
+                                self._journal.log_trade_close(
+                                    trade_id=trade_id,
+                                    exit_price=current_price,
+                                    pnl=pnl,
+                                    pnl_pct=pnl_pct,
+                                    close_reason="panic_mode",
+                                    duration_seconds=int(time.time() - info["open_time"]),
+                                )
+                                self._risk_mgr.record_trade_result(pnl)
+                            except Exception:
+                                pass
+                    except Exception as e:
+                        logger.error("panic_close_failed", extra={"error": str(e)})
+                    break  # Exit main loop
+
                 await self._daily_reset()
+
+                # GRACEFUL_STOP: manage existing positions only, no new entries.
+                # Exit when no tracked trades remain.
+                if self._current_mode == BotMode.GRACEFUL_STOP:
+                    positions = self._client.get_positions()
+                    await self._monitor_positions(positions)
+                    await self._update_trailing_stops()
+                    if not self._tracked_trades:
+                        logger.info("graceful_stop_complete", extra={"symbol": config["symbol"]})
+                        break
+                    if await self._sleep_until_next_candle():
+                        break
+                    continue  # Skip signal evaluation
+
+                # TP_ONLY: no new entries, no trailing stops; only TP closes positions.
+                # Also cancels open SL (stop-market) algo orders so only the TP remains.
+                if self._current_mode == BotMode.TP_ONLY:
+                    positions = self._client.get_positions()
+                    await self._monitor_positions(positions)
+                    # Cancel SL orders, keep only TP
+                    if self._client._exchange_name == "binance":
+                        try:
+                            algo_orders = self._client._get_binance_algo_orders(config["symbol"])
+                            market = self._client.exchange.market(config["symbol"])
+                            for ao in algo_orders:
+                                if str(ao.get("orderType", "")).upper() in ("STOP_MARKET", "STOP"):
+                                    algo_id = ao.get("algoId")
+                                    if algo_id:
+                                        try:
+                                            self._client._retry(
+                                                self._client.exchange.fapiPrivateDeleteAlgoOrder,
+                                                {"symbol": market["id"], "algoId": str(algo_id)},
+                                            )
+                                        except Exception:
+                                            pass
+                        except Exception:
+                            pass
+                    if not self._tracked_trades:
+                        logger.info("tp_only_complete", extra={"symbol": config["symbol"]})
+                        break
+                    if await self._sleep_until_next_candle():
+                        break
+                    continue
 
                 # Get current positions
                 positions = self._client.get_positions()

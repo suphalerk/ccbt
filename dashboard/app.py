@@ -14,6 +14,7 @@ from typing import Dict, Optional
 import pandas as pd
 import streamlit as st
 
+from bot.mode import BotMode, read_bot_mode, write_bot_mode
 from dashboard.components import (
     COLORS,
     advisor_adjustments_chart,
@@ -395,6 +396,33 @@ if is_portfolio_view:
             f"Bot Status  |  {running_count} running  {'  /  ' + str(stopped_count) + ' stopped' if stopped_count > 0 else ''}",
             expanded=stopped_count > 0,
         ):
+            # Bulk actions row
+            bulk_col1, bulk_col2, bulk_col3, bulk_col4 = st.columns(4)
+            with bulk_col1:
+                if st.button("Resume All", type="primary", use_container_width=True):
+                    for b in bot_statuses:
+                        sym_clean = b["symbol"].replace("/", "").replace(":", "").replace("USDT", "") + "USDT"
+                        write_bot_mode(sym_clean, BotMode.NORMAL, str(PROJECT_ROOT / "data"))
+                    st.rerun()
+            with bulk_col2:
+                if st.button("Graceful Stop All", use_container_width=True):
+                    for b in bot_statuses:
+                        sym_clean = b["symbol"].replace("/", "").replace(":", "").replace("USDT", "") + "USDT"
+                        write_bot_mode(sym_clean, BotMode.GRACEFUL_STOP, str(PROJECT_ROOT / "data"))
+                    st.rerun()
+            with bulk_col3:
+                if st.button("TP Only All", use_container_width=True):
+                    for b in bot_statuses:
+                        sym_clean = b["symbol"].replace("/", "").replace(":", "").replace("USDT", "") + "USDT"
+                        write_bot_mode(sym_clean, BotMode.TP_ONLY, str(PROJECT_ROOT / "data"))
+                    st.rerun()
+            with bulk_col4:
+                if st.button("PANIC ALL", type="secondary", use_container_width=True):
+                    for b in bot_statuses:
+                        sym_clean = b["symbol"].replace("/", "").replace(":", "").replace("USDT", "") + "USDT"
+                        write_bot_mode(sym_clean, BotMode.PANIC, str(PROJECT_ROOT / "data"))
+                    st.rerun()
+
             # Group by strategy
             from collections import defaultdict
             by_strategy: dict[str, list] = defaultdict(list)
@@ -414,9 +442,20 @@ if is_portfolio_view:
                     css_class = "running" if b["status"] == "running" else "stopped"
                     # Short symbol: remove USDT suffix for display
                     short_sym = b["symbol"].replace("USDT", "")
+                    # Read current mode and build badge
+                    sym_clean = b["symbol"].replace("/", "").replace(":", "")
+                    current_mode = read_bot_mode(sym_clean, str(PROJECT_ROOT / "data"))
+                    mode_badge = ""
+                    if current_mode == BotMode.GRACEFUL_STOP:
+                        mode_badge = '<span style="background:#FFD600;color:#000;padding:1px 5px;border-radius:8px;font-size:0.6rem;margin-left:4px;">STOP</span>'
+                    elif current_mode == BotMode.TP_ONLY:
+                        mode_badge = '<span style="background:#FF9100;color:#000;padding:1px 5px;border-radius:8px;font-size:0.6rem;margin-left:4px;">TP</span>'
+                    elif current_mode == BotMode.PANIC:
+                        mode_badge = '<span style="background:#FF1744;color:#FFF;padding:1px 5px;border-radius:8px;font-size:0.6rem;margin-left:4px;">PANIC</span>'
                     strat_pills += (
                         f'<span class="bot-pill {css_class}">'
                         f'<span class="dot"></span>{short_sym}'
+                        f'{mode_badge}'
                         f'</span>'
                     )
                 pills_html += (
@@ -427,6 +466,24 @@ if is_portfolio_view:
                 )
 
             st.markdown(pills_html, unsafe_allow_html=True)
+
+        # Per-bot mode control
+        with st.expander("Per-Bot Mode Control"):
+            mode_cols = st.columns(4)
+            for i, b in enumerate(sorted(bot_statuses, key=lambda x: x["symbol"])):
+                sym_clean = b["symbol"].replace("/", "").replace(":", "")
+                current = read_bot_mode(sym_clean, str(PROJECT_ROOT / "data"))
+                col = mode_cols[i % 4]
+                with col:
+                    short_sym = b["symbol"].replace("USDT", "")
+                    new_mode = st.selectbox(
+                        short_sym,
+                        options=["normal", "graceful_stop", "tp_only", "panic"],
+                        index=["normal", "graceful_stop", "tp_only", "panic"].index(current.value),
+                        key=f"mode_{sym_clean}",
+                    )
+                    if new_mode != current.value:
+                        write_bot_mode(sym_clean, BotMode(new_mode), str(PROJECT_ROOT / "data"))
 
     st.markdown("---")
 
