@@ -114,6 +114,46 @@ st.markdown(
     .log-level-ERROR { color: #FF1744; font-weight: bold; }
     .log-level-CRITICAL { color: #FF1744; font-weight: bold; background: rgba(255,23,68,0.1); }
     .log-level-DEBUG { color: #546E7A; }
+    /* Bot status grid — compact pills */
+    .bot-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 8px 0 12px 0;
+    }
+    .bot-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 10px;
+        border-radius: 16px;
+        font-size: 0.78rem;
+        font-weight: 500;
+        white-space: nowrap;
+    }
+    .bot-pill.running {
+        background: rgba(0,200,83,0.12);
+        border: 1px solid rgba(0,200,83,0.3);
+        color: #B9F6CA;
+    }
+    .bot-pill.stopped {
+        background: rgba(255,23,68,0.10);
+        border: 1px solid rgba(255,23,68,0.25);
+        color: #FF8A80;
+    }
+    .bot-pill .dot {
+        width: 7px; height: 7px;
+        border-radius: 50%;
+        display: inline-block;
+        flex-shrink: 0;
+    }
+    .bot-pill.running .dot { background: #00C853; }
+    .bot-pill.stopped .dot { background: #FF1744; }
+    .bot-pill .strat {
+        color: #78909C;
+        font-size: 0.68rem;
+        font-weight: 400;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -331,58 +371,57 @@ st.markdown("---")
 # ---------------------------------------------------------------------------
 if is_portfolio_view:
     # -------------------------------------------------------------------
-    # Bot Status Grid
+    # Bot Status — compact pill grid
     # -------------------------------------------------------------------
-    st.markdown("### Bot Status")
     bot_statuses = load_bot_statuses()
 
     if bot_statuses:
         running_count = sum(1 for b in bot_statuses if b["status"] == "running")
+        stopped_count = sum(1 for b in bot_statuses if b["status"] == "stopped")
         total_count = len(bot_statuses)
 
+        # Summary in header metrics row
         status_color = "#00C853" if running_count == total_count else (
             "#FFD600" if running_count > 0 else "#FF1744"
         )
-        st.markdown(
-            f'<div style="font-size:0.95rem; margin-bottom:8px;">'
-            f'<span style="color:{status_color}; font-weight:bold;">{running_count}</span>'
-            f'<span style="color:#78909C;"> / {total_count} bots running</span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
 
-        # Build display rows
-        status_rows = []
-        for b in bot_statuses:
-            dot = '<span style="color:#00C853">&#9679;</span>' if b["status"] == "running" else '<span style="color:#FF1744">&#9679;</span>'
-            if b["last_heartbeat"] is None:
-                age_str = "never"
-            else:
-                age_s = b["age_seconds"]
-                if age_s < 60:
-                    age_str = f"{int(age_s)}s ago"
-                elif age_s < 3600:
-                    age_str = f"{int(age_s // 60)}m ago"
-                elif age_s == float("inf"):
-                    age_str = "never"
-                else:
-                    age_str = f"{int(age_s // 3600)}h ago"
+        # Collapsible section — expanded by default only if something is stopped
+        with st.expander(
+            f"Bot Status  |  {running_count} running  {'  /  ' + str(stopped_count) + ' stopped' if stopped_count > 0 else ''}",
+            expanded=stopped_count > 0,
+        ):
+            # Group by strategy
+            from collections import defaultdict
+            by_strategy: dict[str, list] = defaultdict(list)
+            for b in bot_statuses:
+                by_strategy[b["strategy"]].append(b)
 
-            status_rows.append({
-                "": dot,
-                "Symbol": b["symbol"],
-                "Strategy": b["strategy"],
-                "Status": b["status"],
-                "Last Heartbeat": age_str,
-            })
+            # Sort strategies: those with stopped bots first
+            def _strat_sort_key(item):
+                strat, bots = item
+                has_stopped = any(b["status"] == "stopped" for b in bots)
+                return (0 if has_stopped else 1, strat)
 
-        status_df = pd.DataFrame(status_rows)
-        st.write(
-            status_df.to_html(escape=False, index=False),
-            unsafe_allow_html=True,
-        )
-    else:
-        st.info("No config files found. Start bots and heartbeat files will appear here.")
+            pills_html = ""
+            for strat, bots in sorted(by_strategy.items(), key=_strat_sort_key):
+                strat_pills = ""
+                for b in sorted(bots, key=lambda x: x["symbol"]):
+                    css_class = "running" if b["status"] == "running" else "stopped"
+                    # Short symbol: remove USDT suffix for display
+                    short_sym = b["symbol"].replace("USDT", "")
+                    strat_pills += (
+                        f'<span class="bot-pill {css_class}">'
+                        f'<span class="dot"></span>{short_sym}'
+                        f'</span>'
+                    )
+                pills_html += (
+                    f'<div style="margin-bottom:6px;">'
+                    f'<span style="color:#546E7A; font-size:0.72rem; margin-right:6px;">{strat}</span>'
+                    f'<div class="bot-grid">{strat_pills}</div>'
+                    f'</div>'
+                )
+
+            st.markdown(pills_html, unsafe_allow_html=True)
 
     st.markdown("---")
 
