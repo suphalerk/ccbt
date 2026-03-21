@@ -215,6 +215,14 @@ def add_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     atr_ma50 = df["atr"].rolling(window=50).mean()
     df["squeeze"] = df["atr"] / atr_ma50.clip(lower=1e-10)
 
+    # Supertrend — only computed when supertrend signal is enabled in config
+    if config.get("signals", {}).get("supertrend", {}).get("enabled", False):
+        st_mult = config.get("supertrend_multiplier", 2.0)
+        st_atr_period = config.get("supertrend_atr_period", 14)
+        st, st_dir = compute_supertrend(df["high"], df["low"], df["close"], st_atr_period, st_mult)
+        df["supertrend"] = st
+        df["supertrend_dir"] = st_dir
+
     # Ichimoku Cloud — only computed when ichimoku_tenkan key is present in config
     if "ichimoku_tenkan" in config:
         df = add_ichimoku_indicators(df, config)
@@ -299,6 +307,67 @@ def detect_regime(df: pd.DataFrame, atr_period: int = 14, lookback: int = 20) ->
         if has_clear_direction:
             return "trending"
         return "ranging"
+
+
+def compute_supertrend(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    atr_period: int = 14,
+    multiplier: float = 2.0,
+) -> tuple[pd.Series, pd.Series]:
+    """Compute Supertrend indicator.
+
+    The Supertrend band tracks price action — it is the lower band when
+    bullish (acting as support) and the upper band when bearish (resistance).
+    Direction flips when price crosses through the active band.
+
+    Args:
+        high: High price series.
+        low: Low price series.
+        close: Close price series.
+        atr_period: ATR lookback period (default 14).
+        multiplier: Band width multiplier applied to ATR (default 2.0).
+
+    Returns:
+        Tuple of (supertrend, direction) where:
+            supertrend — Series of band values (lower band when bullish, upper when bearish).
+            direction  — Series of 1 (bullish) or -1 (bearish).
+    """
+    atr = compute_atr(high, low, close, atr_period)
+    hl2 = (high + low) / 2
+    upper_band = hl2 + multiplier * atr
+    lower_band = hl2 - multiplier * atr
+
+    direction = pd.Series(1, index=close.index, dtype=int)
+    final_upper = upper_band.copy()
+    final_lower = lower_band.copy()
+
+    for i in range(1, len(close)):
+        # Lower band ratchets up only (acts as rising support)
+        if lower_band.iloc[i] > final_lower.iloc[i - 1] or close.iloc[i - 1] < final_lower.iloc[i - 1]:
+            final_lower.iloc[i] = lower_band.iloc[i]
+        else:
+            final_lower.iloc[i] = final_lower.iloc[i - 1]
+
+        # Upper band ratchets down only (acts as falling resistance)
+        if upper_band.iloc[i] < final_upper.iloc[i - 1] or close.iloc[i - 1] > final_upper.iloc[i - 1]:
+            final_upper.iloc[i] = upper_band.iloc[i]
+        else:
+            final_upper.iloc[i] = final_upper.iloc[i - 1]
+
+        # Direction flip logic
+        if direction.iloc[i - 1] == 1:  # was bullish
+            direction.iloc[i] = -1 if close.iloc[i] < final_lower.iloc[i] else 1
+        else:  # was bearish
+            direction.iloc[i] = 1 if close.iloc[i] > final_upper.iloc[i] else -1
+
+    # Supertrend value: lower band when bullish, upper band when bearish
+    supertrend = pd.Series(np.nan, index=close.index)
+    supertrend[direction == 1] = final_lower[direction == 1]
+    supertrend[direction == -1] = final_upper[direction == -1]
+
+    return supertrend, direction
 
 
 def add_ichimoku_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:

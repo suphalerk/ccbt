@@ -25,6 +25,7 @@ from bot.strategy import (
     check_pullback_conditions,
     check_rsi_divergence_conditions,
     check_squeeze_release_conditions,
+    check_supertrend_conditions,
     compute_levels,
     compute_net_rr,
     compute_signal_quality_score,
@@ -409,6 +410,17 @@ class BacktestEngine:
                         ):
                             signal_source = "ichimoku_cloud"
 
+            # Supertrend: needs signal_row and the row before it for direction-change detection
+            # signal_row is at candle_idx-1; prev is at candle_idx-2
+            if signal_source is None:
+                if signals_config.get("supertrend", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        supertrend_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_supertrend_conditions(
+                            signal_row, supertrend_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "supertrend"
+
             if signal_source is None:
                 continue
 
@@ -448,7 +460,7 @@ class BacktestEngine:
                     entry_price, atr, signal_type,
                     {"atr_sl_mult": sl_mult, "atr_tp_mult": tp_mult},
                 )
-            elif signal_source == "ichimoku_cloud":
+            elif signal_source in ("ichimoku_cloud", "supertrend"):
                 # When atr_tp_mult is 0, set TP very far so trailing stop is the real exit
                 tp_mult = self.config.get("atr_tp_mult", 3.0)
                 tp_mult_effective = 100.0 if tp_mult == 0 else tp_mult

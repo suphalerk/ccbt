@@ -793,6 +793,52 @@ def check_bb_breakout_conditions(
     return True
 
 
+def check_supertrend_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Supertrend direction change signal.
+
+    LONG: Supertrend direction flipped from bearish (-1) to bullish (1).
+    SHORT: Supertrend direction flipped from bullish (1) to bearish (-1).
+
+    Requires supertrend_dir column (added by compute_supertrend via add_indicators).
+
+    Args:
+        row: Current candle row with supertrend indicators.
+        prev_row: Previous candle row (for direction change detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if a Supertrend direction change matches signal_type.
+    """
+    if not config.get("signals", {}).get("supertrend", {}).get("enabled", False):
+        return False
+
+    curr_dir = row.get("supertrend_dir", 0)
+    prev_dir = prev_row.get("supertrend_dir", 0)
+
+    if pd.isna(curr_dir) or pd.isna(prev_dir):
+        return False
+
+    # ATR minimum volatility check
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(row.get("atr")) or row["atr"] < atr_min:
+        return False
+
+    if signal_type == SignalType.LONG:
+        # Bearish → Bullish flip
+        return prev_dir <= 0 and curr_dir > 0
+    elif signal_type == SignalType.SHORT:
+        # Bullish → Bearish flip
+        return prev_dir >= 0 and curr_dir < 0
+
+    return False
+
+
 def check_ichimoku_conditions(
     row: pd.Series, prev_row: pd.Series, config: dict, signal_type: SignalType
 ) -> bool:
@@ -1034,6 +1080,55 @@ def generate_signal(
                     "gross_rr": round(gross_rr, 2),
                     "net_rr": round(net_rr, 2),
                     "rsi": round(row["rsi"], 2),
+                },
+            )
+            return signal, df
+
+    # Supertrend: needs current row AND previous closed candle for direction-change detection
+    if signals_config.get("supertrend", {}).get("enabled", False) and len(df) >= 3:
+        prev_row = df.iloc[-3]
+        for signal_type in (SignalType.LONG, SignalType.SHORT):
+            if not check_supertrend_conditions(row, prev_row, config, signal_type):
+                continue
+
+            atr = row["atr"]
+            tp_mult = config.get("atr_tp_mult", 3.0)
+            tp_mult_effective = 100.0 if tp_mult == 0 else tp_mult
+            sl, tp = compute_levels(
+                entry_price, atr, signal_type,
+                {**config, "atr_tp_mult": tp_mult_effective},
+            )
+            min_rr_check = config.get("min_rr_ratio", 2.0)
+            if min_rr_check > 0:
+                net_rr = compute_net_rr(entry_price, sl, tp, config)
+                if net_rr < min_rr_check:
+                    continue
+            else:
+                net_rr = 0.0
+
+            signal = TradeSignal(
+                signal_type=signal_type,
+                entry_price=entry_price,
+                stop_loss=sl,
+                take_profit=tp,
+                atr=atr,
+                rsi=row.get("rsi", 50.0) if not pd.isna(row.get("rsi", float("nan"))) else 50.0,
+                risk_reward_ratio=net_rr,
+                regime=regime,
+                signal_source="supertrend",
+            )
+            gross_rr = abs(tp - entry_price) / abs(entry_price - sl) if abs(entry_price - sl) > 0 else 0
+            logger.info(
+                "signal_generated",
+                extra={
+                    "type": signal_type.value,
+                    "source": "supertrend",
+                    "entry": entry_price,
+                    "sl": sl,
+                    "tp": tp,
+                    "gross_rr": round(gross_rr, 2),
+                    "net_rr": round(net_rr, 2),
+                    "rsi": round(signal.rsi, 2),
                 },
             )
             return signal, df

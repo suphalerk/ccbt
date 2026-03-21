@@ -41,6 +41,8 @@ BOT_ABBREVS = [
     "GUN", "BERA", "ATH", "ZETA", "ARC", "ANI", "TRMP",
     "INJ", "XLM", "SHIB", "TRX", "ARC2",
     "TAO4H", "RDR4H", "HBR4H",
+    "POL4T", "PLX4T", "FET4T", "ALG4T",
+    "MSTR", "XAG", "SAHAR",
 ]
 
 PORTFOLIO = [
@@ -182,6 +184,54 @@ PORTFOLIO = [
         "signal_data": "data/hbarusdt_1h_2y.csv",
         "trend_data": None,
         "resample_4h": True,
+    },
+    # --- Ichimoku Cloud 4H Trail (trailing stop only, no fixed TP) ---
+    {
+        "name": "POL_4HT",
+        "config": "config_polusdt_ichi4htrail.json",
+        "signal_data": "data/polusdt_1h_2y.csv",
+        "trend_data": None,
+        "resample_4h": True,
+    },
+    {
+        "name": "POLYX_4HT",
+        "config": "config_polyxusdt_ichi4htrail.json",
+        "signal_data": "data/polyxusdt_1h_2y.csv",
+        "trend_data": None,
+        "resample_4h": True,
+    },
+    {
+        "name": "FET_4HT",
+        "config": "config_fetusdt_ichi4htrail.json",
+        "signal_data": "data/fetusdt_1h_2y.csv",
+        "trend_data": None,
+        "resample_4h": True,
+    },
+    {
+        "name": "ALGO_4HT",
+        "config": "config_algousdt_ichi4htrail.json",
+        "signal_data": "data/algousdt_1h_2y.csv",
+        "trend_data": None,
+        "resample_4h": True,
+    },
+    # --- Supertrend 1H ---
+    {
+        "name": "MSTR",
+        "config": "config_mstrusdt_supertrend.json",
+        "signal_data": "data/mstrusdt_1h_2y.csv",
+        "trend_data": None,
+    },
+    {
+        "name": "XAG",
+        "config": "config_xagusdt_supertrend.json",
+        "signal_data": "data/xagusdt_1h_2y.csv",
+        "trend_data": None,
+    },
+    {
+        "name": "SAHARA",
+        "config": "config_saharausdt_supertrend.json",
+        "signal_data": "data/saharausdt_1h_2y.csv",
+        "trend_data": None,
     },
 ]
 
