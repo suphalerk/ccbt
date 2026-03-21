@@ -176,6 +176,20 @@
       }
     ]
   },
+  "signal_scorer": {
+    "enabled": true,
+    "entry_threshold": 0.10,
+    "high_conviction": 0.5,
+    "weights": {
+      "ema_alignment": 0.15,
+      "momentum_mtf": 0.10,
+      "volume_surge": 0.10,
+      "rsi_zone": 0.10,
+      "atr_regime": 0.05,
+      "candle_strength": 0.15,
+      "funding_rate": 0.35
+    }
+  },
   "ai_layer": {
     "enabled": false,
     "mode": "advisor",
