@@ -3,9 +3,12 @@
 import json
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
+
+# Bangkok timezone (GMT+7)
+_TZ_BKK = timezone(timedelta(hours=7))
 
 
 class JsonFormatter(logging.Formatter):
@@ -14,7 +17,7 @@ class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format the log record as a JSON string."""
         log_entry = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(_TZ_BKK).strftime("%Y-%m-%d %H:%M:%S"),
             "level": record.levelname,
             "message": record.getMessage(),
         }

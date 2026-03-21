@@ -479,8 +479,8 @@ def get_recent_logs(
             "data": data,
         })
 
-    # Return last max_lines entries (most recent at end)
-    return entries[-max_lines:]
+    # Return last max_lines entries, newest first
+    return list(reversed(entries[-max_lines:]))
 
 
 def get_bot_statuses(project_root: Path, max_stale_seconds: float = 600) -> list[dict]:
