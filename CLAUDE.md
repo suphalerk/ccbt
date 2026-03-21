@@ -33,6 +33,15 @@ deploy/
 ├── monitoring.py        → Health checks + Telegram alerts
 ├── backup.sh            → SQLite backup with retention
 └── nginx.conf           → Reverse proxy config
+research/
+├── discover_liquid_coins.py → Find liquid USDT perps on Binance ($10M+ volume)
+├── download_altcoin_data.py → Download OHLCV + funding (--from-json, --funding, parallel)
+├── mass_sweep.py        → Lightweight EMA+Ichimoku sweep across all coins
+├── verify_winners.py    → Full BacktestEngine verification of sweep winners
+└── ...                  → Strategy-specific research scripts
+scripts/
+├── generate_configs.py  → Auto-generate config + docker-compose from verified winners
+└── download_funding_rates.py → Funding rate downloader
 tests/                   → pytest unit/integration tests
 .claude/
 ├── agents/              → 7 Agent Team members (pm, sa, backend-dev, frontend-dev, devops, trader-expert, crypto-expert)
@@ -50,6 +59,8 @@ config files:
   config_near_ichi.json  → NEAR Ichimoku 1H (2% risk, SL2.5/TP5.0)
   config_sol_ichi.json   → SOL Ichimoku 1H (2% risk, SL1.5/TP4.0)
   config_gold_forex.json → XAU/USD OANDA (H1 signal, H4 trend)
+  config_*usdt_ichi.json → Auto-generated Ichimoku configs (1% risk, mass expansion)
+  config_*usdt_ema.json  → Auto-generated EMA configs (1% risk, mass expansion)
 ```
 
 ## Key Commands
@@ -183,13 +194,15 @@ Bot runs fully autonomous — risk management is the primary safety layer:
 - `config_near_ichi.json` — NEAR/USDT Ichimoku 1H (2% risk, SL2.5/TP5.0)
 - `config_sol_ichi.json` — SOL/USDT Ichimoku 1H (2% risk, SL1.5/TP4.0)
 - `config_gold_forex.json` — XAU/USD OANDA (H1 signal, H4 trend)
+- `config_*usdt_ichi.json` — Mass expansion Ichimoku configs (auto-generated, 1% risk)
+- `config_*usdt_ema.json` — Mass expansion EMA configs (auto-generated, 1% risk)
 - `.env` — API keys (Bybit/Binance, Anthropic, Telegram, CryptoPanic)
 - `use_testnet: true` must be explicitly changed to go live
 - `--config <path>` or `CONFIG_FILE` env var selects config file
 
-## Deployed Portfolio (7 bots, verified backtests)
+## Deployed Portfolio (19 bots, verified backtests)
 
-### Strategy 1: EMA Crossover 15m
+### Strategy 1: EMA Crossover 15m (Original)
 | Coin | Config | Risk | PF | WR% | Tr/yr | Sharpe | Scorer |
 |------|--------|------|-----|-----|-------|--------|--------|
 | **BTC** | `config.json` | 5% | 1.85 | 44% | 23 | 1.62 | Funding ON |
@@ -197,29 +210,65 @@ Bot runs fully autonomous — risk management is the primary safety layer:
 | **ARB** | `config_arb.json` | 3% | 1.46 | 34% | 21 | 0.96 | OFF |
 | **DOGE** | `config_doge.json` | 3% | 1.38 | 35% | 22 | 0.95 | OFF |
 
-### Strategy 2: Ichimoku Cloud 1H
+### Strategy 2: Ichimoku Cloud 1H (Original)
 | Coin | Config | Risk | PF | WR% | Tr/yr | Sharpe | DD% |
 |------|--------|------|-----|-----|-------|--------|-----|
 | **AVAX** | `config_avax_ichi.json` | 2% | 1.95 | 44% | 13 | 1.05 | 5% |
 | **NEAR** | `config_near_ichi.json` | 2% | 1.87 | 48% | 13 | 1.03 | 5% |
 | **SOL** | `config_sol_ichi.json` | 2% | 1.69 | 46% | 11 | 1.03 | 8% |
 
-**Portfolio total: 289 trades over backtest period, ~132 trades/yr (2.5/week)**
-**$100 → $444 over 4.4yr = +344% total, ~79%/yr**
-**Max exposure: 20% (5% BTC + 3%×3 EMA + 2%×3 Ichimoku)**
+### Strategy 3: Mass Expansion — Ichimoku 1H (new, 1% risk each)
+| Coin | Config | PF | WR% | Tr/yr | Sharpe | DD% |
+|------|--------|-----|-----|-------|--------|-----|
+| **GUN** | `config_gunusdt_ichi.json` | 4.00 | 65% | 8 | 2.52 | 2.0% |
+| **BERA** | `config_berausdt_ichi.json` | 2.92 | 55% | 10 | 1.92 | 2.0% |
+| **ATH** | `config_athusdt_ichi.json` | 2.51 | 47% | 8 | 1.65 | 2.6% |
+| **ZETA** | `config_zetausdt_ichi.json` | 1.93 | 49% | 18 | 1.22 | 4.0% |
+| **ARC** | `config_arcusdt_ichi.json` | 1.89 | 45% | 10 | 1.13 | 2.4% |
+| **ANIME** | `config_animeusdt_ichi.json` | 1.51 | 47% | 8 | 0.74 | 5.1% |
+| **TRUMP** | `config_trumpusdt_ichi.json` | 1.48 | 48% | 12 | 0.70 | 3.4% |
+| **INJ** | `config_injusdt_ichi.json` | 1.31 | 41% | 11 | 0.36 | 2.7% |
+| **XLM** | `config_xlmusdt_ichi.json` | 1.28 | 43% | 18 | 0.47 | 3.9% |
+| **1000SHIB** | `config_1000shibusdt_ichi.json` | 1.26 | 39% | 16 | 0.42 | 5.8% |
+| **TRX** | `config_trxusdt_ichi.json` | 1.20 | 38% | 24 | 0.43 | 2.7% |
+
+### Strategy 4: Mass Expansion — EMA 15m (new, 1% risk each)
+| Coin | Config | PF | WR% | Tr/yr | Sharpe | DD% |
+|------|--------|-----|-----|-------|--------|-----|
+| **ARC** | `config_arcusdt_ema.json` | 1.89 | 45% | 10 | 1.13 | 2.4% |
+
+**Portfolio total: ~285 trades/yr (~5.5/week) across 19 bots**
+**Original 7 bots: 2-5% risk | New 12 bots: 1% risk each**
+**Max exposure: 32% (original 20% + 12% new bots)**
 
 ```bash
-# Run all 7 bots (day trading portfolio)
-# EMA Crossover 15m (4 bots)
-YOLO_MODE=1 python main.py --config config.json &          # BTC (5% risk, funding scorer ON)
+# Run all 19 bots
+# Original EMA Crossover 15m (4 bots)
+YOLO_MODE=1 python main.py --config config.json &          # BTC (5% risk)
 YOLO_MODE=1 python main.py --config config_doge.json &     # DOGE (3% risk)
 YOLO_MODE=1 python main.py --config config_arb.json &      # ARB (3% risk)
-YOLO_MODE=1 python main.py --config config_wif.json &      # WIF (3% risk, funding scorer ON)
+YOLO_MODE=1 python main.py --config config_wif.json &      # WIF (3% risk)
 
-# Ichimoku Cloud 1H (3 bots)
+# Original Ichimoku Cloud 1H (3 bots)
 python main.py --config config_avax_ichi.json &             # AVAX (2% risk)
 python main.py --config config_near_ichi.json &             # NEAR (2% risk)
 python main.py --config config_sol_ichi.json &              # SOL (2% risk)
+
+# Mass Expansion — Ichimoku 1H (11 bots, 1% risk each)
+python main.py --config config_gunusdt_ichi.json &          # GUN (PF 4.00)
+python main.py --config config_berausdt_ichi.json &         # BERA (PF 2.92)
+python main.py --config config_athusdt_ichi.json &          # ATH (PF 2.51)
+python main.py --config config_zetausdt_ichi.json &         # ZETA (PF 1.93)
+python main.py --config config_arcusdt_ichi.json &          # ARC (PF 1.89)
+python main.py --config config_animeusdt_ichi.json &        # ANIME (PF 1.51)
+python main.py --config config_trumpusdt_ichi.json &        # TRUMP (PF 1.48)
+python main.py --config config_injusdt_ichi.json &          # INJ (PF 1.31)
+python main.py --config config_xlmusdt_ichi.json &          # XLM (PF 1.28)
+python main.py --config config_1000shibusdt_ichi.json &     # 1000SHIB (PF 1.26)
+python main.py --config config_trxusdt_ichi.json &          # TRX (PF 1.20)
+
+# Mass Expansion — EMA 15m (1 bot, 1% risk)
+YOLO_MODE=1 python main.py --config config_arcusdt_ema.json & # ARC EMA (PF 1.89)
 
 # Docker deployment (all bots)
 docker compose up -d --build

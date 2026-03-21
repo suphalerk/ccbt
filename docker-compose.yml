@@ -235,6 +235,367 @@ services:
         max-file: "5"
 
   # ---------------------------------------------------------------------------
+  # 1000SHIB Ichimoku 1H Bot  (PF 1.26, 16 tr/yr)
+  # ---------------------------------------------------------------------------
+  bot-1000shib-ichi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-1000shib-ichi
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_1000shibusdt_ichi.json
+    volumes:
+      - bot-data:/app/data
+      - ./config_1000shibusdt_ichi.json:/app/config_1000shibusdt_ichi.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # ANIME Ichimoku 1H Bot  (PF 1.51, 8 tr/yr)
+  # ---------------------------------------------------------------------------
+  bot-anime-ichi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-anime-ichi
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_animeusdt_ichi.json
+    volumes:
+      - bot-data:/app/data
+      - ./config_animeusdt_ichi.json:/app/config_animeusdt_ichi.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # ARC EMA 15m Bot  (PF 1.89, 10 tr/yr)
+  # ---------------------------------------------------------------------------
+  bot-arc-ema:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-arc-ema
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_arcusdt_ema.json
+      - YOLO_MODE=1
+    volumes:
+      - bot-data:/app/data
+      - ./config_arcusdt_ema.json:/app/config_arcusdt_ema.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # ARC Ichimoku 1H Bot  (PF 1.89, 10 tr/yr)
+  # ---------------------------------------------------------------------------
+  bot-arc-ichi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-arc-ichi
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_arcusdt_ichi.json
+    volumes:
+      - bot-data:/app/data
+      - ./config_arcusdt_ichi.json:/app/config_arcusdt_ichi.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # ATH Ichimoku 1H Bot  (PF 2.51, 8 tr/yr)
+  # ---------------------------------------------------------------------------
+  bot-ath-ichi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-ath-ichi
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_athusdt_ichi.json
+    volumes:
+      - bot-data:/app/data
+      - ./config_athusdt_ichi.json:/app/config_athusdt_ichi.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # BERA Ichimoku 1H Bot  (PF 2.92, 10 tr/yr)
+  # ---------------------------------------------------------------------------
+  bot-bera-ichi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-bera-ichi
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_berausdt_ichi.json
+    volumes:
+      - bot-data:/app/data
+      - ./config_berausdt_ichi.json:/app/config_berausdt_ichi.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # GUN Ichimoku 1H Bot  (PF 4.00, 8 tr/yr)
+  # ---------------------------------------------------------------------------
+  bot-gun-ichi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-gun-ichi
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_gunusdt_ichi.json
+    volumes:
+      - bot-data:/app/data
+      - ./config_gunusdt_ichi.json:/app/config_gunusdt_ichi.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # INJ Ichimoku 1H Bot  (PF 1.31, 11 tr/yr)
+  # ---------------------------------------------------------------------------
+  bot-inj-ichi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-inj-ichi
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_injusdt_ichi.json
+    volumes:
+      - bot-data:/app/data
+      - ./config_injusdt_ichi.json:/app/config_injusdt_ichi.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # TRUMP Ichimoku 1H Bot  (PF 1.48, 12 tr/yr)
+  # ---------------------------------------------------------------------------
+  bot-trump-ichi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-trump-ichi
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_trumpusdt_ichi.json
+    volumes:
+      - bot-data:/app/data
+      - ./config_trumpusdt_ichi.json:/app/config_trumpusdt_ichi.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # TRX Ichimoku 1H Bot  (PF 1.20, 24 tr/yr)
+  # ---------------------------------------------------------------------------
+  bot-trx-ichi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-trx-ichi
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_trxusdt_ichi.json
+    volumes:
+      - bot-data:/app/data
+      - ./config_trxusdt_ichi.json:/app/config_trxusdt_ichi.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # XLM Ichimoku 1H Bot  (PF 1.28, 18 tr/yr)
+  # ---------------------------------------------------------------------------
+  bot-xlm-ichi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-xlm-ichi
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_xlmusdt_ichi.json
+    volumes:
+      - bot-data:/app/data
+      - ./config_xlmusdt_ichi.json:/app/config_xlmusdt_ichi.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # ZETA Ichimoku 1H Bot  (PF 1.93, 18 tr/yr)
+  # ---------------------------------------------------------------------------
+  bot-zeta-ichi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-zeta-ichi
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_zetausdt_ichi.json
+    volumes:
+      - bot-data:/app/data
+      - ./config_zetausdt_ichi.json:/app/config_zetausdt_ichi.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
   # Dashboard Service
   # Runs Streamlit web UI for monitoring trades and performance
   # ---------------------------------------------------------------------------
@@ -270,6 +631,18 @@ services:
       - ./config_doge.json:/app/config_doge.json:ro
       - ./config_arb.json:/app/config_arb.json:ro
       - ./config_wif.json:/app/config_wif.json:ro
+      - ./config_1000shibusdt_ichi.json:/app/config_1000shibusdt_ichi.json:ro
+      - ./config_animeusdt_ichi.json:/app/config_animeusdt_ichi.json:ro
+      - ./config_arcusdt_ema.json:/app/config_arcusdt_ema.json:ro
+      - ./config_arcusdt_ichi.json:/app/config_arcusdt_ichi.json:ro
+      - ./config_athusdt_ichi.json:/app/config_athusdt_ichi.json:ro
+      - ./config_berausdt_ichi.json:/app/config_berausdt_ichi.json:ro
+      - ./config_gunusdt_ichi.json:/app/config_gunusdt_ichi.json:ro
+      - ./config_injusdt_ichi.json:/app/config_injusdt_ichi.json:ro
+      - ./config_trumpusdt_ichi.json:/app/config_trumpusdt_ichi.json:ro
+      - ./config_trxusdt_ichi.json:/app/config_trxusdt_ichi.json:ro
+      - ./config_xlmusdt_ichi.json:/app/config_xlmusdt_ichi.json:ro
+      - ./config_zetausdt_ichi.json:/app/config_zetausdt_ichi.json:ro
     deploy:
       resources:
         limits:

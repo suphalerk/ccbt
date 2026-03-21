@@ -1,0 +1,146 @@
+{
+  "_comment": "ARC Ichimoku 1H \u2014 auto-generated from mass sweep, PF 1.89, 10 trades/yr",
+  "exchange": "binance",
+  "symbol": "ARCUSDT",
+  "timeframe_signal": "1h",
+  "timeframe_trend": "1h",
+  "leverage": 25,
+  "risk_per_trade": 0.01,
+  "max_daily_loss": 0.3,
+  "max_positions": 2,
+  "max_consecutive_losses": 5,
+  "cooldown_hours": 1,
+  "max_api_errors": 3,
+  "use_testnet": true,
+  "ema_fast": 9,
+  "ema_slow": 21,
+  "ema_trend": 50,
+  "rsi_period": 14,
+  "rsi_min": 45,
+  "rsi_max": 65,
+  "atr_period": 14,
+  "atr_sl_mult": 2.0,
+  "atr_tp_mult": 5.0,
+  "atr_trail_mult": 3.0,
+  "atr_trail_mult_trending": 3.0,
+  "atr_trail_mult_ranging": 2.0,
+  "atr_trail_mult_volatile": 4.0,
+  "atr_min": 0.0,
+  "partial_tp_enabled": false,
+  "partial_tp_pct": 0.3,
+  "partial_tp_atr_mult": 2.0,
+  "move_sl_to_be_after_tp1": true,
+  "breakeven_buffer_atr_mult": 0.5,
+  "atr_trail_mult_post_tp1": 4.0,
+  "volume_mult": 1.0,
+  "volume_max_mult": null,
+  "rsi_long_min": 45,
+  "rsi_long_max": 65,
+  "rsi_short_min": 35,
+  "rsi_short_max": 55,
+  "cooldown_candles_after_close": 0,
+  "cooldown_candles_after_sl": 0,
+  "min_rr_ratio": 0,
+  "commission_rate": 0.0004,
+  "slippage_rate": 0.00015,
+  "crossover_lookback": 2,
+  "weekend_trading_enabled": false,
+  "weekend_size_reduction": 0.5,
+  "ema_slope_period": 5,
+  "ema_slope_min": 0.02,
+  "ichimoku_tenkan": 9,
+  "ichimoku_kijun": 26,
+  "ichimoku_senkou_b": 52,
+  "trading_hours": {
+    "enabled": true,
+    "start_utc": 3,
+    "end_utc": 20
+  },
+  "regime_filter": {
+    "enabled": true,
+    "skip_ranging": true
+  },
+  "flexible_cooldown": {
+    "enabled": false,
+    "min_quality_score": 0.7,
+    "cooldown_reduction_factor": 0.5,
+    "log_overrides": true
+  },
+  "signals": {
+    "ema_crossover": {
+      "enabled": false
+    },
+    "ema_fast_crossover": {
+      "enabled": false
+    },
+    "ema_pullback": {
+      "enabled": false
+    },
+    "rsi_divergence": {
+      "enabled": false
+    },
+    "bb_breakout": {
+      "enabled": false
+    },
+    "mean_reversion": {
+      "enabled": false
+    },
+    "body_dominance": {
+      "enabled": false
+    },
+    "squeeze_release": {
+      "enabled": false
+    },
+    "ichimoku_cloud": {
+      "enabled": true
+    }
+  },
+  "body_dominance_min_body": 0.65,
+  "body_dominance_min_mom": 0.02,
+  "body_dominance_min_vol": 1.5,
+  "squeeze_release_low": 0.7,
+  "squeeze_release_high": 0.8,
+  "squeeze_release_min_mom4": 0.0,
+  "mr_rsi_oversold": 30,
+  "mr_rsi_overbought": 70,
+  "mr_atr_sl_mult": 1.0,
+  "mr_atr_tp_mult": 1.5,
+  "ema_fast2": 5,
+  "ema_slow2": 13,
+  "bb_period": 20,
+  "bb_std": 2.0,
+  "bb_squeeze_percentile": 0.3,
+  "bb_volume_mult": 1.2,
+  "swing_lookback": 5,
+  "divergence_lookback": 20,
+  "adaptive_sizing": {
+    "enabled": false
+  },
+  "pyramiding": {
+    "enabled": false
+  },
+  "mtd_accelerator": {
+    "enabled": false
+  },
+  "signal_scorer": {
+    "enabled": false
+  },
+  "ai_layer": {
+    "enabled": false,
+    "mode": "advisor",
+    "confidence_threshold": 0.65,
+    "model": "claude-sonnet-4-6",
+    "max_tokens": 1024,
+    "timeout_seconds": 10,
+    "fallback_on_timeout": "execute",
+    "news_source": "rss",
+    "news_lookback_hours": 12,
+    "log_all_decisions": true,
+    "calibration": {
+      "enabled": true,
+      "min_trades_for_accuracy": 5,
+      "rolling_window": 30,
+      "auto_adjust_influence": true
+    }
+  }
+}
