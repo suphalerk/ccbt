@@ -62,7 +62,7 @@ class TradingPort(Protocol):
 
     async def set_leverage(
         self, leverage: int, symbol: Optional[str] = None
-    ) -> None:
+    ) -> int:
         """Set leverage multiplier for the given symbol."""
         ...
 
@@ -243,11 +243,14 @@ class AsyncBybitClient:
 
     async def set_leverage(
         self, leverage: int, symbol: Optional[str] = None
-    ) -> None:
-        """Set leverage multiplier (non-blocking).
+    ) -> int:
+        """Set leverage multiplier (non-blocking), with auto-reduction.
 
         Args:
             leverage: Leverage multiplier.
             symbol: Trading pair. Defaults to configured symbol.
+
+        Returns:
+            The leverage value actually set on the exchange.
         """
         return await asyncio.to_thread(self._sync.set_leverage, leverage, symbol)

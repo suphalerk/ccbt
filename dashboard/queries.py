@@ -48,25 +48,49 @@ def db_exists(db_path: Optional[str] = None) -> bool:
         return False
 
 
-def get_recent_trades(limit: int = 50, db_path: Optional[str] = None) -> pd.DataFrame:
-    """Get recent trades ordered by most recent first.
-
-    Args:
-        limit: Maximum number of trades to return.
-        db_path: Path to the database file.
+def _symbol_filter(symbol: Optional[str] = None) -> tuple[str, tuple]:
+    """Build a SQL WHERE clause fragment for optional symbol filtering.
 
     Returns:
-        DataFrame with trade records.
+        (sql_fragment, params_tuple) — fragment is empty string when no filter.
     """
+    if symbol:
+        return " AND symbol = ?", (symbol,)
+    return "", ()
+
+
+def get_distinct_symbols(db_path: Optional[str] = None) -> list[str]:
+    """Get all distinct symbols that have traded."""
+    if not db_exists(db_path):
+        return []
+    conn = _get_connection(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT symbol FROM trades ORDER BY symbol"
+        ).fetchall()
+        return [r["symbol"] for r in rows if r["symbol"]]
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+
+def get_recent_trades(
+    limit: int = 50,
+    db_path: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> pd.DataFrame:
+    """Get recent trades ordered by most recent first."""
     if not db_exists(db_path):
         return pd.DataFrame()
 
+    filt, params = _symbol_filter(symbol)
     conn = _get_connection(db_path)
     try:
         df = pd.read_sql_query(
-            "SELECT * FROM trades ORDER BY id DESC LIMIT ?",
+            f"SELECT * FROM trades WHERE 1=1{filt} ORDER BY id DESC LIMIT ?",
             conn,
-            params=(limit,),
+            params=params + (limit,),
         )
         return df
     except Exception:
@@ -75,23 +99,21 @@ def get_recent_trades(limit: int = 50, db_path: Optional[str] = None) -> pd.Data
         conn.close()
 
 
-def get_closed_trades(db_path: Optional[str] = None) -> pd.DataFrame:
-    """Get all closed trades for performance analysis.
-
-    Args:
-        db_path: Path to the database file.
-
-    Returns:
-        DataFrame with closed trade records.
-    """
+def get_closed_trades(
+    db_path: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> pd.DataFrame:
+    """Get all closed trades for performance analysis."""
     if not db_exists(db_path):
         return pd.DataFrame()
 
+    filt, params = _symbol_filter(symbol)
     conn = _get_connection(db_path)
     try:
         df = pd.read_sql_query(
-            "SELECT * FROM trades WHERE status = 'closed' ORDER BY id ASC",
+            f"SELECT * FROM trades WHERE status = 'closed'{filt} ORDER BY id ASC",
             conn,
+            params=params,
         )
         return df
     except Exception:
@@ -100,23 +122,21 @@ def get_closed_trades(db_path: Optional[str] = None) -> pd.DataFrame:
         conn.close()
 
 
-def get_open_trades(db_path: Optional[str] = None) -> pd.DataFrame:
-    """Get all currently open trades.
-
-    Args:
-        db_path: Path to the database file.
-
-    Returns:
-        DataFrame with open trade records.
-    """
+def get_open_trades(
+    db_path: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> pd.DataFrame:
+    """Get all currently open trades."""
     if not db_exists(db_path):
         return pd.DataFrame()
 
+    filt, params = _symbol_filter(symbol)
     conn = _get_connection(db_path)
     try:
         df = pd.read_sql_query(
-            "SELECT * FROM trades WHERE status = 'open' ORDER BY id DESC",
+            f"SELECT * FROM trades WHERE status = 'open'{filt} ORDER BY id DESC",
             conn,
+            params=params,
         )
         return df
     except Exception:
@@ -125,19 +145,14 @@ def get_open_trades(db_path: Optional[str] = None) -> pd.DataFrame:
         conn.close()
 
 
-def get_trade_stats(db_path: Optional[str] = None) -> dict:
-    """Compute aggregate trade statistics from closed trades.
-
-    Args:
-        db_path: Path to the database file.
-
-    Returns:
-        Dictionary with: total_trades, wins, losses, win_rate, profit_factor,
-        avg_win, avg_loss, max_drawdown, sharpe_ratio, total_pnl.
-    """
+def get_trade_stats(
+    db_path: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> dict:
+    """Compute aggregate trade statistics from closed trades."""
     import numpy as np
 
-    closed = get_closed_trades(db_path)
+    closed = get_closed_trades(db_path, symbol=symbol)
 
     stats = {
         "total_trades": 0,
@@ -198,16 +213,12 @@ def get_trade_stats(db_path: Optional[str] = None) -> dict:
     return stats
 
 
-def get_equity_curve(db_path: Optional[str] = None) -> pd.DataFrame:
-    """Get cumulative PnL over time for equity curve plotting.
-
-    Args:
-        db_path: Path to the database file.
-
-    Returns:
-        DataFrame with columns: timestamp, pnl, cumulative_pnl.
-    """
-    closed = get_closed_trades(db_path)
+def get_equity_curve(
+    db_path: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> pd.DataFrame:
+    """Get cumulative PnL over time for equity curve plotting."""
+    closed = get_closed_trades(db_path, symbol=symbol)
     if closed.empty or "pnl" not in closed.columns:
         return pd.DataFrame(columns=["timestamp", "pnl", "cumulative_pnl"])
 
@@ -218,14 +229,7 @@ def get_equity_curve(db_path: Optional[str] = None) -> pd.DataFrame:
 
 
 def get_ai_decisions(db_path: Optional[str] = None) -> pd.DataFrame:
-    """Get all trades/records that have AI decision data.
-
-    Args:
-        db_path: Path to the database file.
-
-    Returns:
-        DataFrame with AI decision records.
-    """
+    """Get all trades/records that have AI decision data."""
     if not db_exists(db_path):
         return pd.DataFrame()
 
@@ -249,31 +253,29 @@ def get_ai_decisions(db_path: Optional[str] = None) -> pd.DataFrame:
         conn.close()
 
 
-def get_daily_pnl(db_path: Optional[str] = None) -> pd.DataFrame:
-    """Get PnL aggregated by day.
-
-    Args:
-        db_path: Path to the database file.
-
-    Returns:
-        DataFrame with columns: date, daily_pnl, trade_count.
-    """
+def get_daily_pnl(
+    db_path: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> pd.DataFrame:
+    """Get PnL aggregated by day."""
     if not db_exists(db_path):
         return pd.DataFrame(columns=["date", "daily_pnl", "trade_count"])
 
+    filt, params = _symbol_filter(symbol)
     conn = _get_connection(db_path)
     try:
         df = pd.read_sql_query(
-            """
+            f"""
             SELECT DATE(timestamp) as date,
                    COALESCE(SUM(pnl), 0) as daily_pnl,
                    COUNT(*) as trade_count
             FROM trades
-            WHERE status = 'closed'
+            WHERE status = 'closed'{filt}
             GROUP BY DATE(timestamp)
             ORDER BY date ASC
             """,
             conn,
+            params=params,
         )
         return df
     except Exception:
@@ -282,28 +284,25 @@ def get_daily_pnl(db_path: Optional[str] = None) -> pd.DataFrame:
         conn.close()
 
 
-def get_today_pnl(db_path: Optional[str] = None) -> float:
-    """Get today's total PnL.
-
-    Args:
-        db_path: Path to the database file.
-
-    Returns:
-        Today's PnL in USDT.
-    """
+def get_today_pnl(
+    db_path: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> float:
+    """Get today's total PnL."""
     if not db_exists(db_path):
         return 0.0
 
     today = datetime.utcnow().strftime("%Y-%m-%d")
+    filt, params = _symbol_filter(symbol)
     conn = _get_connection(db_path)
     try:
         row = conn.execute(
-            """
+            f"""
             SELECT COALESCE(SUM(pnl), 0) as total_pnl
             FROM trades
-            WHERE timestamp LIKE ? AND status = 'closed'
+            WHERE timestamp LIKE ? AND status = 'closed'{filt}
             """,
-            (f"{today}%",),
+            (f"{today}%",) + params,
         ).fetchone()
         return float(row["total_pnl"]) if row else 0.0
     except Exception:
@@ -312,28 +311,25 @@ def get_today_pnl(db_path: Optional[str] = None) -> float:
         conn.close()
 
 
-def get_today_trade_count(db_path: Optional[str] = None) -> int:
-    """Get today's trade count.
-
-    Args:
-        db_path: Path to the database file.
-
-    Returns:
-        Number of trades today.
-    """
+def get_today_trade_count(
+    db_path: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> int:
+    """Get today's trade count."""
     if not db_exists(db_path):
         return 0
 
     today = datetime.utcnow().strftime("%Y-%m-%d")
+    filt, params = _symbol_filter(symbol)
     conn = _get_connection(db_path)
     try:
         row = conn.execute(
-            """
+            f"""
             SELECT COUNT(*) as cnt
             FROM trades
-            WHERE timestamp LIKE ? AND status = 'closed'
+            WHERE timestamp LIKE ? AND status = 'closed'{filt}
             """,
-            (f"{today}%",),
+            (f"{today}%",) + params,
         ).fetchone()
         return int(row["cnt"]) if row else 0
     except Exception:
@@ -343,14 +339,7 @@ def get_today_trade_count(db_path: Optional[str] = None) -> int:
 
 
 def get_calibration_data(db_path: Optional[str] = None) -> pd.DataFrame:
-    """Get AI calibration tracker data for accuracy visualization.
-
-    Args:
-        db_path: Path to the database file.
-
-    Returns:
-        DataFrame with calibration records.
-    """
+    """Get AI calibration tracker data for accuracy visualization."""
     path = db_path or str(DEFAULT_DB_PATH)
     if not Path(path).exists():
         return pd.DataFrame()
@@ -376,14 +365,7 @@ def get_calibration_data(db_path: Optional[str] = None) -> pd.DataFrame:
 
 
 def get_calibration_stats(db_path: Optional[str] = None) -> dict:
-    """Get aggregate calibration statistics.
-
-    Args:
-        db_path: Path to the database file.
-
-    Returns:
-        Dict with accuracy, regime breakdown, confidence calibration.
-    """
+    """Get aggregate calibration statistics."""
     data = get_calibration_data(db_path)
     stats = {
         "total_decisions": 0,
@@ -438,19 +420,7 @@ def get_recent_logs(
     search: str = "",
     log_path: Optional[str] = None,
 ) -> list[dict]:
-    """Read recent log entries from the trading bot log file.
-
-    Tail-reads from the end of the file for efficiency.
-
-    Args:
-        max_lines: Maximum number of log entries to return.
-        min_level: Minimum log level filter (ALL/DEBUG/INFO/WARNING/ERROR/CRITICAL).
-        search: Text search filter applied to message and data.
-        log_path: Path to the log file.
-
-    Returns:
-        List of dicts with keys: timestamp, level, message, data.
-    """
+    """Read recent log entries from the trading bot log file."""
     import json as _json
 
     level_order = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3, "CRITICAL": 4}
@@ -511,16 +481,12 @@ def get_recent_logs(
     return entries[-max_lines:]
 
 
-def get_consecutive_losses(db_path: Optional[str] = None) -> int:
-    """Count consecutive losses from the most recent trades.
-
-    Args:
-        db_path: Path to the database file.
-
-    Returns:
-        Number of consecutive recent losses.
-    """
-    closed = get_closed_trades(db_path)
+def get_consecutive_losses(
+    db_path: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> int:
+    """Count consecutive losses from the most recent trades."""
+    closed = get_closed_trades(db_path, symbol=symbol)
     if closed.empty or "pnl" not in closed.columns:
         return 0
 
@@ -531,3 +497,41 @@ def get_consecutive_losses(db_path: Optional[str] = None) -> int:
         else:
             break
     return count
+
+
+def get_per_bot_summary(db_path: Optional[str] = None) -> pd.DataFrame:
+    """Get per-symbol summary: trades, wins, PF, total_pnl, last_trade."""
+    if not db_exists(db_path):
+        return pd.DataFrame()
+
+    conn = _get_connection(db_path)
+    try:
+        df = pd.read_sql_query(
+            """
+            SELECT
+                symbol,
+                COUNT(*) as trades,
+                SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN pnl <= 0 THEN 1 ELSE 0 END) as losses,
+                ROUND(
+                    CASE WHEN SUM(CASE WHEN pnl < 0 THEN ABS(pnl) ELSE 0 END) > 0
+                    THEN SUM(CASE WHEN pnl > 0 THEN pnl ELSE 0 END) /
+                         SUM(CASE WHEN pnl < 0 THEN ABS(pnl) ELSE 0 END)
+                    ELSE 0 END, 2
+                ) as profit_factor,
+                ROUND(SUM(pnl), 2) as total_pnl,
+                MAX(timestamp) as last_trade
+            FROM trades
+            WHERE status = 'closed'
+            GROUP BY symbol
+            ORDER BY total_pnl DESC
+            """,
+            conn,
+        )
+        if not df.empty and "wins" in df.columns and "trades" in df.columns:
+            df["win_rate"] = (df["wins"] / df["trades"] * 100).round(1)
+        return df
+    except Exception:
+        return pd.DataFrame()
+    finally:
+        conn.close()

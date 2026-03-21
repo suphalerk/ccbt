@@ -13,20 +13,33 @@ from bot.data import add_funding_rate, add_indicators, add_trend_filter, compute
 from bot.risk import RiskManager
 from bot.strategy import (
     SignalType,
+    check_adx_di_cross_conditions,
+    check_alligator_conditions,
     check_bb_breakout_conditions,
     check_body_dominance_conditions,
+    check_choppiness_ema_conditions,
+    check_dual_supertrend_conditions,
+    check_ema_alligator_conditions,
+    check_ema_ichimoku_hybrid_conditions,
     check_engulfing_conditions,
     check_entry_conditions,
     check_fast_crossover_conditions,
+    check_ichi_supertrend_conditions,
     check_ichimoku_conditions,
     check_inside_bar_breakout_conditions,
     check_mean_reversion_conditions,
     check_pin_bar_conditions,
+    check_price_channel_vol_conditions,
     check_pullback_conditions,
+    check_roc_momentum_conditions,
     check_rsi_divergence_conditions,
     check_squeeze_release_conditions,
+    check_stoch_supertrend_conditions,
     check_supertrend_conditions,
+    check_supertrend_volume_conditions,
     check_vol_expansion_conditions,
+    check_volexp_supertrend_conditions,
+    check_williams_r_adx_conditions,
     compute_levels,
     compute_net_rr,
     compute_signal_quality_score,
@@ -454,6 +467,145 @@ class BacktestEngine:
                         signal_row, signal_row, self.config, signal_type
                     ):
                         signal_source = "vol_expansion"
+
+            # Dual Supertrend: needs signal_row and the row before it for fast flip detection
+            # signal_row is at candle_idx-1; prev is at candle_idx-2
+            if signal_source is None:
+                if signals_config.get("dual_supertrend", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        dst_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_dual_supertrend_conditions(
+                            signal_row, dst_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "dual_supertrend"
+
+            # Alligator: needs signal_row and the row before it for lips/teeth crossover
+            # signal_row is at candle_idx-1; prev is at candle_idx-2
+            if signal_source is None:
+                if signals_config.get("alligator", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        alligator_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_alligator_conditions(
+                            signal_row, alligator_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "alligator"
+
+            # EMA+Ichimoku Hybrid: needs signal_row and the row before it for EMA crossover
+            # signal_row is at candle_idx-1; prev is at candle_idx-2
+            if signal_source is None:
+                if signals_config.get("ema_ichimoku_hybrid", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        hybrid_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_ema_ichimoku_hybrid_conditions(
+                            signal_row, hybrid_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "ema_ichimoku_hybrid"
+
+            # Ichimoku + Supertrend confluence: needs signal_row and the row before it
+            # signal_row is at candle_idx-1; prev is at candle_idx-2
+            if signal_source is None:
+                if signals_config.get("ichi_supertrend", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        ichi_st_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_ichi_supertrend_conditions(
+                            signal_row, ichi_st_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "ichi_supertrend"
+
+            # Vol Expansion + Supertrend confluence: uses signal_row as prev_row
+            # (same pattern as vol_expansion — closed candle contains all required columns)
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("volexp_supertrend", {}).get("enabled", False):
+                    if check_volexp_supertrend_conditions(
+                        signal_row, signal_row, self.config, signal_type
+                    ):
+                        signal_source = "volexp_supertrend"
+
+            # ADX + DI crossover: needs signal_row and the row before it for DI crossover
+            # signal_row is at candle_idx-1; prev is at candle_idx-2
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("adx_di_cross", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        adx_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_adx_di_cross_conditions(
+                            signal_row, adx_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "adx_di_cross"
+
+            # Choppiness + EMA: needs signal_row and the row before it for EMA crossover
+            # signal_row is at candle_idx-1; prev is at candle_idx-2
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("choppiness_ema", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        chop_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_choppiness_ema_conditions(
+                            signal_row, chop_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "choppiness_ema"
+
+            # Williams %R + ADX: needs signal_row and the row before it for WR crossover
+            # signal_row is at candle_idx-1; prev is at candle_idx-2
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("williams_r_adx", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        wr_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_williams_r_adx_conditions(
+                            signal_row, wr_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "williams_r_adx"
+
+            # ROC Momentum: needs signal_row and the row before it for zero-cross detection
+            # signal_row is at candle_idx-1; prev is at candle_idx-2
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("roc_momentum", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        roc_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_roc_momentum_conditions(
+                            signal_row, roc_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "roc_momentum"
+
+            # Stochastic + Supertrend: needs signal_row and the row before it for stoch cross
+            # signal_row is at candle_idx-1; prev is at candle_idx-2
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("stoch_supertrend", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        stoch_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_stoch_supertrend_conditions(
+                            signal_row, stoch_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "stoch_supertrend"
+
+            # Price Channel + Volume: uses signal_row as prev_row
+            # (price_channel_high/low are pre-shifted in add_indicators — no separate prev needed)
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("price_channel_vol", {}).get("enabled", False):
+                    if check_price_channel_vol_conditions(
+                        signal_row, signal_row, self.config, signal_type
+                    ):
+                        signal_source = "price_channel_vol"
+
+            # EMA + Alligator confluence: needs signal_row and the row before it for EMA crossover
+            # signal_row is at candle_idx-1; prev is at candle_idx-2
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("ema_alligator", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        ema_alligator_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_ema_alligator_conditions(
+                            signal_row, ema_alligator_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "ema_alligator"
+
+            # Supertrend + Volume: needs signal_row and the row before it for direction flip
+            # signal_row is at candle_idx-1; prev is at candle_idx-2
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("supertrend_volume", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        st_vol_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_supertrend_volume_conditions(
+                            signal_row, st_vol_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "supertrend_volume"
 
             if signal_source is None:
                 continue

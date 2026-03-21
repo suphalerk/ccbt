@@ -607,6 +607,87 @@ def advisor_adjustments_chart(
     return fig
 
 
+def per_bot_pnl_bar_chart(summary_df: pd.DataFrame, height: int = 350) -> go.Figure:
+    """Create a horizontal bar chart of PnL per bot (symbol).
+
+    Args:
+        summary_df: DataFrame with columns: symbol, total_pnl.
+        height: Chart height in pixels.
+
+    Returns:
+        Plotly Figure with horizontal bar chart.
+    """
+    fig = go.Figure()
+
+    if summary_df.empty or "total_pnl" not in summary_df.columns:
+        fig.update_layout(**DARK_LAYOUT, height=height, title="Per-Bot PnL (no data)")
+        return fig
+
+    # Sort by total_pnl ascending so highest is at top of horizontal bars
+    df = summary_df.sort_values("total_pnl", ascending=True)
+
+    colors = [
+        COLORS["profit"] if v >= 0 else COLORS["loss"]
+        for v in df["total_pnl"]
+    ]
+
+    fig.add_trace(
+        go.Bar(
+            y=df["symbol"],
+            x=df["total_pnl"],
+            orientation="h",
+            marker=dict(color=colors, line=dict(width=0)),
+            text=[f"${v:,.2f}" for v in df["total_pnl"]],
+            textposition="auto",
+            textfont=dict(color=COLORS["text"], size=11),
+        )
+    )
+
+    fig.add_vline(x=0, line=dict(color=COLORS["neutral"], width=1, dash="dash"), opacity=0.5)
+
+    fig.update_layout(
+        **DARK_LAYOUT,
+        height=max(height, len(df) * 28 + 80),
+        title=dict(text="PnL per Bot", font=dict(size=14)),
+        xaxis_title="PnL ($)",
+        showlegend=False,
+        margin=dict(l=100, r=20, t=40, b=30),
+    )
+
+    return fig
+
+
+def portfolio_summary_table(summary_df: pd.DataFrame) -> pd.DataFrame:
+    """Format the per-bot summary for display as a styled dataframe.
+
+    Args:
+        summary_df: DataFrame from get_per_bot_summary().
+
+    Returns:
+        Formatted DataFrame ready for st.dataframe().
+    """
+    if summary_df.empty:
+        return pd.DataFrame()
+
+    display = summary_df.copy()
+    col_order = ["symbol", "trades", "wins", "losses", "win_rate", "profit_factor", "total_pnl", "last_trade"]
+    available = [c for c in col_order if c in display.columns]
+    display = display[available]
+
+    rename = {
+        "symbol": "Symbol",
+        "trades": "Trades",
+        "wins": "Wins",
+        "losses": "Losses",
+        "win_rate": "WR%",
+        "profit_factor": "PF",
+        "total_pnl": "PnL ($)",
+        "last_trade": "Last Trade",
+    }
+    display = display.rename(columns={k: v for k, v in rename.items() if k in display.columns})
+    return display
+
+
 def daily_pnl_bar_chart(daily_df: pd.DataFrame, height: int = 300) -> go.Figure:
     """Create a daily PnL bar chart.
 

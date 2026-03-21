@@ -1,10 +1,10 @@
 {
-  "_comment": "WLD Vol Expansion 1H — verified PF 3.25, Sharpe 1.47, DD 1.0%, 6 trades/yr (2yr backtest)",
+  "_comment": "XPL \u2014 engine verified PF 1.9",
   "exchange": "binance",
-  "symbol": "WLDUSDT",
-  "timeframe_signal": "1h",
-  "timeframe_trend": "1h",
-  "leverage": 10,
+  "symbol": "XPLUSDT",
+  "timeframe_signal": "4h",
+  "timeframe_trend": "4h",
+  "leverage": 25,
   "risk_per_trade": 0.01,
   "max_daily_loss": 0.3,
   "max_positions": 2,
@@ -20,7 +20,7 @@
   "rsi_max": 65,
   "atr_period": 14,
   "atr_sl_mult": 2.5,
-  "atr_tp_mult": 3.0,
+  "atr_tp_mult": 4.0,
   "atr_trail_mult": 3.0,
   "atr_trail_mult_trending": 3.0,
   "atr_trail_mult_ranging": 2.0,
@@ -48,9 +48,9 @@
   "weekend_size_reduction": 0.5,
   "ema_slope_period": 5,
   "ema_slope_min": 0.02,
-  "vol_expansion_threshold": 1.8,
-  "vol_expansion_lookback": 1,
-  "vol_expansion_atr_ma_period": 20,
+  "ichimoku_tenkan": 9,
+  "ichimoku_kijun": 26,
+  "ichimoku_senkou_b": 52,
   "trading_hours": {
     "enabled": true,
     "start_utc": 3,
@@ -67,21 +67,85 @@
     "log_overrides": true
   },
   "signals": {
-    "ema_crossover": {"enabled": false},
-    "ema_fast_crossover": {"enabled": false},
-    "ema_pullback": {"enabled": false},
-    "rsi_divergence": {"enabled": false},
-    "bb_breakout": {"enabled": false},
-    "mean_reversion": {"enabled": false},
-    "body_dominance": {"enabled": false},
-    "squeeze_release": {"enabled": false},
-    "ichimoku_cloud": {"enabled": false},
-    "vol_expansion": {"enabled": true}
+    "ema_crossover": {
+      "enabled": false
+    },
+    "ema_fast_crossover": {
+      "enabled": false
+    },
+    "ema_pullback": {
+      "enabled": false
+    },
+    "rsi_divergence": {
+      "enabled": false
+    },
+    "bb_breakout": {
+      "enabled": false
+    },
+    "mean_reversion": {
+      "enabled": false
+    },
+    "body_dominance": {
+      "enabled": false
+    },
+    "squeeze_release": {
+      "enabled": false
+    },
+    "ichimoku_cloud": {
+      "enabled": false
+    },
+    "supertrend": {
+      "enabled": false
+    },
+    "vol_expansion": {
+      "enabled": false
+    },
+    "dual_supertrend": {
+      "enabled": true
+    },
+    "alligator": {
+      "enabled": false
+    },
+    "ema_ichimoku_hybrid": {
+      "enabled": false
+    },
+    "ichi_supertrend": {
+      "enabled": false
+    },
+    "volexp_supertrend": {
+      "enabled": false
+    }
   },
-  "adaptive_sizing": {"enabled": false},
-  "pyramiding": {"enabled": false},
-  "mtd_accelerator": {"enabled": false},
-  "signal_scorer": {"enabled": false},
+  "body_dominance_min_body": 0.65,
+  "body_dominance_min_mom": 0.02,
+  "body_dominance_min_vol": 1.5,
+  "squeeze_release_low": 0.7,
+  "squeeze_release_high": 0.8,
+  "squeeze_release_min_mom4": 0.0,
+  "mr_rsi_oversold": 30,
+  "mr_rsi_overbought": 70,
+  "mr_atr_sl_mult": 1.0,
+  "mr_atr_tp_mult": 1.5,
+  "ema_fast2": 5,
+  "ema_slow2": 13,
+  "bb_period": 20,
+  "bb_std": 2.0,
+  "bb_squeeze_percentile": 0.3,
+  "bb_volume_mult": 1.2,
+  "swing_lookback": 5,
+  "divergence_lookback": 20,
+  "adaptive_sizing": {
+    "enabled": false
+  },
+  "pyramiding": {
+    "enabled": false
+  },
+  "mtd_accelerator": {
+    "enabled": false
+  },
+  "signal_scorer": {
+    "enabled": false
+  },
   "ai_layer": {
     "enabled": false,
     "mode": "advisor",

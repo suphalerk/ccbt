@@ -215,8 +215,15 @@ def add_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     atr_ma50 = df["atr"].rolling(window=50).mean()
     df["squeeze"] = df["atr"] / atr_ma50.clip(lower=1e-10)
 
-    # Supertrend — only computed when supertrend signal is enabled in config
-    if config.get("signals", {}).get("supertrend", {}).get("enabled", False):
+    # Supertrend — computed when supertrend signal is enabled OR when a composite
+    # signal that depends on supertrend_dir is enabled (ichi_supertrend, volexp_supertrend).
+    _sigs = config.get("signals", {})
+    _needs_supertrend = (
+        _sigs.get("supertrend", {}).get("enabled", False)
+        or _sigs.get("ichi_supertrend", {}).get("enabled", False)
+        or _sigs.get("volexp_supertrend", {}).get("enabled", False)
+    )
+    if _needs_supertrend:
         st_mult = config.get("supertrend_multiplier", 2.0)
         st_atr_period = config.get("supertrend_atr_period", 14)
         st, st_dir = compute_supertrend(df["high"], df["low"], df["close"], st_atr_period, st_mult)
@@ -228,7 +235,12 @@ def add_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         df = add_ichimoku_indicators(df, config)
 
     # Volatility Expansion Breakout — computed when vol_expansion signal is enabled
-    if config.get("signals", {}).get("vol_expansion", {}).get("enabled", False):
+    # OR when volexp_supertrend is enabled (composite signal that depends on vol columns).
+    _needs_volexp = (
+        config.get("signals", {}).get("vol_expansion", {}).get("enabled", False)
+        or config.get("signals", {}).get("volexp_supertrend", {}).get("enabled", False)
+    )
+    if _needs_volexp:
         atr = df["atr"] if "atr" in df.columns else compute_atr(
             df["high"], df["low"], df["close"], config.get("atr_period", 14)
         )
@@ -245,6 +257,27 @@ def add_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         if "ema_trend" not in df.columns and "ema_trend_1h" not in df.columns and "ema50" not in df.columns:
             df["ema50"] = compute_ema(df["close"], ema50_period)
 
+    # Alligator — computed when alligator signal is enabled
+    if config.get("signals", {}).get("alligator", {}).get("enabled", False):
+        jaw, teeth, lips = compute_alligator(df["close"])
+        df["alligator_jaw"] = jaw
+        df["alligator_teeth"] = teeth
+        df["alligator_lips"] = lips
+
+    # Dual Supertrend — computed when dual_supertrend signal is enabled
+    if config.get("signals", {}).get("dual_supertrend", {}).get("enabled", False):
+        dst_fast_period = config.get("dual_supertrend_fast_period", 7)
+        dst_fast_mult = config.get("dual_supertrend_fast_mult", 2.0)
+        dst_slow_period = config.get("dual_supertrend_slow_period", 14)
+        dst_slow_mult = config.get("dual_supertrend_slow_mult", 3.0)
+        fast_dir, slow_dir = compute_dual_supertrend(
+            df["high"], df["low"], df["close"],
+            dst_fast_period, dst_fast_mult,
+            dst_slow_period, dst_slow_mult,
+        )
+        df["dst_fast_dir"] = fast_dir
+        df["dst_slow_dir"] = slow_dir
+
     # Price Action patterns — computed when any PA signal is enabled
     if (
         config.get("signals", {}).get("pin_bar", {}).get("enabled", False)
@@ -252,6 +285,80 @@ def add_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         or config.get("signals", {}).get("inside_bar_breakout", {}).get("enabled", False)
     ):
         df = add_price_action_patterns(df, config)
+
+    # ADX + DI — computed when adx_di_cross, williams_r_adx, or any signal needing ADX is enabled
+    _needs_adx = (
+        _sigs.get("adx_di_cross", {}).get("enabled", False)
+        or _sigs.get("williams_r_adx", {}).get("enabled", False)
+    )
+    if _needs_adx:
+        adx_period = config.get("adx_period", 14)
+        adx, di_plus, di_minus = compute_adx_di(df["high"], df["low"], df["close"], adx_period)
+        df["adx"] = adx
+        df["di_plus"] = di_plus
+        df["di_minus"] = di_minus
+
+    # Choppiness Index — computed when choppiness_ema signal is enabled
+    if _sigs.get("choppiness_ema", {}).get("enabled", False):
+        ci_period = config.get("choppiness_period", 14)
+        df["choppiness"] = compute_choppiness(df["high"], df["low"], df["close"], ci_period)
+
+    # Williams %R — computed when williams_r_adx signal is enabled
+    if _sigs.get("williams_r_adx", {}).get("enabled", False):
+        wr_period = config.get("williams_r_period", 14)
+        df["williams_r"] = compute_williams_r(df["high"], df["low"], df["close"], wr_period)
+        # EMA(50) trend filter for williams_r_adx
+        if "ema50" not in df.columns:
+            df["ema50"] = compute_ema(df["close"], config.get("williams_r_ema_trend_period", 50))
+
+    # ROC — computed when roc_momentum signal is enabled
+    if _sigs.get("roc_momentum", {}).get("enabled", False):
+        roc_period = config.get("roc_period", 10)
+        df["roc"] = compute_roc(df["close"], roc_period)
+        # EMA(50) trend filter for roc_momentum
+        if "ema50" not in df.columns:
+            df["ema50"] = compute_ema(df["close"], config.get("roc_ema_trend_period", 50))
+
+    # Stochastic Oscillator — computed when stoch_supertrend signal is enabled
+    if _sigs.get("stoch_supertrend", {}).get("enabled", False):
+        stoch_k_period = config.get("stoch_k_period", 14)
+        stoch_d_period = config.get("stoch_d_period", 3)
+        stoch_k, stoch_d = compute_stochastic(
+            df["high"], df["low"], df["close"], stoch_k_period, stoch_d_period
+        )
+        df["stoch_k"] = stoch_k
+        df["stoch_d"] = stoch_d
+        # Ensure supertrend is computed (stoch_supertrend depends on supertrend_dir)
+        if "supertrend_dir" not in df.columns:
+            st_mult = config.get("supertrend_multiplier", 2.0)
+            st_atr_period = config.get("supertrend_atr_period", 14)
+            st, st_dir = compute_supertrend(df["high"], df["low"], df["close"], st_atr_period, st_mult)
+            df["supertrend"] = st
+            df["supertrend_dir"] = st_dir
+
+    # Price Channel — computed when price_channel_vol signal is enabled
+    if _sigs.get("price_channel_vol", {}).get("enabled", False):
+        pc_period = config.get("price_channel_period", 20)
+        # Shift by 1 to avoid look-ahead: the channel uses data from closed candles before signal
+        df["price_channel_high"] = df["high"].rolling(window=pc_period).max().shift(1)
+        df["price_channel_low"] = df["low"].rolling(window=pc_period).min().shift(1)
+
+    # EMA+Alligator confluence — ensure alligator columns are present when enabled
+    if _sigs.get("ema_alligator", {}).get("enabled", False):
+        if "alligator_jaw" not in df.columns:
+            jaw, teeth, lips = compute_alligator(df["close"])
+            df["alligator_jaw"] = jaw
+            df["alligator_teeth"] = teeth
+            df["alligator_lips"] = lips
+
+    # Supertrend+Volume — ensure supertrend columns are present when enabled
+    if _sigs.get("supertrend_volume", {}).get("enabled", False):
+        if "supertrend_dir" not in df.columns:
+            st_mult = config.get("supertrend_multiplier", 2.0)
+            st_atr_period = config.get("supertrend_atr_period", 14)
+            st, st_dir = compute_supertrend(df["high"], df["low"], df["close"], st_atr_period, st_mult)
+            df["supertrend"] = st
+            df["supertrend_dir"] = st_dir
 
     logger.info("indicators_computed", extra={"rows": len(df)})
     return df
@@ -597,6 +704,242 @@ def add_price_action_patterns(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         },
     )
     return df
+
+
+def compute_alligator(
+    close: pd.Series,
+) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Compute Williams Alligator: Jaw(13,8), Teeth(8,5), Lips(5,3).
+
+    Uses Smoothed Moving Averages (SMMA) then shifts each line forward
+    to model the "sleeping alligator" displacement.
+
+    Returns:
+        Tuple of (jaw, teeth, lips) — each a pd.Series aligned to close.index.
+        jaw   — 13-period SMMA shifted forward 8 bars (Blue line)
+        teeth — 8-period SMMA shifted forward 5 bars (Red line)
+        lips  — 5-period SMMA shifted forward 3 bars (Green line)
+    """
+
+    def smma(series: pd.Series, period: int) -> pd.Series:
+        """Smoothed Moving Average (Wilder's MA)."""
+        result = pd.Series(np.nan, index=series.index, dtype=float)
+        if len(series) < period:
+            return result
+        result.iloc[period - 1] = series.iloc[:period].mean()
+        for i in range(period, len(series)):
+            result.iloc[i] = (result.iloc[i - 1] * (period - 1) + series.iloc[i]) / period
+        return result
+
+    jaw = smma(close, 13).shift(8)
+    teeth = smma(close, 8).shift(5)
+    lips = smma(close, 5).shift(3)
+    return jaw, teeth, lips
+
+
+def compute_dual_supertrend(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    fast_period: int = 7,
+    fast_mult: float = 2.0,
+    slow_period: int = 14,
+    slow_mult: float = 3.0,
+) -> tuple[pd.Series, pd.Series]:
+    """Compute dual Supertrend directions (fast and slow).
+
+    Uses the existing compute_supertrend for each band pair.
+
+    Args:
+        high: High price series.
+        low: Low price series.
+        close: Close price series.
+        fast_period: ATR period for fast Supertrend (default 7).
+        fast_mult: Multiplier for fast Supertrend (default 2.0).
+        slow_period: ATR period for slow Supertrend (default 14).
+        slow_mult: Multiplier for slow Supertrend (default 3.0).
+
+    Returns:
+        Tuple of (fast_dir, slow_dir) where 1=bullish, -1=bearish.
+    """
+    _, fast_dir = compute_supertrend(high, low, close, fast_period, fast_mult)
+    _, slow_dir = compute_supertrend(high, low, close, slow_period, slow_mult)
+    return fast_dir, slow_dir
+
+
+def compute_adx_di(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    period: int = 14,
+) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Compute ADX, DI+, and DI- using Wilder's smoothing.
+
+    +DM = max(high - prev_high, 0) if high - prev_high > prev_low - low, else 0
+    -DM = max(prev_low - low, 0) if prev_low - low > high - prev_high, else 0
+    TR  = max(high-low, |high-prev_close|, |low-prev_close|)
+    DI+ = 100 * smoothed(+DM) / smoothed(TR)
+    DI- = 100 * smoothed(-DM) / smoothed(TR)
+    DX  = 100 * |DI+ - DI-| / (DI+ + DI-)
+    ADX = Wilder smooth of DX
+
+    Wilder smoothing: first value = rolling sum of `period` bars;
+    subsequent values = prev * (period-1)/period + current.
+
+    Args:
+        high: High price series.
+        low: Low price series.
+        close: Close price series.
+        period: Smoothing period (default 14).
+
+    Returns:
+        Tuple of (adx, di_plus, di_minus) as pd.Series.
+    """
+    n = len(close)
+    prev_high = high.shift(1)
+    prev_low = low.shift(1)
+    prev_close = close.shift(1)
+
+    up_move = high - prev_high
+    down_move = prev_low - low
+
+    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+
+    tr1 = high - low
+    tr2 = (high - prev_close).abs()
+    tr3 = (low - prev_close).abs()
+    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+    plus_dm_s = pd.Series(plus_dm, index=close.index, dtype=float)
+    minus_dm_s = pd.Series(minus_dm, index=close.index, dtype=float)
+
+    # Wilder smoothing via ewm with alpha = 1/period (adjust=False)
+    # This is equivalent to: first = sum of first `period` values;
+    # then prev * (period-1)/period + current.
+    smoothed_tr = true_range.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean() * period
+    smoothed_plus = plus_dm_s.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean() * period
+    smoothed_minus = minus_dm_s.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean() * period
+
+    di_plus = 100.0 * smoothed_plus / smoothed_tr.replace(0, np.nan)
+    di_minus = 100.0 * smoothed_minus / smoothed_tr.replace(0, np.nan)
+
+    dx_num = (di_plus - di_minus).abs()
+    dx_denom = (di_plus + di_minus).replace(0, np.nan)
+    dx = 100.0 * dx_num / dx_denom
+
+    adx = dx.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
+
+    return adx, di_plus.fillna(0.0), di_minus.fillna(0.0)
+
+
+def compute_choppiness(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    period: int = 14,
+) -> pd.Series:
+    """Compute Choppiness Index.
+
+    CI = 100 * log10(sum of 1-period ATR over `period` bars / (HH - LL)) / log10(period)
+    CI < 38.2 = trending (directional), CI > 61.8 = ranging (choppy).
+
+    Args:
+        high: High price series.
+        low: Low price series.
+        close: Close price series.
+        period: Lookback period (default 14).
+
+    Returns:
+        Choppiness index series (bounded [0, 100]).
+    """
+    prev_close = close.shift(1)
+    tr1 = high - low
+    tr2 = (high - prev_close).abs()
+    tr3 = (low - prev_close).abs()
+    atr1 = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+    sum_atr = atr1.rolling(window=period).sum()
+    hh = high.rolling(window=period).max()
+    ll = low.rolling(window=period).min()
+    range_hl = (hh - ll).replace(0, np.nan)
+
+    ci = 100.0 * np.log10(sum_atr / range_hl) / np.log10(period)
+    return ci.clip(0.0, 100.0)
+
+
+def compute_williams_r(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    period: int = 14,
+) -> pd.Series:
+    """Compute Williams %R oscillator.
+
+    WR = -100 * (HH - close) / (HH - LL)
+    Range: -100 (most oversold) to 0 (most overbought).
+    -80 to -100 = oversold zone, 0 to -20 = overbought zone.
+
+    Args:
+        high: High price series.
+        low: Low price series.
+        close: Close price series.
+        period: Lookback period (default 14).
+
+    Returns:
+        Williams %R series (range [-100, 0]).
+    """
+    hh = high.rolling(window=period).max()
+    ll = low.rolling(window=period).min()
+    wr = -100.0 * (hh - close) / (hh - ll).replace(0, np.nan)
+    return wr.clip(-100.0, 0.0)
+
+
+def compute_roc(close: pd.Series, period: int = 10) -> pd.Series:
+    """Compute Rate of Change (momentum).
+
+    ROC = (close - close_n_bars_ago) / close_n_bars_ago * 100
+
+    Args:
+        close: Close price series.
+        period: Lookback period (default 10).
+
+    Returns:
+        ROC series as percentage.
+    """
+    prev_close = close.shift(period)
+    return (close - prev_close) / prev_close.replace(0, np.nan) * 100.0
+
+
+def compute_stochastic(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    k_period: int = 14,
+    d_period: int = 3,
+) -> tuple[pd.Series, pd.Series]:
+    """Compute Stochastic Oscillator (%K and %D).
+
+    %K = 100 * (close - LL) / (HH - LL)
+    %D = SMA(%K, d_period)
+    %K < 20 = oversold, %K > 80 = overbought.
+
+    Args:
+        high: High price series.
+        low: Low price series.
+        close: Close price series.
+        k_period: Lookback period for %K (default 14).
+        d_period: Smoothing period for %D (default 3).
+
+    Returns:
+        Tuple of (stoch_k, stoch_d) series (range [0, 100]).
+    """
+    ll = low.rolling(window=k_period).min()
+    hh = high.rolling(window=k_period).max()
+    k = 100.0 * (close - ll) / (hh - ll).replace(0, np.nan)
+    k = k.clip(0.0, 100.0)
+    d = k.rolling(window=d_period).mean()
+    return k, d
 
 
 def add_funding_rate(

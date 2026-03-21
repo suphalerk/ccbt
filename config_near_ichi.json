@@ -1,9 +1,9 @@
 {
-  "_comment": "NEAR Ichimoku 1H — verified PF 1.84, Sharpe 1.03, DD 7.6%, 13 trades/yr (2yr backtest)",
+  "_comment": "NEAR \u2014 upgraded to EMA+Ichi 4H, engine verified PF 4.06 (was Ichi 1H PF 1.82)",
   "exchange": "binance",
   "symbol": "NEARUSDT",
-  "timeframe_signal": "1h",
-  "timeframe_trend": "1h",
+  "timeframe_signal": "4h",
+  "timeframe_trend": "4h",
   "leverage": 25,
   "risk_per_trade": 0.02,
   "max_daily_loss": 0.3,
@@ -19,10 +19,10 @@
   "rsi_min": 45,
   "rsi_max": 65,
   "atr_period": 14,
-  "atr_sl_mult": 2.5,
-  "atr_tp_mult": 5.0,
-  "atr_trail_mult": 3.75,
-  "atr_trail_mult_trending": 3.75,
+  "atr_sl_mult": 1.5,
+  "atr_tp_mult": 4.0,
+  "atr_trail_mult": 2.0,
+  "atr_trail_mult_trending": 2.0,
   "atr_trail_mult_ranging": 2.5,
   "atr_trail_mult_volatile": 5.0,
   "atr_min": 0.0,
@@ -67,15 +67,54 @@
     "log_overrides": true
   },
   "signals": {
-    "ema_crossover": {"enabled": false},
-    "ema_fast_crossover": {"enabled": false},
-    "ema_pullback": {"enabled": false},
-    "rsi_divergence": {"enabled": false},
-    "bb_breakout": {"enabled": false},
-    "mean_reversion": {"enabled": false},
-    "body_dominance": {"enabled": false},
-    "squeeze_release": {"enabled": false},
-    "ichimoku_cloud": {"enabled": true}
+    "ema_crossover": {
+      "enabled": false
+    },
+    "ema_fast_crossover": {
+      "enabled": false
+    },
+    "ema_pullback": {
+      "enabled": false
+    },
+    "rsi_divergence": {
+      "enabled": false
+    },
+    "bb_breakout": {
+      "enabled": false
+    },
+    "mean_reversion": {
+      "enabled": false
+    },
+    "body_dominance": {
+      "enabled": false
+    },
+    "squeeze_release": {
+      "enabled": false
+    },
+    "ichimoku_cloud": {
+      "enabled": false
+    },
+    "supertrend": {
+      "enabled": false
+    },
+    "vol_expansion": {
+      "enabled": false
+    },
+    "dual_supertrend": {
+      "enabled": false
+    },
+    "alligator": {
+      "enabled": false
+    },
+    "ema_ichimoku_hybrid": {
+      "enabled": true
+    },
+    "ichi_supertrend": {
+      "enabled": false
+    },
+    "volexp_supertrend": {
+      "enabled": false
+    }
   },
   "body_dominance_min_body": 0.65,
   "body_dominance_min_mom": 0.02,
@@ -95,10 +134,18 @@
   "bb_volume_mult": 1.2,
   "swing_lookback": 5,
   "divergence_lookback": 20,
-  "adaptive_sizing": {"enabled": false},
-  "pyramiding": {"enabled": false},
-  "mtd_accelerator": {"enabled": false},
-  "signal_scorer": {"enabled": false},
+  "adaptive_sizing": {
+    "enabled": false
+  },
+  "pyramiding": {
+    "enabled": false
+  },
+  "mtd_accelerator": {
+    "enabled": false
+  },
+  "signal_scorer": {
+    "enabled": false
+  },
   "ai_layer": {
     "enabled": false,
     "mode": "advisor",

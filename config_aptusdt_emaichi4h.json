@@ -1,7 +1,7 @@
 {
-  "_comment": "ZETA \u2014 upgraded to EMA+Ichi 4H, engine verified PF 3.96 (was Ichi 1H PF 1.41)",
+  "_comment": "APT \u2014 engine verified PF 8.17",
   "exchange": "binance",
-  "symbol": "ZETAUSDT",
+  "symbol": "APTUSDT",
   "timeframe_signal": "4h",
   "timeframe_trend": "4h",
   "leverage": 25,

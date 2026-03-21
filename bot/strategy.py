@@ -970,6 +970,764 @@ def check_vol_expansion_conditions(
     return False
 
 
+def check_dual_supertrend_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Dual Supertrend entry conditions.
+
+    LONG:  Fast Supertrend flips to bullish (prev -1 → now 1) AND slow is bullish (1).
+    SHORT: Fast Supertrend flips to bearish (prev 1 → now -1) AND slow is bearish (-1).
+
+    Requires dst_fast_dir and dst_slow_dir columns (added by add_indicators when
+    dual_supertrend signal is enabled).
+
+    Args:
+        row: Current candle row with dual supertrend columns.
+        prev_row: Previous candle row (for fast direction flip detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if dual supertrend conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("dual_supertrend", {}).get("enabled", False):
+        return False
+
+    fast_dir = row.get("dst_fast_dir", 0)
+    prev_fast_dir = prev_row.get("dst_fast_dir", 0)
+    slow_dir = row.get("dst_slow_dir", 0)
+
+    if pd.isna(fast_dir) or pd.isna(prev_fast_dir) or pd.isna(slow_dir):
+        return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(row.get("atr")) or row["atr"] < atr_min:
+        return False
+
+    if signal_type == SignalType.LONG:
+        # Fast flips to bullish AND slow already bullish
+        return int(prev_fast_dir) <= 0 and int(fast_dir) > 0 and int(slow_dir) > 0
+    elif signal_type == SignalType.SHORT:
+        # Fast flips to bearish AND slow already bearish
+        return int(prev_fast_dir) >= 0 and int(fast_dir) < 0 and int(slow_dir) < 0
+
+    return False
+
+
+def check_alligator_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Williams Alligator entry conditions.
+
+    LONG:  Lips crosses above Teeth (prev lips <= teeth, now lips > teeth)
+           AND Teeth > Jaw (alligator opening upward)
+           AND close > Lips (price above alligator).
+    SHORT: Lips crosses below Teeth (prev lips >= teeth, now lips < teeth)
+           AND Teeth < Jaw (alligator opening downward)
+           AND close < Lips (price below alligator).
+
+    Requires alligator_jaw, alligator_teeth, alligator_lips columns (added by
+    add_indicators when alligator signal is enabled).
+
+    Args:
+        row: Current candle row with alligator columns.
+        prev_row: Previous candle row (for lips/teeth crossover detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if alligator conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("alligator", {}).get("enabled", False):
+        return False
+
+    jaw = row.get("alligator_jaw")
+    teeth = row.get("alligator_teeth")
+    lips = row.get("alligator_lips")
+    prev_teeth = prev_row.get("alligator_teeth")
+    prev_lips = prev_row.get("alligator_lips")
+    close = row.get("close")
+
+    for val in (jaw, teeth, lips, prev_teeth, prev_lips, close):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(row.get("atr")) or row["atr"] < atr_min:
+        return False
+
+    if signal_type == SignalType.LONG:
+        lips_crosses_above = prev_lips <= prev_teeth and lips > teeth
+        teeth_above_jaw = teeth > jaw
+        price_above_lips = close > lips
+        return lips_crosses_above and teeth_above_jaw and price_above_lips
+
+    elif signal_type == SignalType.SHORT:
+        lips_crosses_below = prev_lips >= prev_teeth and lips < teeth
+        teeth_below_jaw = teeth < jaw
+        price_below_lips = close < lips
+        return lips_crosses_below and teeth_below_jaw and price_below_lips
+
+    return False
+
+
+def check_ema_ichimoku_hybrid_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check EMA + Ichimoku hybrid entry conditions.
+
+    LONG:  EMA(fast) crosses above EMA(slow) AND close > cloud_top.
+    SHORT: EMA(fast) crosses below EMA(slow) AND close < cloud_bottom.
+
+    Combines EMA crossover momentum with Ichimoku cloud trend confirmation.
+    Requires ema_fast, ema_slow, cloud_top, cloud_bottom columns.
+
+    Args:
+        row: Current candle row with EMA and Ichimoku columns.
+        prev_row: Previous candle row (for EMA crossover detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if EMA+Ichimoku hybrid conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("ema_ichimoku_hybrid", {}).get("enabled", False):
+        return False
+
+    ema_fast = row.get("ema_fast")
+    ema_slow = row.get("ema_slow")
+    prev_ema_fast = prev_row.get("ema_fast")
+    prev_ema_slow = prev_row.get("ema_slow")
+    cloud_top = row.get("cloud_top")
+    cloud_bottom = row.get("cloud_bottom")
+    close = row.get("close")
+
+    for val in (ema_fast, ema_slow, prev_ema_fast, prev_ema_slow, cloud_top, cloud_bottom, close):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(row.get("atr")) or row["atr"] < atr_min:
+        return False
+
+    if signal_type == SignalType.LONG:
+        ema_cross_up = ema_fast > ema_slow and prev_ema_fast <= prev_ema_slow
+        above_cloud = close > cloud_top
+        return ema_cross_up and above_cloud
+
+    elif signal_type == SignalType.SHORT:
+        ema_cross_down = ema_fast < ema_slow and prev_ema_fast >= prev_ema_slow
+        below_cloud = close < cloud_bottom
+        return ema_cross_down and below_cloud
+
+    return False
+
+
+def check_ichi_supertrend_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Ichimoku + Supertrend confluence entry conditions.
+
+    LONG:  Supertrend flips to bullish (prev -1 → now 1) AND close > cloud_top.
+    SHORT: Supertrend flips to bearish (prev 1 → now -1) AND close < cloud_bottom.
+
+    Requires supertrend_dir, cloud_top, cloud_bottom columns.
+    The Supertrend flip provides the trigger; the Ichimoku cloud provides the
+    trend filter — both must agree for a valid signal.
+
+    Args:
+        row: Current candle row with supertrend and Ichimoku columns.
+        prev_row: Previous candle row (for supertrend flip detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if Ichimoku + Supertrend conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("ichi_supertrend", {}).get("enabled", False):
+        return False
+
+    curr_dir = row.get("supertrend_dir", 0)
+    prev_dir = prev_row.get("supertrend_dir", 0)
+    cloud_top = row.get("cloud_top")
+    cloud_bottom = row.get("cloud_bottom")
+    close = row.get("close")
+
+    for val in (curr_dir, prev_dir, cloud_top, cloud_bottom, close):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(row.get("atr")) or row["atr"] < atr_min:
+        return False
+
+    if signal_type == SignalType.LONG:
+        st_flip_bull = int(prev_dir) <= 0 and int(curr_dir) > 0
+        above_cloud = close > cloud_top
+        return st_flip_bull and above_cloud
+
+    elif signal_type == SignalType.SHORT:
+        st_flip_bear = int(prev_dir) >= 0 and int(curr_dir) < 0
+        below_cloud = close < cloud_bottom
+        return st_flip_bear and below_cloud
+
+    return False
+
+
+def check_volexp_supertrend_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Vol Expansion + Supertrend confluence entry conditions.
+
+    LONG:  Volatility expanding AND price broke above recent high AND Supertrend bullish.
+    SHORT: Volatility expanding AND price broke below recent low AND Supertrend bearish.
+
+    Uses the previous closed candle (prev_row) for vol expansion signals to avoid
+    look-ahead bias — consistent with how check_vol_expansion_conditions works.
+    Requires vol_expanding, vol_break_high, vol_break_low, supertrend_dir columns.
+
+    Args:
+        row: Current candle row (unused, kept for consistent interface).
+        prev_row: Previous closed candle with vol expansion and supertrend columns.
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if Vol Expansion + Supertrend conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("volexp_supertrend", {}).get("enabled", False):
+        return False
+
+    for col in ("vol_expanding", "vol_break_high", "vol_break_low", "supertrend_dir", "atr"):
+        val = prev_row.get(col)
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    if not prev_row.get("vol_expanding", False):
+        return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(prev_row.get("atr")) or prev_row["atr"] < atr_min:
+        return False
+
+    st_dir = int(prev_row.get("supertrend_dir", 0))
+
+    if signal_type == SignalType.LONG:
+        return bool(prev_row.get("vol_break_high", False)) and st_dir > 0
+
+    elif signal_type == SignalType.SHORT:
+        return bool(prev_row.get("vol_break_low", False)) and st_dir < 0
+
+    return False
+
+
+def check_adx_di_cross_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check ADX + DI crossover entry conditions.
+
+    LONG:  DI+ crosses above DI- AND ADX > 20 AND ADX is rising (> prev ADX).
+    SHORT: DI- crosses above DI+ AND ADX > 20 AND ADX is rising.
+
+    Requires adx, di_plus, di_minus columns (added by add_indicators when
+    adx_di_cross signal is enabled in config).
+
+    Args:
+        row: Current candle row with ADX/DI columns.
+        prev_row: Previous candle row (for crossover detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if ADX+DI conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("adx_di_cross", {}).get("enabled", False):
+        return False
+
+    adx = row.get("adx")
+    prev_adx = prev_row.get("adx")
+    di_plus = row.get("di_plus")
+    di_minus = row.get("di_minus")
+    prev_di_plus = prev_row.get("di_plus")
+    prev_di_minus = prev_row.get("di_minus")
+
+    for val in (adx, prev_adx, di_plus, di_minus, prev_di_plus, prev_di_minus):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(row.get("atr")) or row["atr"] < atr_min:
+        return False
+
+    adx_threshold = config.get("adx_di_threshold", 20.0)
+    if float(adx) <= adx_threshold:
+        return False
+    # ADX must be rising
+    if float(adx) <= float(prev_adx):
+        return False
+
+    if signal_type == SignalType.LONG:
+        # DI+ crosses above DI-
+        di_cross_up = float(di_plus) > float(di_minus) and float(prev_di_plus) <= float(prev_di_minus)
+        return di_cross_up
+
+    elif signal_type == SignalType.SHORT:
+        # DI- crosses above DI+
+        di_cross_down = float(di_minus) > float(di_plus) and float(prev_di_minus) <= float(prev_di_plus)
+        return di_cross_down
+
+    return False
+
+
+def check_choppiness_ema_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Choppiness Index + EMA crossover entry conditions.
+
+    LONG:  CI < trending_threshold AND EMA(fast) crosses above EMA(slow).
+    SHORT: CI < trending_threshold AND EMA(fast) crosses below EMA(slow).
+
+    A low CI value confirms the market is in a trend (not choppy), filtering
+    out false EMA crossovers in ranging conditions.
+
+    Requires choppiness, ema_fast, ema_slow columns.
+
+    Args:
+        row: Current candle row with choppiness and EMA columns.
+        prev_row: Previous candle row (for EMA crossover detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if Choppiness+EMA conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("choppiness_ema", {}).get("enabled", False):
+        return False
+
+    ci = row.get("choppiness")
+    ema_fast = row.get("ema_fast")
+    ema_slow = row.get("ema_slow")
+    prev_ema_fast = prev_row.get("ema_fast")
+    prev_ema_slow = prev_row.get("ema_slow")
+
+    for val in (ci, ema_fast, ema_slow, prev_ema_fast, prev_ema_slow):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(row.get("atr")) or row["atr"] < atr_min:
+        return False
+
+    # CI < threshold confirms trending (non-choppy) market
+    ci_trend_threshold = config.get("choppiness_trend_threshold", 38.2)
+    if float(ci) >= ci_trend_threshold:
+        return False
+
+    if signal_type == SignalType.LONG:
+        # EMA fast crosses above EMA slow
+        cross_up = float(ema_fast) > float(ema_slow) and float(prev_ema_fast) <= float(prev_ema_slow)
+        return cross_up
+
+    elif signal_type == SignalType.SHORT:
+        # EMA fast crosses below EMA slow
+        cross_down = float(ema_fast) < float(ema_slow) and float(prev_ema_fast) >= float(prev_ema_slow)
+        return cross_down
+
+    return False
+
+
+def check_williams_r_adx_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Williams %R + ADX entry conditions.
+
+    LONG:  Williams %R crosses above oversold level (-80) AND ADX > 25
+           AND close > EMA(50) trend filter.
+    SHORT: Williams %R crosses below overbought level (-20) AND ADX > 25
+           AND close < EMA(50) trend filter.
+
+    Requires williams_r, adx, ema50 columns.
+
+    Args:
+        row: Current candle row with Williams %R, ADX, EMA50 columns.
+        prev_row: Previous candle row (for Williams %R crossover detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if Williams %R + ADX conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("williams_r_adx", {}).get("enabled", False):
+        return False
+
+    wr = row.get("williams_r")
+    prev_wr = prev_row.get("williams_r")
+    adx = row.get("adx")
+
+    for val in (wr, prev_wr, adx):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(row.get("atr")) or row["atr"] < atr_min:
+        return False
+
+    adx_threshold = config.get("williams_r_adx_threshold", 25.0)
+    if float(adx) <= adx_threshold:
+        return False
+
+    # EMA(50) trend filter
+    ema50 = row.get("ema_trend", row.get("ema_trend_1h", row.get("ema50")))
+    if ema50 is None or (isinstance(ema50, float) and pd.isna(ema50)):
+        return False
+
+    oversold_level = config.get("williams_r_oversold", -80.0)
+    overbought_level = config.get("williams_r_overbought", -20.0)
+
+    if signal_type == SignalType.LONG:
+        # WR crosses above oversold (from below -80 to above -80)
+        wr_cross_up = float(wr) > oversold_level and float(prev_wr) <= oversold_level
+        if not wr_cross_up:
+            return False
+        # Trend filter: close above EMA(50)
+        if row.get("close", 0) <= float(ema50):
+            return False
+        return True
+
+    elif signal_type == SignalType.SHORT:
+        # WR crosses below overbought (from above -20 to below -20)
+        wr_cross_down = float(wr) < overbought_level and float(prev_wr) >= overbought_level
+        if not wr_cross_down:
+            return False
+        # Trend filter: close below EMA(50)
+        if row.get("close", 0) >= float(ema50):
+            return False
+        return True
+
+    return False
+
+
+def check_roc_momentum_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check ROC (Rate of Change) momentum zero-cross entry conditions.
+
+    LONG:  ROC crosses above 0 AND close > EMA(50) trend filter.
+    SHORT: ROC crosses below 0 AND close < EMA(50) trend filter.
+
+    Requires roc, ema50 columns.
+
+    Args:
+        row: Current candle row with ROC and EMA50 columns.
+        prev_row: Previous candle row (for ROC zero-cross detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if ROC momentum conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("roc_momentum", {}).get("enabled", False):
+        return False
+
+    roc = row.get("roc")
+    prev_roc = prev_row.get("roc")
+
+    for val in (roc, prev_roc):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(row.get("atr")) or row["atr"] < atr_min:
+        return False
+
+    # EMA(50) trend filter
+    ema50 = row.get("ema_trend", row.get("ema_trend_1h", row.get("ema50")))
+    if ema50 is None or (isinstance(ema50, float) and pd.isna(ema50)):
+        return False
+
+    if signal_type == SignalType.LONG:
+        # ROC crosses above zero
+        roc_cross_up = float(roc) > 0.0 and float(prev_roc) <= 0.0
+        if not roc_cross_up:
+            return False
+        if row.get("close", 0) <= float(ema50):
+            return False
+        return True
+
+    elif signal_type == SignalType.SHORT:
+        # ROC crosses below zero
+        roc_cross_down = float(roc) < 0.0 and float(prev_roc) >= 0.0
+        if not roc_cross_down:
+            return False
+        if row.get("close", 0) >= float(ema50):
+            return False
+        return True
+
+    return False
+
+
+def check_stoch_supertrend_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Stochastic + Supertrend entry conditions.
+
+    LONG:  Stochastic %K crosses above %D in oversold zone (K < 20)
+           AND Supertrend direction is bullish (1).
+    SHORT: Stochastic %K crosses below %D in overbought zone (K > 80)
+           AND Supertrend direction is bearish (-1).
+
+    Requires stoch_k, stoch_d, supertrend_dir columns.
+
+    Args:
+        row: Current candle row with stochastic and supertrend columns.
+        prev_row: Previous candle row (for stochastic crossover detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if Stochastic + Supertrend conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("stoch_supertrend", {}).get("enabled", False):
+        return False
+
+    k = row.get("stoch_k")
+    d = row.get("stoch_d")
+    prev_k = prev_row.get("stoch_k")
+    prev_d = prev_row.get("stoch_d")
+    st_dir = row.get("supertrend_dir")
+
+    for val in (k, d, prev_k, prev_d, st_dir):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(row.get("atr")) or row["atr"] < atr_min:
+        return False
+
+    oversold = config.get("stoch_oversold", 20.0)
+    overbought = config.get("stoch_overbought", 80.0)
+
+    if signal_type == SignalType.LONG:
+        # K crosses above D in oversold territory
+        k_cross_up = float(k) > float(d) and float(prev_k) <= float(prev_d)
+        in_oversold = float(k) < oversold
+        st_bullish = int(st_dir) > 0
+        return k_cross_up and in_oversold and st_bullish
+
+    elif signal_type == SignalType.SHORT:
+        # K crosses below D in overbought territory
+        k_cross_down = float(k) < float(d) and float(prev_k) >= float(prev_d)
+        in_overbought = float(k) > overbought
+        st_bearish = int(st_dir) < 0
+        return k_cross_down and in_overbought and st_bearish
+
+    return False
+
+
+def check_price_channel_vol_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Price Channel breakout + volume spike entry conditions.
+
+    LONG:  Close > highest high of last N bars (pre-shifted to avoid look-ahead)
+           AND volume > 2 × volume MA(20).
+    SHORT: Close < lowest low of last N bars (pre-shifted)
+           AND volume > 2 × volume MA(20).
+
+    Requires price_channel_high, price_channel_low, volume_ma columns.
+
+    Args:
+        row: Current candle row (unused — uses prev_row to avoid look-ahead).
+        prev_row: Previous closed candle with price channel columns.
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if Price Channel + volume conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("price_channel_vol", {}).get("enabled", False):
+        return False
+
+    pc_high = prev_row.get("price_channel_high")
+    pc_low = prev_row.get("price_channel_low")
+    close = prev_row.get("close")
+    vol = prev_row.get("volume")
+    vol_ma = prev_row.get("volume_ma")
+
+    for val in (pc_high, pc_low, close, vol, vol_ma):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    if float(vol_ma) <= 0:
+        return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(prev_row.get("atr")) or prev_row["atr"] < atr_min:
+        return False
+
+    pc_vol_mult = config.get("price_channel_vol_mult", 2.0)
+    if float(vol) < float(vol_ma) * pc_vol_mult:
+        return False
+
+    if signal_type == SignalType.LONG:
+        return float(close) > float(pc_high)
+
+    elif signal_type == SignalType.SHORT:
+        return float(close) < float(pc_low)
+
+    return False
+
+
+def check_ema_alligator_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check EMA crossover + Williams Alligator alignment entry conditions.
+
+    LONG:  EMA(fast) crosses above EMA(slow) AND lips > teeth > jaw
+           (alligator fully open upward = trend confirmed).
+    SHORT: EMA(fast) crosses below EMA(slow) AND lips < teeth < jaw
+           (alligator fully open downward = trend confirmed).
+
+    Requires ema_fast, ema_slow, alligator_jaw, alligator_teeth, alligator_lips columns.
+
+    Args:
+        row: Current candle row with EMA and alligator columns.
+        prev_row: Previous candle row (for EMA crossover detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if EMA+Alligator conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("ema_alligator", {}).get("enabled", False):
+        return False
+
+    ema_fast = row.get("ema_fast")
+    ema_slow = row.get("ema_slow")
+    prev_ema_fast = prev_row.get("ema_fast")
+    prev_ema_slow = prev_row.get("ema_slow")
+    jaw = row.get("alligator_jaw")
+    teeth = row.get("alligator_teeth")
+    lips = row.get("alligator_lips")
+
+    for val in (ema_fast, ema_slow, prev_ema_fast, prev_ema_slow, jaw, teeth, lips):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(row.get("atr")) or row["atr"] < atr_min:
+        return False
+
+    if signal_type == SignalType.LONG:
+        ema_cross_up = float(ema_fast) > float(ema_slow) and float(prev_ema_fast) <= float(prev_ema_slow)
+        alligator_bullish = float(lips) > float(teeth) > float(jaw)
+        return ema_cross_up and alligator_bullish
+
+    elif signal_type == SignalType.SHORT:
+        ema_cross_down = float(ema_fast) < float(ema_slow) and float(prev_ema_fast) >= float(prev_ema_slow)
+        alligator_bearish = float(lips) < float(teeth) < float(jaw)
+        return ema_cross_down and alligator_bearish
+
+    return False
+
+
+def check_supertrend_volume_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Supertrend direction flip + volume spike entry conditions.
+
+    LONG:  Supertrend flips to bullish (prev -1 → now 1)
+           AND volume > 2 × volume MA(20).
+    SHORT: Supertrend flips to bearish (prev 1 → now -1)
+           AND volume > 2 × volume MA(20).
+
+    The volume spike confirms that the trend flip is accompanied by real
+    buying/selling pressure (not a low-conviction noise flip).
+
+    Requires supertrend_dir, volume_ma columns.
+
+    Args:
+        row: Current candle row with supertrend and volume columns.
+        prev_row: Previous candle row (for direction flip detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if Supertrend + volume conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("supertrend_volume", {}).get("enabled", False):
+        return False
+
+    curr_dir = row.get("supertrend_dir")
+    prev_dir = prev_row.get("supertrend_dir")
+    vol = row.get("volume")
+    vol_ma = row.get("volume_ma")
+
+    for val in (curr_dir, prev_dir, vol, vol_ma):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    if float(vol_ma) <= 0:
+        return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(row.get("atr")) or row["atr"] < atr_min:
+        return False
+
+    st_vol_mult = config.get("supertrend_volume_mult", 2.0)
+    if float(vol) < float(vol_ma) * st_vol_mult:
+        return False
+
+    if signal_type == SignalType.LONG:
+        # Bearish → Bullish flip
+        return int(prev_dir) <= 0 and int(curr_dir) > 0
+
+    elif signal_type == SignalType.SHORT:
+        # Bullish → Bearish flip
+        return int(prev_dir) >= 0 and int(curr_dir) < 0
+
+    return False
+
+
 def compute_levels(
     entry_price: float, atr: float, signal_type: SignalType, config: dict
 ) -> tuple[float, float]:
@@ -1254,6 +2012,74 @@ def generate_signal(
                 },
             )
             return signal, df
+
+    # Dual Supertrend, Alligator, EMA+Ichimoku Hybrid, Ichi+Supertrend, VolExp+Supertrend:
+    # all require current row AND previous closed candle for flip/crossover detection.
+    if len(df) >= 3:
+        prev_row = df.iloc[-3]
+        new_signals: list[tuple[str, object]] = []
+        if signals_config.get("dual_supertrend", {}).get("enabled", False):
+            new_signals.append(("dual_supertrend", check_dual_supertrend_conditions))
+        if signals_config.get("alligator", {}).get("enabled", False):
+            new_signals.append(("alligator", check_alligator_conditions))
+        if signals_config.get("ema_ichimoku_hybrid", {}).get("enabled", False):
+            new_signals.append(("ema_ichimoku_hybrid", check_ema_ichimoku_hybrid_conditions))
+        if signals_config.get("ichi_supertrend", {}).get("enabled", False):
+            new_signals.append(("ichi_supertrend", check_ichi_supertrend_conditions))
+        if signals_config.get("volexp_supertrend", {}).get("enabled", False):
+            new_signals.append(("volexp_supertrend", check_volexp_supertrend_conditions))
+
+        for source, check_fn in new_signals:
+            for signal_type in (SignalType.LONG, SignalType.SHORT):
+                # volexp_supertrend uses prev_row as both row and prev_row (like vol_expansion)
+                if source == "volexp_supertrend":
+                    if not check_fn(row, prev_row, config, signal_type):
+                        continue
+                else:
+                    if not check_fn(row, prev_row, config, signal_type):
+                        continue
+
+                atr = row["atr"]
+                tp_mult = config.get("atr_tp_mult", 3.0)
+                tp_mult_effective = 100.0 if tp_mult == 0 else tp_mult
+                sl, tp = compute_levels(
+                    entry_price, atr, signal_type,
+                    {**config, "atr_tp_mult": tp_mult_effective},
+                )
+                min_rr_check = config.get("min_rr_ratio", 2.0)
+                if min_rr_check > 0:
+                    net_rr = compute_net_rr(entry_price, sl, tp, config)
+                    if net_rr < min_rr_check:
+                        continue
+                else:
+                    net_rr = 0.0
+
+                signal = TradeSignal(
+                    signal_type=signal_type,
+                    entry_price=entry_price,
+                    stop_loss=sl,
+                    take_profit=tp,
+                    atr=atr,
+                    rsi=row.get("rsi", 50.0) if not pd.isna(row.get("rsi", float("nan"))) else 50.0,
+                    risk_reward_ratio=net_rr,
+                    regime=regime,
+                    signal_source=source,
+                )
+                gross_rr = abs(tp - entry_price) / abs(entry_price - sl) if abs(entry_price - sl) > 0 else 0
+                logger.info(
+                    "signal_generated",
+                    extra={
+                        "type": signal_type.value,
+                        "source": source,
+                        "entry": entry_price,
+                        "sl": sl,
+                        "tp": tp,
+                        "gross_rr": round(gross_rr, 2),
+                        "net_rr": round(net_rr, 2),
+                        "rsi": round(signal.rsi, 2),
+                    },
+                )
+                return signal, df
 
     # RSI divergence needs DataFrame access — check separately
     if signals_config.get("rsi_divergence", {}).get("enabled", True):

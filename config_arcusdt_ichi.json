@@ -1,9 +1,9 @@
 {
-  "_comment": "ARC Ichimoku 1H \u2014 auto-generated from mass sweep, PF 1.89, 10 trades/yr",
+  "_comment": "ARC \u2014 upgraded to Alligator 4H, engine verified PF 3.15 (was Ichi 1H PF 1.81)",
   "exchange": "binance",
   "symbol": "ARCUSDT",
-  "timeframe_signal": "1h",
-  "timeframe_trend": "1h",
+  "timeframe_signal": "4h",
+  "timeframe_trend": "4h",
   "leverage": 25,
   "risk_per_trade": 0.01,
   "max_daily_loss": 0.3,
@@ -20,7 +20,7 @@
   "rsi_max": 65,
   "atr_period": 14,
   "atr_sl_mult": 2.0,
-  "atr_tp_mult": 5.0,
+  "atr_tp_mult": 4.0,
   "atr_trail_mult": 3.0,
   "atr_trail_mult_trending": 3.0,
   "atr_trail_mult_ranging": 2.0,
@@ -92,7 +92,28 @@
       "enabled": false
     },
     "ichimoku_cloud": {
+      "enabled": false
+    },
+    "supertrend": {
+      "enabled": false
+    },
+    "vol_expansion": {
+      "enabled": false
+    },
+    "dual_supertrend": {
+      "enabled": false
+    },
+    "alligator": {
       "enabled": true
+    },
+    "ema_ichimoku_hybrid": {
+      "enabled": false
+    },
+    "ichi_supertrend": {
+      "enabled": false
+    },
+    "volexp_supertrend": {
+      "enabled": false
     }
   },
   "body_dominance_min_body": 0.65,

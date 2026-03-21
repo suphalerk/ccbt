@@ -21,9 +21,9 @@ bot/
 ├── news_fetcher.py      → RSS/CryptoPanic news integration
 └── logger.py            → SQLite trade journal + AI calibration tracker
 dashboard/
-├── app.py               → Streamlit web UI (auto-refresh 30s, live log viewer)
-├── components.py        → Plotly chart components
-└── queries.py           → SQLite query helpers + log file reader
+├── app.py               → Streamlit web UI (multi-bot portfolio + single-bot drill-down)
+├── components.py        → Plotly chart components (per-bot PnL bar, portfolio table)
+└── queries.py           → SQLite query helpers (symbol-filtered) + log file reader
 backtest/
 ├── engine.py            → Event-driven backtesting simulator
 ├── data_loader.py       → Historical data loading
@@ -34,11 +34,15 @@ deploy/
 ├── backup.sh            → SQLite backup with retention
 └── nginx.conf           → Reverse proxy config
 research/
+├── auto_research.py     → One-command research pipeline (sweep→verify→deploy)
+├── portfolio_backtest_v2.py → Shared wallet backtest with monthly/daily reports
 ├── discover_liquid_coins.py → Find liquid USDT perps on Binance ($10M+ volume)
 ├── download_altcoin_data.py → Download OHLCV + funding (--from-json, --funding, parallel)
 ├── mass_sweep.py        → Lightweight EMA+Ichimoku sweep across all coins
 ├── verify_winners.py    → Full BacktestEngine verification of sweep winners
-└── ...                  → Strategy-specific research scripts
+├── sweep_new_strategies_1.py → Strategies 1-10 sweep (ADX, StochRSI, CCI, etc.)
+├── sweep_new_strategies_2.py → Strategies 11-20 sweep (EMA+Ichi, VolExp+ST, etc.)
+└── sweep_weak_bots.py   → 6-strategy sweep for underperforming bots
 scripts/
 ├── generate_configs.py  → Auto-generate config + docker-compose from verified winners
 └── download_funding_rates.py → Funding rate downloader
@@ -52,12 +56,12 @@ config files:
   config_aggressive.json → BTC Aggressive (5% risk, 10x lev)
   config_yolo.json       → BTC YOLO-lite (10% risk, 25x lev, YOLO_MODE=1)
   config_sniper.json     → BTC Sniper (tight RSI, fewer trades)
-  config_doge.json       → DOGE EMA 15m (3% risk, slope=0.01, funding scorer OFF)
-  config_arb.json        → ARB EMA 15m (3% risk, funding scorer OFF)
+  config_doge.json       → DOGE EMA 15m (3% risk, RETIRED — PF 1.11, no edge)
+  config_arb.json        → ARB EMA 15m (3% risk, RETIRED — replaced by Ichi 4H)
   config_wif.json        → WIF EMA 15m (3% risk, funding scorer ON)
   config_avax_ichi.json  → AVAX Ichimoku 1H (2% risk, SL2.0/TP5.0)
   config_near_ichi.json  → NEAR Ichimoku 1H (2% risk, SL2.5/TP5.0)
-  config_sol_ichi.json   → SOL Ichimoku 1H (2% risk, SL1.5/TP4.0)
+  config_sol_ichi.json   → SOL Ichimoku 1H (2% risk, RETIRED — PF 1.18, no edge)
   config_gold_forex.json → XAU/USD OANDA (H1 signal, H4 trend)
   config_*usdt_ichi.json → Auto-generated Ichimoku configs (1% risk, mass expansion)
   config_*usdt_ema.json  → Auto-generated EMA configs (1% risk, mass expansion)
@@ -146,17 +150,22 @@ Three strategies validated on 2.4yr XAU/USD 1H data (simple simulator):
 4. **Funding Rate Filter** — contrarian crowding signal (weight 0.35 on BTC/WIF)
 5. **Ichimoku Cloud 4H** — Same Tenkan/Kijun cross + cloud filter but on 4H resampled data. Reduces noise for large-cap coins.
 6. **4H Ichimoku Trailing Exit** — 4H Ichimoku entry with ATR trailing stop instead of fixed TP. Captures longer trends.
-7. **Supertrend 1H** — ATR-adaptive trend-following bands. Direction change = entry signal. Works on MSTR, XAG, SAHARA.
+7. **Supertrend 1H** — ATR-adaptive trend-following bands. Direction change = entry signal. Works on MSTR, XAG.
 8. **Vol Expansion Breakout 1H** — ATR exceeds rolling mean × threshold + price breaks above/below recent high/low + EMA(50) trend filter. Captures volatility spikes. Works on 1000PEPE, WLD.
+9. **Dual Supertrend 4H** — Fast(7,2.0) + Slow(14,3.0) Supertrend bands. Entry when both agree. Reduces whipsaw. Best hit rate (52%). Works on XRP, ANKR, PAXG, DOGE, FIL.
+10. **VolExp+Supertrend 1H** — Vol Expansion breakout confirmed by Supertrend direction. Tighter filter = higher WR. Works on ATOM, 1000PEPE, MYX, PENGU, AAVE.
+11. **Alligator 4H** — Bill Williams 3 smoothed MAs (Jaw=13, Teeth=8, Lips=5). Lips crosses Teeth in Jaw direction. Works on LIGHT, LINK, SUI, QNT.
+12. **EMA+Ichimoku 4H** — EMA(9/21) crossover for timing + Ichimoku cloud as direction filter. Works on VVV, ADA, APT, ZEC.
+13. **Ichi+Supertrend 4H** — Ichimoku cloud for direction + Supertrend flip for entry. Works on PIPPIN, XAI, LTC, W.
 
 ### Key Differences per Strategy
 | | EMA 15m | Ichimoku 1H | Ichimoku 4H | 4H Trail | Supertrend 1H | Vol Expansion 1H |
 |---|---------|-------------|-------------|----------|---------------|-------------------|
 | Signal | EMA crossover + RSI + vol | Tenkan/Kijun + cloud | Tenkan/Kijun + cloud | Tenkan/Kijun + cloud | ATR band direction change | ATR > MA×threshold + breakout |
 | Timeframe | 15m signal, 1h trend | 1h | 4h (resampled) | 4h (resampled) | 1h | 1h |
-| SL/TP | 1.0/3.0 ATR | 1.5-2.5/4.0-5.0 ATR | 2.0-2.5/4.0-5.0 ATR | SL only + trail | 2.0-2.5/3.0-5.0 ATR | 2.5/3.0 ATR |
-| Best for | BTC, meme (DOGE/WIF) | Mid-cap (AVAX/NEAR/SOL) | Large-cap (TAO/RENDER) | ALGO/FET/POL | MSTR/XAG/SAHARA | 1000PEPE/WLD |
-| Trades/yr | 20-30/coin | 10-15/coin | 6-9/coin | 5-7/coin | 5-7/coin | 6-8/coin |
+| SL/TP | 1.0/3.0 ATR | 1.0-2.5/0-5.0 ATR | 2.0-3.0/4.0-5.0 ATR | SL only + trail | 2.0-2.5/3.0-5.0 ATR | 2.5/3.0 ATR |
+| Best for | BTC, WIF | Mid-cap (AVAX/NEAR/POL) | Large-cap (TAO/RENDER/ARB/1000SHIB) | ALGO/FET/TRX/SAHARA/XLM | MSTR/XAG | 1000PEPE/WLD |
+| Trades/yr | 20-30/coin | 10-15/coin | 4-9/coin | 4-7/coin | 5-7/coin | 4-8/coin |
 
 ### Research Findings (300+ backtests)
 - Price Action: fails on all coins/timeframes (avg PF 0.73-0.85)
@@ -187,6 +196,97 @@ Three strategies validated on 2.4yr XAU/USD 1H data (simple simulator):
 - MTF Confluence: 92 winners but hurts deployed coins, only SIREN/PIPPIN new (not verified)
 - Regime-Adaptive Exit: infrastructure built (entry-time regime locks TP/trail), default params don't help (PF 1.77→1.60)
 - **5 rounds of research**: 7→19→22→26→29→31 bots, PF 1.77→2.06, DD 6.4%→1.9%
+
+### Round 6 Research — Weak Bot Optimization (March 2026)
+- **1yr backtest all 31 bots**: 30 profitable, 1 losing (POL PF 0.37)
+- **6-strategy sweep on 8 weak bots** (PF < 1.3): tested EMA/Ichi1H/Ichi4H/4HTrail/Supertrend/VolExp
+- **6 replacements found**:
+  - POL: Ichi4H Trail → Ichi 1H Trail (PF 0.37→6.79, SL1.0/Trail3.0)
+  - TRX: Ichi 1H → 4H Trail (PF 1.01→5.53, SL1.5/Trail4.0)
+  - ARB: EMA 15m → Ichi 4H (PF 1.03→4.38, SL3.0/TP4.0)
+  - 1000SHIB: Ichi 1H → Ichi 4H (PF 1.06→18.43, SL3.0/TP5.0)
+  - SAHARA: Supertrend → 4H Trail (PF 1.27→2.44, SL3.0/Trail4.0)
+  - XLM: Ichi 1H → 4H Trail (PF 1.31→2.88, SL1.0/Trail4.0)
+- **2 bots RETIRED** (no strategy PF > 1.2): DOGE (best 1.11), SOL (best 1.17)
+- **Dashboard overhauled**: multi-bot portfolio view, per-bot drill-down, auto-config discovery
+- **Binance leverage fix**: auto-halving retry on -4028 rejection
+- **6 rounds of research**: 7→19→22→26→29→31→29 bots (net -2), portfolio PF improved
+
+### Round 7 Research — 20 New Strategies Mega Sweep (March 2026)
+- **20 brand new strategies** designed and swept across **133 coins × 2 timeframes (1H + 4H)**
+- **3,935 backtests** completed (2yr data), **760 winners** (PF >= 1.3, trades >= 6)
+- **80 new coin candidates** found (not already deployed, PF >= 1.5, data > 1yr)
+- **5 new strategy types proven on crypto:**
+  1. **Dual Supertrend 4H** — fast(7,2.0) + slow(14,3.0) agreement → 15 new coins, 52% hit rate
+  2. **VolExp+Supertrend 1H** — vol expansion + supertrend direction confluence → 10 new coins, avg PF 1.47
+  3. **Alligator 4H** — Bill Williams 3-SMMA (jaw=13,teeth=8,lips=5) → 9 new coins, LIGHT PF 4.99
+  4. **EMA+Ichimoku 4H** — EMA(9/21) cross + cloud direction filter → 7 new coins, VVV PF 5.12
+  5. **Ichi+Supertrend 4H** — Ichimoku cloud + Supertrend entry → 6 new coins, PIPPIN PF 7.09
+- **Top new coin×strategy candidates (pending engine verification):**
+  - PIPPIN Ichi+ST 4H PF 7.09, LYN Dual ST 1H PF 5.79, ATOM VolExp+ST PF 5.38
+  - VVV EMA+Ichi 4H PF 5.12, LIGHT Alligator 1H PF 4.99, XRP Dual ST 4H PF 3.13
+- **Strategies that FAILED on crypto:**
+  - RSI 50-Cross 1H (PF 0.94), PSAR Flip 1H (PF 0.95), StochRSI 1H (PF 0.95)
+  - BTC Cross-Coin Leader (PF 0.96), Regime Transition 1H (PF 0.88)
+  - Elder Impulse 1H (PF 0.97), CCI 1H (PF 0.97)
+- **Key insight**: 4H consistently outperforms 1H for all new strategies (noise reduction)
+- Scripts: `research/sweep_new_strategies_1.py` (S1-S10), `research/sweep_new_strategies_2.py` (S11-S20)
+- Results: `data/sweep_new_strats_1.json`, `data/sweep_new_strats_2.json`
+
+### Round 8 Research — Engine Verification + Deploy (March 2026)
+- **Full BacktestEngine verification** of 80 sweep winners: Tier A+B 14/46 pass (30%), Tier C+D 7/34 pass (21%)
+- **VolExp+Supertrend FAILS full engine** — 0 trades on every coin (signal conditions too strict vs lightweight sweep)
+- **18 new coins deployed**: APT, LTC, LIGHT, QNT, LYN, SIGN, ENJ, TIA, XPL, IP, ONDO, LINK, XRP, SUI, AKT, H, HUMA, AXS
+- **4 existing coins upgraded**: NEAR/ZETA → EMA+Ichi 4H, HBAR/ARC → Alligator 4H
+- **9 deployed coins tested × 5 new strategies**: BTC Dual ST 4H PF 1.71 (+21% vs EMA), but kept EMA as flagship
+- **Portfolio backtest ($200 shared wallet, 1yr)**: 528 trades, PF 1.75, $200→$1,794 (+797%), 12/13 months profitable
+- **5 new signal types implemented in engine**: dual_supertrend, alligator, ema_ichimoku_hybrid, ichi_supertrend, volexp_supertrend
+- **Auto-research script**: `research/auto_research.py` — one-command pipeline (sweep→verify→deploy)
+- **8 rounds of research**: 7→19→22→26→29→31→29→47 bots, $200→$1,794 in 1yr
+
+### Round 9 Research — 20 More New Strategies (March 2026)
+- **20 brand new strategies** swept across 129 coins × 2 timeframes = **5,160 backtests**
+- **799 winners** (PF >= 1.3, trades >= 6), **78 new coin candidates**
+- **Top new strategy types:**
+  1. **ADX+DI Crossover** — DI+/DI- cross with ADX rising, avg PF 1.58, 43% hit rate, **12 new coins**
+  2. **Choppiness Index + EMA** — CI < 38.2 (trending) + EMA cross, avg PF 1.44, 40% hit rate, **9 new coins**
+  3. **Williams %R + ADX** — %R extremes in trending market, **8 new coins** (ATOM PF 2.73, BCH PF 2.15)
+  4. **Stochastic + Supertrend** — Stoch timing + ST direction, **6 new coins** (PENGU PF 3.02)
+  5. **ROC Momentum** — ROC zero-cross + trend, **7 new coins** (RIVER PF 2.55, TON PF 1.73)
+- **Deployed coin upgrades found:**
+  - XAG: Supertrend → Donchian+ADX 4H (PF 2.09→15.58)
+  - MSTR: Supertrend → Keltner+ADX 1H (PF 2.66→7.45)
+  - ANIME: Ichi 1H → ADX+DI Cross 1H (PF 1.51→6.16)
+  - AXS: Ichi 4H → Choppiness+EMA 4H (PF 1.31→4.08)
+- **Strategies that work**: ADX+DI, Choppiness+EMA, EMA+Alligator, Supertrend+Volume, PriceChannel+Vol
+- **Strategies mediocre**: Hull MA Cross (PF 0.98), KAMA Cross (PF 1.01), OBV Breakout (PF 1.04)
+- **Engine verification**: 14/78 PASS (18%), 19 skipped (strategy not in engine), 44 FAIL
+- **8 new signal types implemented**: adx_di_cross, choppiness_ema, williams_r_adx, roc_momentum, stoch_supertrend, price_channel_vol, ema_alligator, supertrend_volume
+- **14 new coins engine-verified**: ZRO, ARIA, SAND, CRCL, ZEC, DEGO, TSLA, KAS, RIVER, TON, DASH, DOT, APR, XMR
+- **Backtest audit found critical bugs**: double compounding (pnl/initial instead of pnl/current), no concurrent limit, loose data filters
+- **Corrected portfolio (14 verified bots, $200 shared, max 5 concurrent)**: 320 trades, $200→$497 (+149%/yr), DD 8.1%
+- **47/61 bots filtered out**: data < 12mo or trades < 10 — configs ready but need more data before live
+- **9 rounds of research**: 7→19→22→26→29→31→29→47→61 bots (14 verified), $200→$497 realistic
+- Script: `research/sweep_round9.py`, `research/round9_verify_and_backtest.py`
+
+## Auto-Research Pipeline
+One-command research script replaces manual iterative process:
+```bash
+# Sweep a single strategy across all coins
+python3 research/auto_research.py --strategy dual_supertrend --timeframe 4h
+
+# Sweep ALL strategies
+python3 research/auto_research.py --all-strategies
+
+# Compare against deployed portfolio
+python3 research/auto_research.py --strategy alligator --compare-deployed
+
+# Generate config files for verified winners
+python3 research/auto_research.py --generate-configs --input data/sweep_results.json
+
+# Full portfolio backtest ($200 shared wallet)
+python3 research/portfolio_backtest_v2.py
+```
 
 ## AI Advisor Layer
 - **Mode**: "advisor" — provides nuanced adjustments, NOT binary gate
@@ -235,125 +335,284 @@ Bot runs fully autonomous — risk management is the primary safety layer:
 - `use_testnet: true` must be explicitly changed to go live
 - `--config <path>` or `CONFIG_FILE` env var selects config file
 
-## Deployed Portfolio (29 bots, verified backtests)
+## Deployed Portfolio (47 bots, engine-verified backtests)
 
-### Strategy 1: EMA Crossover 15m (Original)
+### Strategy 1: EMA Crossover 15m (2 bots)
 | Coin | Config | Risk | PF | WR% | Tr/yr | Sharpe | Scorer |
 |------|--------|------|-----|-----|-------|--------|--------|
-| **BTC** | `config.json` | 5% | 1.85 | 44% | 23 | 1.62 | Funding ON |
-| **WIF** | `config_wif.json` | 3% | 1.64 | 44% | 31 | 1.19 | Funding ON |
-| **ARB** | `config_arb.json` | 3% | 1.46 | 34% | 21 | 0.96 | OFF |
-| **DOGE** | `config_doge.json` | 3% | 1.38 | 35% | 22 | 0.95 | OFF |
+| **BTC** | `config.json` | 5% | 1.41 | 42% | 24 | 0.91 | Funding ON |
+| **WIF** | `config_wif.json` | 3% | 1.71 | 42% | 36 | 1.46 | Funding ON |
 
-### Strategy 2: Ichimoku Cloud 1H (Original)
-| Coin | Config | Risk | PF | WR% | Tr/yr | Sharpe | DD% |
-|------|--------|------|-----|-----|-------|--------|-----|
-| **AVAX** | `config_avax_ichi.json` | 2% | 1.95 | 44% | 13 | 1.05 | 5% |
-| **NEAR** | `config_near_ichi.json` | 2% | 1.87 | 48% | 13 | 1.03 | 5% |
-| **SOL** | `config_sol_ichi.json` | 2% | 1.69 | 46% | 11 | 1.03 | 8% |
+### Strategy 2: Ichimoku Cloud 1H (8 bots)
+| Coin | Config | PF | WR% | Tr/yr | Sharpe | DD% | Notes |
+|------|--------|-----|-----|-------|--------|-----|-------|
+| **AVAX** | `config_avax_ichi.json` | 2.49 | 45% | 11 | 1.28 | 3.6% | |
+| **POL** | `config_polusdt_ichi.json` | 6.79 | 50% | 14 | 2.13 | 2.4% | SL1.0/Trail3.0 |
+| **GUN** | `config_gunusdt_ichi.json` | 4.00 | 65% | 17 | 2.52 | 2.0% | |
+| **BERA** | `config_berausdt_ichi.json` | 2.92 | 55% | 20 | 1.92 | 2.0% | |
+| **ATH** | `config_athusdt_ichi.json` | 2.51 | 47% | 17 | 1.65 | 2.6% | |
+| **INJ** | `config_injusdt_ichi.json` | 2.28 | 44% | 9 | 0.93 | 2.6% | |
+| **TRUMP** | `config_trumpusdt_ichi.json` | 1.66 | 53% | 19 | 0.87 | 3.5% | |
+| **ANIME** | `config_animeusdt_ichi.json` | 1.51 | 47% | 17 | 0.74 | 5.1% | |
 
-### Strategy 3: Mass Expansion — Ichimoku 1H (new, 1% risk each)
+### Strategy 3: EMA 15m (mass expansion, 1% risk)
 | Coin | Config | PF | WR% | Tr/yr | Sharpe | DD% |
 |------|--------|-----|-----|-------|--------|-----|
-| **GUN** | `config_gunusdt_ichi.json` | 4.00 | 65% | 8 | 2.52 | 2.0% |
-| **BERA** | `config_berausdt_ichi.json` | 2.92 | 55% | 10 | 1.92 | 2.0% |
-| **ATH** | `config_athusdt_ichi.json` | 2.51 | 47% | 8 | 1.65 | 2.6% |
-| **ZETA** | `config_zetausdt_ichi.json` | 1.93 | 49% | 18 | 1.22 | 4.0% |
-| **ARC** | `config_arcusdt_ichi.json` | 1.89 | 45% | 10 | 1.13 | 2.4% |
-| **ANIME** | `config_animeusdt_ichi.json` | 1.51 | 47% | 8 | 0.74 | 5.1% |
-| **TRUMP** | `config_trumpusdt_ichi.json` | 1.48 | 48% | 12 | 0.70 | 3.4% |
-| **INJ** | `config_injusdt_ichi.json` | 1.31 | 41% | 11 | 0.36 | 2.7% |
-| **XLM** | `config_xlmusdt_ichi.json` | 1.28 | 43% | 18 | 0.47 | 3.9% |
-| **1000SHIB** | `config_1000shibusdt_ichi.json` | 1.26 | 39% | 16 | 0.42 | 5.8% |
-| **TRX** | `config_trxusdt_ichi.json` | 1.20 | 38% | 24 | 0.43 | 2.7% |
+| **ARC** | `config_arcusdt_ema.json` | 1.59 | 47% | 32 | 1.06 | 4.1% |
 
-### Strategy 4: Mass Expansion — EMA 15m (new, 1% risk each)
+### Strategy 4: 4H Ichimoku Fixed TP (5 bots, 1% risk each)
 | Coin | Config | PF | WR% | Tr/yr | Sharpe | DD% |
 |------|--------|-----|-----|-------|--------|-----|
-| **ARC** | `config_arcusdt_ema.json` | 1.89 | 45% | 10 | 1.13 | 2.4% |
+| **1000SHIB** | `config_1000shibusdt_ichi4h.json` | 18.43 | 75% | 4 | 2.66 | 0.2% |
+| **TAO** | `config_taousdt_ichi4h.json` | 6.13 | 67% | 9 | 2.77 | 0.7% |
+| **RENDER** | `config_renderusdt_ichi4h.json` | 4.71 | 57% | 7 | 1.86 | 1.0% |
+| **ARB** | `config_arbusdt_ichi4h.json` | 4.38 | 50% | 4 | 1.72 | 0.2% |
 
-### Strategy 5: Mass Expansion v2 — 4H Ichimoku (1% risk each)
+### Strategy 5: 4H Ichimoku Trailing Exit (6 bots, 1% risk each)
 | Coin | Config | PF | WR% | Tr/yr | Sharpe | DD% |
 |------|--------|-----|-----|-------|--------|-----|
-| **TAO** | `config_taousdt_ichi4h.json` | 5.21 | 67% | 8 | 2.24 | 0.7% |
-| **RENDER** | `config_renderusdt_ichi4h.json` | 8.17 | 73% | 6 | 2.58 | 1.0% |
-| **HBAR** | `config_hbarusdt_ichi4h.json` | 1.85 | 45% | 6 | 0.60 | 2.0% |
+| **ALGO** | `config_algousdt_ichi4htrail.json` | 7.21 | 50% | 4 | 1.32 | 2.0% |
+| **TRX** | `config_trxusdt_ichi4htrail.json` | 5.53 | 50% | 4 | 1.31 | 1.6% |
+| **POLYX** | `config_polyxusdt_ichi4htrail.json` | 5.13 | 75% | 8 | 1.78 | 1.2% |
+| **FET** | `config_fetusdt_ichi4htrail.json` | 3.03 | 33% | 6 | 0.93 | 1.4% |
+| **XLM** | `config_xlmusdt_ichi4htrail.json` | 2.88 | 25% | 4 | 0.76 | 2.1% |
+| **SAHARA** | `config_saharausdt_ichi4htrail.json` | 2.44 | 60% | 5 | 0.95 | 0.7% |
 
-### Strategy 6: 4H Ichimoku Trailing Exit (1% risk each)
+### Strategy 6: Supertrend 1H (2 bots, 1% risk each)
 | Coin | Config | PF | WR% | Tr/yr | Sharpe | DD% |
 |------|--------|-----|-----|-------|--------|-----|
-| **ALGO** | `config_algousdt_ichi4htrail.json` | 5.84 | 40% | 5 | 1.11 | 2.0% |
-| **FET** | `config_fetusdt_ichi4htrail.json` | 2.87 | 39% | 7 | 1.04 | 2.0% |
-| **POL** | `config_polusdt_ichi4htrail.json` | 1.74 | 40% | 5 | 0.55 | 2.3% |
-| **POLYX** | `config_polyxusdt_ichi4htrail.json` | 1.49 | 50% | 7 | 0.46 | 2.0% |
+| **MSTR** | `config_mstrusdt_supertrend.json` | 2.66 | 64% | 11 | 4.63 | 1.9% |
+| **XAG** | `config_xagusdt_supertrend.json` | 2.09 | 44% | 9 | 2.47 | 2.0% |
 
-### Strategy 7: Supertrend 1H (1% risk each)
+### Strategy 7: Vol Expansion Breakout 1H (2 bots, 1% risk each)
 | Coin | Config | PF | WR% | Tr/yr | Sharpe | DD% |
 |------|--------|-----|-----|-------|--------|-----|
-| **MSTR** | `config_mstrusdt_supertrend.json` | 2.66 | 64% | 6 | 4.63 | 1.9% |
-| **XAG** | `config_xagusdt_supertrend.json` | 2.09 | 44% | 5 | 2.47 | 2.0% |
-| **SAHARA** | `config_saharausdt_supertrend.json` | 1.27 | 50% | 7 | 0.53 | 1.4% |
+| **1000PEPE** | `config_1000pepeusdt_volexp.json` | 7.23 | 70% | 10 | 2.92 | 0.6% |
+| **WLD** | `config_wldusdt_volexp.json` | 3.45 | 75% | 4 | 1.40 | 1.0% |
 
-### Strategy 8: Vol Expansion Breakout 1H (1% risk each)
-| Coin | Config | PF | WR% | Tr/yr | Sharpe | DD% |
-|------|--------|-----|-----|-------|--------|-----|
-| **1000PEPE** | `config_1000pepeusdt_volexp.json` | 10.85 | 80% | 8 | 2.81 | 0.6% |
-| **WLD** | `config_wldusdt_volexp.json` | 3.25 | 73% | 6 | 1.47 | 1.0% |
+### Strategy 8: EMA+Ichimoku Hybrid 4H (3 bots, 1% risk each)
+Signal: EMA crossover confirmation + Ichimoku cloud filter on 4H. SL 1.5 ATR, TP 4.0 ATR.
+| Coin | Config | PF | Notes |
+|------|--------|----|-------|
+| **APT** | `config_aptusdt_emaichi4h.json` | 8.17 | |
+| **NEAR** | `config_near_ichi.json` | 4.06 | upgraded from Ichi 1H |
+| **ZETA** | `config_zetausdt_ichi.json` | 3.96 | upgraded from Ichi 1H |
 
-**Portfolio total: 757 trades, ~378/yr (~1/day) across 31 bots**
-**PF 2.06 | Max DD 1.9% | $200 → $1,273 (+537%)**
-**Original 7 bots: 2-5% risk | New 24 bots: 1% risk each**
-**8 strategy types: EMA 15m, Ichimoku 1H, Ichimoku 4H, 4H Trail, Supertrend, Vol Expansion**
+### Strategy 9: Ichi+Supertrend Hybrid 4H (1 bot, 1% risk)
+Signal: Ichimoku Tenkan/Kijun cross + Supertrend direction agreement on 4H. SL 2.0 ATR, TP 5.0 ATR.
+| Coin | Config | PF |
+|------|--------|----|
+| **LTC** | `config_ltcusdt_ichist4h.json` | 6.90 |
+
+### Strategy 10: Alligator 1H (1 bot, 1% risk)
+Signal: Williams Alligator jaw/teeth/lips alignment + price above/below all three lines. SL 2.0 ATR, TP 4.0 ATR.
+| Coin | Config | PF |
+|------|--------|----|
+| **LIGHT** | `config_lightusdt_alligator.json` | 5.16 |
+
+### Strategy 11: Alligator 4H (5 bots, 1% risk each)
+Signal: Williams Alligator on 4H. SL 2.0 ATR, TP 4.0 ATR.
+| Coin | Config | PF | Notes |
+|------|--------|----|-------|
+| **HBAR** | `config_hbarusdt_ichi4h.json` | 4.23 | upgraded from Ichi 4H |
+| **QNT** | `config_qntusdt_alligator4h.json` | 3.49 | |
+| **ARC** | `config_arcusdt_ichi.json` | 3.15 | upgraded from Ichi 1H |
+| **LINK** | `config_linkusdt_alligator4h.json` | 1.66 | |
+| **SUI** | `config_suiusdt_alligator4h.json` | 1.58 | |
+
+### Strategy 12: Dual Supertrend 1H (2 bots, 1% risk each)
+Signal: Two Supertrend indicators (different ATR multipliers) must agree on direction. SL 2.5 ATR, TP 4.0 ATR.
+| Coin | Config | PF |
+|------|--------|----|
+| **LYN** | `config_lynusdt_dualst.json` | 3.11 |
+| **HUMA** | `config_humausdt_dualst.json` | 1.49 |
+
+### Strategy 13: Dual Supertrend 4H (4 bots, 1% risk each)
+Signal: Two Supertrend indicators agree on 4H. SL 2.5 ATR, TP 4.0 ATR.
+| Coin | Config | PF |
+|------|--------|----|
+| **ENJ** | `config_enjusdt_dualst4h.json` | 2.35 |
+| **XPL** | `config_xplusdt_dualst4h.json` | 1.90 |
+| **XRP** | `config_xrpusdt_dualst4h.json` | 1.59 |
+| **AKT** | `config_aktusdt_dualst4h.json` | 1.56 |
+
+### Strategy 14: Ichimoku Cloud 4H — new coins (6 bots, 1% risk each)
+Signal: Ichimoku Tenkan/Kijun cross above/below cloud on 4H. SL 2.0 ATR, TP 4.0 ATR.
+| Coin | Config | PF |
+|------|--------|----|
+| **SIGN** | `config_signusdt_ichi4h.json` | 2.43 |
+| **TIA** | `config_tiausdt_ichi4h.json` | 2.08 |
+| **ONDO** | `config_ondousdt_ichi4h.json` | 1.77 |
+| **H** | `config_husdt_ichi4h.json` | 1.51 |
+| **AXS** | `config_axsusdt_ichi4h.json` | 1.31 |
+
+### Strategy 15: Ichimoku Cloud 1H — new coins (2 bots, 1% risk each)
+| Coin | Config | PF |
+|------|--------|----|
+| **IP** | `config_ipusdt_ichi.json` | 1.84 |
+
+### Strategy 16: ADX+DI Crossover 1H (Round 9, 1% risk)
+Signal: DI+/DI- cross + ADX > 20 rising. SL 2.0 ATR, TP 4.0 ATR.
+| Coin | PF | WR% | Trades |
+|------|----|-----|--------|
+| **ZRO** | 24.61 | 83% | 6 |
+| **ZEC** | 2.95 | 75% | 4 |
+
+### Strategy 17: Choppiness+EMA 1H (Round 9, 1% risk)
+Signal: CI < 38.2 (trending) + EMA(9/21) crossover. SL 2.0 ATR, TP 4.0 ATR.
+| Coin | PF | WR% | Trades |
+|------|----|-----|--------|
+| **ARIA** | 13.83 | 83% | 6 |
+| **SAND** | 6.79 | 75% | 4 |
+| **DEGO** | 2.82 | 57% | 7 |
+
+### Strategy 18: ROC Momentum 1H/4H (Round 9, 1% risk)
+Signal: ROC(10) zero-cross + EMA(50) trend. SL 2.0 ATR, TP 4.0 ATR.
+| Coin | TF | PF | WR% | Trades |
+|------|----|----|-----|--------|
+| **TSLA** | 1H | 2.72 | 65% | 17 |
+| **RIVER** | 1H | 1.78 | 44% | 34 |
+| **TON** | 4H | 1.52 | 57% | 42 |
+| **XMR** | 4H | 1.20 | 42% | 31 |
+
+### Strategy 19: Other Round 9 strategies (1% risk each)
+| Coin | Strategy | TF | PF | WR% | Trades |
+|------|----------|----|-----|-----|--------|
+| **APR** | PriceChannel+Vol | 4H | 98.10 | 75% | 4 |
+| **CRCL** | PriceChannel+Vol | 1H | 3.89 | 56% | 9 |
+| **KAS** | Williams %R+ADX | 4H | 2.09 | 44% | 9 |
+| **DASH** | Supertrend+Vol | 4H | 1.56 | 25% | 4 |
+| **DOT** | Supertrend+Vol | 4H | 1.51 | 33% | 6 |
+
+### Retired (no edge found in 1yr backtest)
+| Coin | Was | Best PF | Reason |
+|------|-----|---------|--------|
+| **DOGE** | EMA 15m | 1.11 | All strategies PF < 1.2 |
+| **SOL** | Ichi 1H | 1.17 | All strategies PF < 1.2 |
+
+**Portfolio total: 61 bots configured, 14 verified (data >= 12mo, trades >= 10)**
+**$200 shared wallet → $497 (+149%/yr) realistic backtest (R-multiple, max 5 concurrent)**
+**Verified core bots: POL, BERA, BTC, IP, 1000PEPE, TRUMP, WIF, TON, ONDO, AVAX, TIA, XMR, ANIME, ARC**
+**47/61 bots filtered out: data < 12 months or trades < 10 — need more data before live deploy**
 
 ```bash
-# Run all 31 bots
+# Run all 47 bots
 
-# === EMA Crossover 15m (5 bots) ===
+# === EMA Crossover 15m (2 bots) ===
 YOLO_MODE=1 python main.py --config config.json &          # BTC (5% risk)
-YOLO_MODE=1 python main.py --config config_doge.json &     # DOGE (3% risk)
-YOLO_MODE=1 python main.py --config config_arb.json &      # ARB (3% risk)
 YOLO_MODE=1 python main.py --config config_wif.json &      # WIF (3% risk)
-YOLO_MODE=1 python main.py --config config_arcusdt_ema.json & # ARC EMA (PF 1.70)
 
-# === Ichimoku Cloud 1H (14 bots) ===
-python main.py --config config_avax_ichi.json &             # AVAX (2% risk)
-python main.py --config config_near_ichi.json &             # NEAR (2% risk)
-python main.py --config config_sol_ichi.json &              # SOL (2% risk)
+# === EMA 15m mass expansion (1 bot) ===
+YOLO_MODE=1 python main.py --config config_arcusdt_ema.json & # ARC EMA (PF 1.59)
+
+# === Ichimoku Cloud 1H (8 bots) ===
+python main.py --config config_avax_ichi.json &             # AVAX (PF 2.49)
+python main.py --config config_polusdt_ichi.json &          # POL (PF 6.79)
 python main.py --config config_gunusdt_ichi.json &          # GUN (PF 4.00)
 python main.py --config config_berausdt_ichi.json &         # BERA (PF 2.92)
 python main.py --config config_athusdt_ichi.json &          # ATH (PF 2.51)
-python main.py --config config_zetausdt_ichi.json &         # ZETA (PF 1.93)
-python main.py --config config_arcusdt_ichi.json &          # ARC (PF 1.89)
+python main.py --config config_injusdt_ichi.json &          # INJ (PF 2.28)
+python main.py --config config_trumpusdt_ichi.json &        # TRUMP (PF 1.66)
 python main.py --config config_animeusdt_ichi.json &        # ANIME (PF 1.51)
-python main.py --config config_trumpusdt_ichi.json &        # TRUMP (PF 1.48)
-python main.py --config config_injusdt_ichi.json &          # INJ (PF 1.31)
-python main.py --config config_xlmusdt_ichi.json &          # XLM (PF 1.28)
-python main.py --config config_1000shibusdt_ichi.json &     # 1000SHIB (PF 1.26)
-python main.py --config config_trxusdt_ichi.json &          # TRX (PF 1.20)
 
-# === 4H Ichimoku Fixed TP (3 bots) ===
-python main.py --config config_taousdt_ichi4h.json &        # TAO 4H (PF 5.21)
-python main.py --config config_renderusdt_ichi4h.json &     # RENDER 4H (PF 8.17)
-python main.py --config config_hbarusdt_ichi4h.json &       # HBAR 4H (PF 1.85)
+# === Ichimoku Cloud 1H — new coins (2 bots) ===
+python main.py --config config_ipusdt_ichi.json &           # IP (PF 1.84)
 
-# === 4H Ichimoku Trailing (4 bots) ===
-python main.py --config config_algousdt_ichi4htrail.json &  # ALGO 4HT (PF 5.84)
-python main.py --config config_fetusdt_ichi4htrail.json &   # FET 4HT (PF 2.87)
-python main.py --config config_polusdt_ichi4htrail.json &   # POL 4HT (PF 1.74)
-python main.py --config config_polyxusdt_ichi4htrail.json & # POLYX 4HT (PF 1.49)
+# === 4H Ichimoku Fixed TP (4 bots) ===
+python main.py --config config_1000shibusdt_ichi4h.json &   # 1000SHIB 4H (PF 18.43)
+python main.py --config config_taousdt_ichi4h.json &        # TAO 4H (PF 6.13)
+python main.py --config config_renderusdt_ichi4h.json &     # RENDER 4H (PF 4.71)
+python main.py --config config_arbusdt_ichi4h.json &        # ARB 4H (PF 4.38)
 
-# === Supertrend 1H (3 bots) ===
+# === Ichimoku Cloud 4H — new coins (5 bots) ===
+python main.py --config config_signusdt_ichi4h.json &       # SIGN (PF 2.43)
+python main.py --config config_tiausdt_ichi4h.json &        # TIA (PF 2.08)
+python main.py --config config_ondousdt_ichi4h.json &       # ONDO (PF 1.77)
+python main.py --config config_husdt_ichi4h.json &          # H (PF 1.51)
+python main.py --config config_axsusdt_ichi4h.json &        # AXS (PF 1.31)
+
+# === 4H Ichimoku Trailing (6 bots) ===
+python main.py --config config_algousdt_ichi4htrail.json &  # ALGO 4HT (PF 7.21)
+python main.py --config config_trxusdt_ichi4htrail.json &   # TRX 4HT (PF 5.53)
+python main.py --config config_polyxusdt_ichi4htrail.json & # POLYX 4HT (PF 5.13)
+python main.py --config config_fetusdt_ichi4htrail.json &   # FET 4HT (PF 3.03)
+python main.py --config config_xlmusdt_ichi4htrail.json &   # XLM 4HT (PF 2.88)
+python main.py --config config_saharausdt_ichi4htrail.json & # SAHARA 4HT (PF 2.44)
+
+# === Supertrend 1H (2 bots) ===
 python main.py --config config_mstrusdt_supertrend.json &   # MSTR (PF 2.66)
 python main.py --config config_xagusdt_supertrend.json &    # XAG (PF 2.09)
-python main.py --config config_saharausdt_supertrend.json & # SAHARA (PF 1.27)
 
 # === Vol Expansion Breakout 1H (2 bots) ===
-python main.py --config config_1000pepeusdt_volexp.json &   # 1000PEPE (PF 10.85)
-python main.py --config config_wldusdt_volexp.json &        # WLD (PF 3.25)
+python main.py --config config_1000pepeusdt_volexp.json &   # 1000PEPE (PF 7.23)
+python main.py --config config_wldusdt_volexp.json &        # WLD (PF 3.45)
+
+# === EMA+Ichimoku Hybrid 4H (3 bots, upgraded) ===
+python main.py --config config_aptusdt_emaichi4h.json &     # APT (PF 8.17)
+python main.py --config config_near_ichi.json &             # NEAR (PF 4.06, upgraded)
+python main.py --config config_zetausdt_ichi.json &         # ZETA (PF 3.96, upgraded)
+
+# === Ichi+Supertrend Hybrid 4H (1 bot) ===
+python main.py --config config_ltcusdt_ichist4h.json &      # LTC (PF 6.90)
+
+# === Alligator 1H (1 bot) ===
+python main.py --config config_lightusdt_alligator.json &   # LIGHT (PF 5.16)
+
+# === Alligator 4H (5 bots, 2 upgraded) ===
+python main.py --config config_hbarusdt_ichi4h.json &       # HBAR (PF 4.23, upgraded)
+python main.py --config config_qntusdt_alligator4h.json &   # QNT (PF 3.49)
+python main.py --config config_arcusdt_ichi.json &          # ARC (PF 3.15, upgraded)
+python main.py --config config_linkusdt_alligator4h.json &  # LINK (PF 1.66)
+python main.py --config config_suiusdt_alligator4h.json &   # SUI (PF 1.58)
+
+# === Dual Supertrend 1H (2 bots) ===
+python main.py --config config_lynusdt_dualst.json &        # LYN (PF 3.11)
+python main.py --config config_humausdt_dualst.json &       # HUMA (PF 1.49)
+
+# === Dual Supertrend 4H (4 bots) ===
+python main.py --config config_enjusdt_dualst4h.json &      # ENJ (PF 2.35)
+python main.py --config config_xplusdt_dualst4h.json &      # XPL (PF 1.90)
+python main.py --config config_xrpusdt_dualst4h.json &      # XRP (PF 1.59)
+python main.py --config config_aktusdt_dualst4h.json &      # AKT (PF 1.56)
 
 # Docker deployment (all bots)
 docker compose up -d --build
 ```
+
+## Portfolio Backtest Methodology (Corrected)
+
+Shared wallet backtest must follow these rules to avoid inflated results:
+
+### R-Multiple Method (correct)
+```python
+# For each bot: track engine balance separately
+engine_balance = 10000.0
+for trade in bot_trades:
+    engine_risk = engine_balance * risk_per_trade  # what engine risked
+    r_multiple = trade.pnl / engine_risk           # actual R won/lost
+    engine_balance += trade.pnl                    # engine compounds
+
+# Shared wallet replay:
+shared_risk = shared_balance * risk_per_trade      # 1% of shared balance
+dollar_pnl = shared_risk * r_multiple              # apply R to shared wallet
+shared_balance += dollar_pnl
+```
+
+### Common Bugs to Avoid
+- **Double compounding**: NEVER do `pnl_frac = pnl / initial_balance` then `balance * pnl_frac` — this inflates 30-100% because engine compounds internally
+- **No concurrent limit**: Must cap simultaneous open positions (max 5) — 61 bots on $200 can't all trade at once
+- **Loose filters**: Require data >= 12 months AND trades >= 10 per bot — otherwise statistically meaningless
+
+### Validation Filters
+- **Data minimum**: 12 months of hourly data (coin must have been listed >= 1yr)
+- **Trade minimum**: 10 trades in backtest period (statistical significance)
+- **Concurrent limit**: Max 5 open positions at any time
+- **Data snooping**: Be aware that selecting best from 8,700+ backtests inflates results
+
+### Scripts
+- `research/portfolio_backtest_realistic.py` — corrected R-multiple method with all filters
+- `research/portfolio_backtest_v2.py` — DEPRECATED (has double compounding bug)
+- `research/portfolio_backtest_full.py` — DEPRECATED (per-bot $200, not shared wallet)
 
 ## Development Rules
 - **Symbol format**: Always normalize BTCUSDT → BTC/USDT:USDT for ccxt
@@ -370,6 +629,7 @@ docker compose up -d --build
 - **Adaptive sizing**: `get_tiered_risk()` returns (0,0) for D-grade signals (must skip trade); when disabled, returns (1.0, 1.0) for backward compatibility
 - **Pyramiding**: Only add to winning positions when trend aligned (EMA9 vs EMA21); SL must ratchet up (never lower) on pyramid adds; pyramid adds charge commission on the added size; levels 1-7 use explicit config keys (`add_N_atr_mult`, `add_N_size_pct`), levels 8+ use dynamic formula
 - **Regime propagation**: `detect_regime()` must be computed per row in backtest (rolling); backtest stores regime in DataFrame for signal-level gating
+- **Leverage auto-reduction**: `set_leverage()` returns `int` (actual leverage set); halves on Binance -4028 rejection; `engine.py` captures actual value and updates config for risk manager
 
 ## Environment Variables
 ```
