@@ -34,7 +34,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy application code
 COPY bot/ ./bot/
 COPY dashboard/ ./dashboard/
-COPY main.py config.json config_aggressive.json config_yolo.json config_sniper.json ./
+COPY main.py ./
+COPY config*.json ./
 
 # Create data directory for SQLite database and logs
 RUN mkdir -p /app/data /app/logs && \
