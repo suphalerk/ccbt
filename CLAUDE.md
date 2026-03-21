@@ -38,6 +38,18 @@ tests/                   → pytest unit/integration tests
 ├── agents/              → 7 Agent Team members (pm, sa, backend-dev, frontend-dev, devops, trader-expert, crypto-expert)
 ├── skills/              → 10 Trading skills (technical-analyst, backtest-expert, position-sizer, etc.)
 └── settings.json        → Project settings (agent teams enabled)
+config files:
+  config.json            → BTC Safe (default, mainnet-ready)
+  config_aggressive.json → BTC Aggressive (5% risk, 10x lev)
+  config_yolo.json       → BTC YOLO-lite (10% risk, 25x lev, YOLO_MODE=1)
+  config_sniper.json     → BTC Sniper (tight RSI, fewer trades)
+  config_doge.json       → DOGE EMA 15m (3% risk, slope=0.01, funding scorer OFF)
+  config_arb.json        → ARB EMA 15m (3% risk, funding scorer OFF)
+  config_wif.json        → WIF EMA 15m (3% risk, funding scorer ON)
+  config_avax_ichi.json  → AVAX Ichimoku 1H (2% risk, SL2.0/TP5.0)
+  config_near_ichi.json  → NEAR Ichimoku 1H (2% risk, SL2.5/TP5.0)
+  config_sol_ichi.json   → SOL Ichimoku 1H (2% risk, SL1.5/TP4.0)
+  config_gold_forex.json → XAU/USD OANDA (H1 signal, H4 trend)
 ```
 
 ## Key Commands
@@ -110,6 +122,30 @@ Three strategies validated on 2.4yr XAU/USD 1H data (simple simulator):
 - `config_gold_forex.json` — OANDA config (H1 signal, H4 trend, XAU_USD)
 - Requires: OANDA_API_TOKEN + OANDA_ACCOUNT_ID in .env
 
+## Multi-Coin Day Trading Portfolio
+
+### Techniques Used
+1. **EMA(9/21) Crossover 15m** — trend-following on BTC + meme/high-momentum coins
+2. **Ichimoku Cloud 1H** — Tenkan/Kijun cross above/below cloud on altcoins
+3. **Signal Scorer** — 6 OHLCV signals + funding rate weighted scoring for conviction
+4. **Funding Rate Filter** — contrarian crowding signal (weight 0.35 on BTC/WIF)
+
+### Key Differences per Strategy
+| | EMA 15m | Ichimoku 1H |
+|---|---------|-------------|
+| Signal | EMA crossover + RSI + volume | Tenkan/Kijun cross + cloud filter |
+| Timeframe | 15m signal, 1h trend | 1h signal (cloud IS trend) |
+| SL/TP | 1.0/3.0 ATR | 1.5-2.5/4.0-5.0 ATR |
+| Best for | BTC, meme coins (DOGE/WIF) | Mid-cap altcoins (AVAX/NEAR/SOL) |
+| Scorer | Funding rate helps BTC/WIF | Not used (cloud = quality gate) |
+
+### Research Findings (300+ backtests)
+- Price Action: fails on all coins/timeframes (avg PF 0.73-0.85)
+- BTC 5m: fails for ALL strategies (oracle max PF 1.10)
+- EMA on ETH/SOL/ADA: fails (PF <1.04) — EMA edge is BTC + meme specific
+- Ichimoku 1H: works on AVAX/NEAR/SOL (PF 1.69-1.95)
+- Funding rate: improves BTC PF +10%, WIF +27%, but destroys DOGE (-94%)
+
 ## AI Advisor Layer
 - **Mode**: "advisor" — provides nuanced adjustments, NOT binary gate
 - **Adjustments**: position_size_modifier (0.5-1.5), sl_adjustment, tp_adjustment
@@ -136,66 +172,58 @@ Bot runs fully autonomous — risk management is the primary safety layer:
 - Telegram alerts for critical events (informational, no action required)
 
 ## Configuration
-- `config.json` — Safe profile (default, suitable for mainnet)
-- `config_aggressive.json` — Aggressive profile (5% risk, 10x leverage)
-- `config_yolo.json` — YOLO-lite profile (10% risk, 20x lev, requires `YOLO_MODE=1`)
-- `config_sniper.json` — Sniper profile (tight RSI, fewer but higher quality trades)
-- `config_doge.json` — DOGE/USDT (3% risk, slope=0.01, atr_min=0)
-- `config_arb.json` — ARB/USDT (3% risk, atr_min=0)
-- `config_wif.json` — WIF/USDT (3% risk, atr_min=0)
+- `config.json` — BTC Safe profile (default, suitable for mainnet)
+- `config_aggressive.json` — BTC Aggressive profile (5% risk, 10x leverage)
+- `config_yolo.json` — BTC YOLO-lite profile (10% risk, 25x lev, requires `YOLO_MODE=1`)
+- `config_sniper.json` — BTC Sniper profile (tight RSI, fewer but higher quality trades)
+- `config_doge.json` — DOGE/USDT EMA 15m (3% risk, slope=0.01, funding scorer OFF)
+- `config_arb.json` — ARB/USDT EMA 15m (3% risk, funding scorer OFF)
+- `config_wif.json` — WIF/USDT EMA 15m (3% risk, funding scorer ON)
+- `config_avax_ichi.json` — AVAX/USDT Ichimoku 1H (2% risk, SL2.0/TP5.0)
+- `config_near_ichi.json` — NEAR/USDT Ichimoku 1H (2% risk, SL2.5/TP5.0)
+- `config_sol_ichi.json` — SOL/USDT Ichimoku 1H (2% risk, SL1.5/TP4.0)
+- `config_gold_forex.json` — XAU/USD OANDA (H1 signal, H4 trend)
 - `.env` — API keys (Bybit/Binance, Anthropic, Telegram, CryptoPanic)
 - `use_testnet: true` must be explicitly changed to go live
 - `--config <path>` or `CONFIG_FILE` env var selects config file
 
-## Profiles (5yr backtest, $1,000 start, verified no look-ahead bias)
+## Deployed Portfolio (7 bots, verified backtests)
 
-| Profile | File | Risk | Lev | 5yr | /yr | PF | DD | Trades | Notes |
-|---------|------|------|-----|-----|-----|-----|-----|--------|-------|
-| **Safe** | `config.json` | 2% | 7x | +72% | ~11% | 1.85* | 17% | 103 | Funding scorer ON |
-| **Aggressive** | `config_aggressive.json` | 5% | 10x | +158% | ~21% | 1.53 | 15% | 103 | |
-| **YOLO (bear mode)** | `config_yolo.json` | 10% | 25x | +78%/yr | 1.41 | 32% | MTD ON | |
-| **MAX** | `config_max.json` | 15% | 25x | +33%/yr | 1.29 | 36% | MTD OFF | |
-| **Sniper** | `config_sniper.json` | 2% | 7x | +12%/yr | 1.62 | 17% | MTD OFF | |
+### Strategy 1: EMA Crossover 15m
+| Coin | Config | Risk | PF | WR% | Tr/yr | Sharpe | Scorer |
+|------|--------|------|-----|-----|-------|--------|--------|
+| **BTC** | `config.json` | 5% | 1.85 | 44% | 23 | 1.62 | Funding ON |
+| **WIF** | `config_wif.json` | 3% | 1.64 | 44% | 31 | 1.19 | Funding ON |
+| **ARB** | `config_arb.json` | 3% | 1.46 | 34% | 21 | 0.96 | OFF |
+| **DOGE** | `config_doge.json` | 3% | 1.38 | 35% | 22 | 0.95 | OFF |
 
-*Safe profile PF updated from 1.68 (scorer disabled) to 1.85 (funding scorer enabled, weight=0.35).
+### Strategy 2: Ichimoku Cloud 1H
+| Coin | Config | Risk | PF | WR% | Tr/yr | Sharpe | DD% |
+|------|--------|------|-----|-----|-------|--------|-----|
+| **AVAX** | `config_avax_ichi.json` | 2% | 1.95 | 44% | 13 | 1.05 | 5% |
+| **NEAR** | `config_near_ichi.json` | 2% | 1.87 | 48% | 13 | 1.03 | 5% |
+| **SOL** | `config_sol_ichi.json` | 2% | 1.69 | 46% | 11 | 1.03 | 8% |
 
-Default = R10%/L25x NO MTD (+115%/yr recent, +40%/yr 5yr average).
-YOLO config = same params but MTD ON — switch to this during bear/sideways markets.
-
-All profiles share: EMA(9/21)+EMA(5/13), SL=1.0 ATR, TP=3.0 ATR, RSI 45-65/35-55, no pyramiding, hours 3-20 UTC.
+**Portfolio total: 289 trades over backtest period, ~132 trades/yr (2.5/week)**
+**$100 → $444 over 4.4yr = +344% total, ~79%/yr**
+**Max exposure: 20% (5% BTC + 3%×3 EMA + 2%×3 Ichimoku)**
 
 ```bash
-# Deploy profiles (BTC)
-python main.py                                           # BTC Safe (default)
-python main.py --config config_aggressive.json           # BTC Aggressive
-YOLO_MODE=1 python main.py --config config_yolo.json     # BTC YOLO (testnet only)
-python main.py --config config_sniper.json               # BTC Sniper
-
-# Deploy Gold bot (runs alongside BTC)
-YOLO_MODE=1 python main.py --config config_gold.json     # XAU/USDT
-
-# Deploy altcoin bots (multi-coin day trading portfolio)
-YOLO_MODE=1 python main.py --config config_doge.json     # DOGE (3% risk)
-YOLO_MODE=1 python main.py --config config_arb.json      # ARB (3% risk)
-YOLO_MODE=1 python main.py --config config_wif.json      # WIF (3% risk)
-
-# Run all 4 crypto bots simultaneously (day trading portfolio)
-YOLO_MODE=1 python main.py --config config.json &          # BTC (5% risk)
+# Run all 7 bots (day trading portfolio)
+# EMA Crossover 15m (4 bots)
+YOLO_MODE=1 python main.py --config config.json &          # BTC (5% risk, funding scorer ON)
 YOLO_MODE=1 python main.py --config config_doge.json &     # DOGE (3% risk)
 YOLO_MODE=1 python main.py --config config_arb.json &      # ARB (3% risk)
-YOLO_MODE=1 python main.py --config config_wif.json &      # WIF (3% risk)
+YOLO_MODE=1 python main.py --config config_wif.json &      # WIF (3% risk, funding scorer ON)
+
+# Ichimoku Cloud 1H (3 bots)
+python main.py --config config_avax_ichi.json &             # AVAX (2% risk)
+python main.py --config config_near_ichi.json &             # NEAR (2% risk)
+python main.py --config config_sol_ichi.json &              # SOL (2% risk)
+
+# Docker deployment (all bots)
+docker compose up -d --build
 ```
-
-## Multi-Coin Day Trading Portfolio (verified 2yr backtest)
-
-| Coin | Config | Risk | PF | Sharpe | Tr/yr | Notes |
-|------|--------|------|-----|--------|-------|-------|
-| **BTC** | `config.json` | 5% | 1.51 | 1.77 | 38 | Anchor, highest PF |
-| **DOGE** | `config_doge.json` | 3% | 1.50 | 1.54 | 29 | slope=0.01, atr_min=0 |
-| **ARB** | `config_arb.json` | 3% | 1.27 | 0.96 | 21 | Fragile edge, don't tune |
-| **WIF** | `config_wif.json` | 3% | 1.21 | 0.86 | 33 | Meme coin momentum |
-
-Total: ~121 trades/yr across 4 coins. Max simultaneous exposure: 14%.
 
 ## Development Rules
 - **Symbol format**: Always normalize BTCUSDT → BTC/USDT:USDT for ccxt

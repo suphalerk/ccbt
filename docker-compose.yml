@@ -145,6 +145,96 @@ services:
         max-file: "5"
 
   # ---------------------------------------------------------------------------
+  # AVAX Ichimoku Bot Service
+  # ---------------------------------------------------------------------------
+  bot-avax:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-avax
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_avax_ichi.json
+    volumes:
+      - bot-data:/app/data
+      - ./config_avax_ichi.json:/app/config_avax_ichi.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # NEAR Ichimoku Bot Service
+  # ---------------------------------------------------------------------------
+  bot-near:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-near
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_near_ichi.json
+    volumes:
+      - bot-data:/app/data
+      - ./config_near_ichi.json:/app/config_near_ichi.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # SOL Ichimoku Bot Service
+  # ---------------------------------------------------------------------------
+  bot-sol:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-sol
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_sol_ichi.json
+    volumes:
+      - bot-data:/app/data
+      - ./config_sol_ichi.json:/app/config_sol_ichi.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
   # Dashboard Service
   # Runs Streamlit web UI for monitoring trades and performance
   # ---------------------------------------------------------------------------

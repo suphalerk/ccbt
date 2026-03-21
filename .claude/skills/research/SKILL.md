@@ -337,14 +337,22 @@ Approach: "find profitable moves → what conditions preceded them?"
 | Squeeze Release (lagged) | 1.02 | Minimal edge |
 | AI/ML Filter | same | RSI filter already does the job |
 | Multi-asset (ETH/SOL) | 0.90-1.25 | BTC has best edge |
+| Price Action (Pin Bar) | 0.95-1.15 | Mean-reversion on momentum asset |
+| Price Action (Engulfing) | 0.44-0.79 | No edge after bug fix |
+| Price Action (Inside Bar) | 0.33-0.50 | Very negative |
+| BTC 5m (all strategies) | <1.10 | Oracle max PF 1.10 — physics problem |
+| EMA on ETH/SOL/ADA | 0.90-1.04 | BTC-specific edge |
 
 ### What Actually Works
-- EMA(9/21) + EMA(5/13) crossover = PF 1.42-1.62
+- EMA(9/21) + EMA(5/13) crossover = PF 1.42-1.85 (BTC + meme coins)
+- Ichimoku Cloud 1H on altcoins (AVAX PF 1.95, NEAR PF 1.87, SOL PF 1.69)
+- Funding rate as scoring signal (BTC PF +10%, WIF PF +27%)
+- Multi-coin portfolio: 7 coins, 132 trades/yr, ~79%/yr return
 - Tight RSI (45-65/35-55) = key quality filter
-- SL 1.0 ATR / TP 3.0 ATR = optimal R:R
+- SL 1.0 ATR / TP 3.0 ATR = optimal R:R for EMA; SL 1.5-2.5 / TP 4.0-5.0 for Ichimoku
 - No cooldown = more trades
 - Hours 3-20 UTC, weekend off
-- R10%/L25x = max return sweet spot
+- R10%/L25x = max return sweet spot for BTC
 - Strategy is BTC-specific trend-follower (fails in sideways)
 
 ## Available Profiles (verified, 5yr $1K start, no bias)
