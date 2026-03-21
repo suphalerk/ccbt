@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -81,7 +82,7 @@ def setup_logging(log_file: Optional[str] = "trading_bot.log") -> None:
 class TradeJournal:
     """SQLite-based trade journal for logging and tracking trades."""
 
-    def __init__(self, db_path: str = "trades.db") -> None:
+    def __init__(self, db_path: str = None) -> None:
         """Initialize the trade journal.
 
         Opens a persistent connection for the lifetime of the instance.
@@ -90,7 +91,11 @@ class TradeJournal:
 
         Args:
             db_path: Path to the SQLite database file.
+                     Defaults to {BOT_DATA_DIR}/trades.db or ./trades.db
         """
+        if db_path is None:
+            data_dir = os.getenv("BOT_DATA_DIR", "")
+            db_path = str(Path(data_dir) / "trades.db") if data_dir else "trades.db"
         self.db_path = db_path
         # Persistent connection — avoids per-query connect/disconnect overhead
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
@@ -451,7 +456,7 @@ class CalibrationTracker:
     - Calibration curve: maps stated confidence to actual win rate
     """
 
-    def __init__(self, db_path: str = "trades.db") -> None:
+    def __init__(self, db_path: str = None) -> None:
         """Initialize calibration tracker.
 
         Opens a persistent connection for the lifetime of the instance.
@@ -460,7 +465,11 @@ class CalibrationTracker:
 
         Args:
             db_path: Path to the SQLite database file.
+                     Defaults to {BOT_DATA_DIR}/trades.db or ./trades.db
         """
+        if db_path is None:
+            data_dir = os.getenv("BOT_DATA_DIR", "")
+            db_path = str(Path(data_dir) / "trades.db") if data_dir else "trades.db"
         self.db_path = db_path
         # Persistent connection — avoids per-query connect/disconnect overhead
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)

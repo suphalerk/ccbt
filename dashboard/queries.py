@@ -1,6 +1,7 @@
 """SQLite helper functions to query trades.db for the dashboard."""
 
 import json
+import os
 import sqlite3
 import time
 from datetime import datetime
@@ -9,8 +10,12 @@ from typing import Optional
 
 import pandas as pd
 
-# Default database path relative to project root
-DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "trades.db"
+# Default database path: check BOT_DATA_DIR first (Docker), then project root
+_data_dir = os.getenv("BOT_DATA_DIR", "")
+if _data_dir and Path(_data_dir, "trades.db").exists():
+    DEFAULT_DB_PATH = Path(_data_dir) / "trades.db"
+else:
+    DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "trades.db"
 
 
 def _get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
