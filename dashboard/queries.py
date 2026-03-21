@@ -1,6 +1,8 @@
 """SQLite helper functions to query trades.db for the dashboard."""
 
+import json
 import sqlite3
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -479,6 +481,115 @@ def get_recent_logs(
 
     # Return last max_lines entries (most recent at end)
     return entries[-max_lines:]
+
+
+def get_bot_statuses(project_root: Path, max_stale_seconds: float = 600) -> list[dict]:
+    """Scan data/heartbeat_* files to determine which bots are alive.
+
+    Also scans config_*.json files to find ALL configured bots, even those
+    that have never written a heartbeat.
+
+    Args:
+        project_root: Root directory of the project (where config*.json files live).
+        max_stale_seconds: Heartbeat age threshold in seconds (default 10 min).
+
+    Returns:
+        List of dicts with keys: config_file, symbol, strategy, last_heartbeat,
+        age_seconds, status ('running' or 'stopped').
+        Sorted: running bots first, then stopped; alphabetical by symbol within each group.
+    """
+    _STRATEGY_PATTERNS = [
+        ("_ichi4htrail", "4H Trail"),
+        ("_emaichi4h", "EMA+Ichi 4H"),
+        ("_ichist4h", "Ichi+ST 4H"),
+        ("_alligator4h", "Alligator 4H"),
+        ("_alligator", "Alligator 1H"),
+        ("_dualst4h", "Dual ST 4H"),
+        ("_dualst", "Dual ST 1H"),
+        ("_ichi4h", "Ichi 4H"),
+        ("_ichi", "Ichi 1H"),
+        ("_ema", "EMA 15m"),
+        ("_supertrend", "Supertrend"),
+        ("_volexp", "VolExp"),
+        ("_wif", "EMA 15m"),
+        ("_avax", "Ichi 1H"),
+        ("_gold", "Gold Forex"),
+    ]
+
+    def _detect_strategy(config_stem: str) -> str:
+        for suffix, label in _STRATEGY_PATTERNS:
+            if config_stem.endswith(suffix):
+                return label
+        # Bare "config" = BTC EMA 15m
+        if config_stem == "config":
+            return "EMA 15m"
+        return "Unknown"
+
+    data_dir = project_root / "data"
+    now = time.time()
+
+    # Build heartbeat map: symbol_clean -> (timestamp, age_seconds)
+    heartbeat_map: dict[str, tuple[float, float]] = {}
+    if data_dir.exists():
+        for hb_file in data_dir.glob("heartbeat_*"):
+            symbol_clean = hb_file.name[len("heartbeat_"):]
+            try:
+                ts = float(hb_file.read_text().strip())
+                age = now - ts
+                heartbeat_map[symbol_clean] = (ts, age)
+            except (ValueError, OSError):
+                pass
+
+    # Scan all config*.json files
+    results: list[dict] = []
+    seen_symbols: set[str] = set()
+
+    for cfg_path in sorted(project_root.glob("config*.json")):
+        # Skip non-bot configs
+        if cfg_path.name in ("config_aggressive.json", "config_sniper.json", "config_yolo.json"):
+            continue
+        try:
+            with open(cfg_path) as f:
+                cfg = json.load(f)
+        except Exception:
+            continue
+
+        symbol = cfg.get("symbol")
+        if not symbol:
+            continue
+
+        # Normalise: BTC/USDT:USDT → BTCUSDT
+        symbol_clean = symbol.replace("/", "").replace(":", "")
+
+        # Deduplicate: keep the most specific config per symbol_clean
+        if symbol_clean in seen_symbols:
+            continue
+        seen_symbols.add(symbol_clean)
+
+        strategy = _detect_strategy(cfg_path.stem)
+
+        if symbol_clean in heartbeat_map:
+            ts, age = heartbeat_map[symbol_clean]
+            status = "running" if age <= max_stale_seconds else "stopped"
+            last_hb = datetime.utcfromtimestamp(ts)
+        else:
+            age = float("inf")
+            status = "stopped"
+            last_hb = None
+
+        results.append({
+            "config_file": cfg_path.name,
+            "symbol": symbol,
+            "symbol_clean": symbol_clean,
+            "strategy": strategy,
+            "last_heartbeat": last_hb,
+            "age_seconds": age,
+            "status": status,
+        })
+
+    # Sort: running first, then stopped; within each group alphabetical by symbol
+    results.sort(key=lambda r: (0 if r["status"] == "running" else 1, r["symbol"]))
+    return results
 
 
 def get_consecutive_losses(

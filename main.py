@@ -60,8 +60,11 @@ def load_config(path: str = "config.json") -> dict:
         raise ValueError(f"risk_per_trade must be 0.1%-{max_risk*100:.0f}%, got {config['risk_per_trade']}")
     if not 0.005 <= config["max_daily_loss"] <= 0.5:
         raise ValueError(f"max_daily_loss must be 0.5%-50%, got {config['max_daily_loss']}")
-    if config["atr_sl_mult"] <= 0 or config["atr_tp_mult"] <= 0:
-        raise ValueError("atr_sl_mult and atr_tp_mult must be > 0")
+    if config["atr_sl_mult"] <= 0:
+        raise ValueError("atr_sl_mult must be > 0")
+    # atr_tp_mult == 0 is valid for trailing-only strategies (no fixed TP)
+    if config["atr_tp_mult"] < 0:
+        raise ValueError("atr_tp_mult must be >= 0")
     if config.get("atr_trail_mult", config["atr_sl_mult"]) <= 0:
         raise ValueError("atr_trail_mult must be > 0")
 

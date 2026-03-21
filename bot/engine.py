@@ -1376,7 +1376,9 @@ class TradingEngine:
         seconds_until_close = minutes_until_close * 60 + (60 - now.second)
 
         # Write heartbeat file so deployment monitoring can detect a stalled bot
-        heartbeat_path = Path(os.getenv("BOT_DATA_DIR", "data")) / "heartbeat"
+        # Per-bot heartbeat file so dashboard can show which bots are alive
+        symbol_clean = self._config["symbol"].replace("/", "").replace(":", "")
+        heartbeat_path = Path(os.getenv("BOT_DATA_DIR", "data")) / f"heartbeat_{symbol_clean}"
         heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
         heartbeat_path.write_text(str(time.time()))
 

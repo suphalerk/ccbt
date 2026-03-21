@@ -32,6 +32,7 @@ from dashboard.components import (
 from dashboard.queries import (
     db_exists,
     get_ai_decisions,
+    get_bot_statuses,
     get_calibration_data,
     get_calibration_stats,
     get_closed_trades,
@@ -263,6 +264,11 @@ def load_per_bot_summary() -> pd.DataFrame:
     return get_per_bot_summary(db_path=DB_PATH)
 
 
+@st.cache_data(ttl=30)
+def load_bot_statuses() -> list:
+    return get_bot_statuses(PROJECT_ROOT)
+
+
 # ---------------------------------------------------------------------------
 # HEADER — Account Overview
 # ---------------------------------------------------------------------------
@@ -324,6 +330,62 @@ st.markdown("---")
 # PORTFOLIO VIEW
 # ---------------------------------------------------------------------------
 if is_portfolio_view:
+    # -------------------------------------------------------------------
+    # Bot Status Grid
+    # -------------------------------------------------------------------
+    st.markdown("### Bot Status")
+    bot_statuses = load_bot_statuses()
+
+    if bot_statuses:
+        running_count = sum(1 for b in bot_statuses if b["status"] == "running")
+        total_count = len(bot_statuses)
+
+        status_color = "#00C853" if running_count == total_count else (
+            "#FFD600" if running_count > 0 else "#FF1744"
+        )
+        st.markdown(
+            f'<div style="font-size:0.95rem; margin-bottom:8px;">'
+            f'<span style="color:{status_color}; font-weight:bold;">{running_count}</span>'
+            f'<span style="color:#78909C;"> / {total_count} bots running</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        # Build display rows
+        status_rows = []
+        for b in bot_statuses:
+            dot = '<span style="color:#00C853">&#9679;</span>' if b["status"] == "running" else '<span style="color:#FF1744">&#9679;</span>'
+            if b["last_heartbeat"] is None:
+                age_str = "never"
+            else:
+                age_s = b["age_seconds"]
+                if age_s < 60:
+                    age_str = f"{int(age_s)}s ago"
+                elif age_s < 3600:
+                    age_str = f"{int(age_s // 60)}m ago"
+                elif age_s == float("inf"):
+                    age_str = "never"
+                else:
+                    age_str = f"{int(age_s // 3600)}h ago"
+
+            status_rows.append({
+                "": dot,
+                "Symbol": b["symbol"],
+                "Strategy": b["strategy"],
+                "Status": b["status"],
+                "Last Heartbeat": age_str,
+            })
+
+        status_df = pd.DataFrame(status_rows)
+        st.write(
+            status_df.to_html(escape=False, index=False),
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("No config files found. Start bots and heartbeat files will appear here.")
+
+    st.markdown("---")
+
     # Per-bot summary table
     st.markdown("### Per-Bot Summary")
     bot_summary = load_per_bot_summary()
