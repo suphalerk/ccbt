@@ -545,8 +545,26 @@ def get_bot_statuses(project_root: Path, max_stale_seconds: float = 600) -> list
     seen_symbols: set[str] = set()
 
     for cfg_path in sorted(project_root.glob("config*.json")):
-        # Skip non-bot configs
-        if cfg_path.name in ("config_aggressive.json", "config_sniper.json", "config_yolo.json"):
+        # Skip non-bot configs and retired/non-deployed configs
+        skip_configs = {
+            "config_aggressive.json", "config_sniper.json", "config_yolo.json",
+            "config_max.json",
+            # Retired bots (no edge)
+            "config_doge.json",        # DOGE — retired, PF 1.11
+            "config_sol_ichi.json",    # SOL — retired, PF 1.17
+            # Gold/forex — separate exchange (OANDA), not Binance
+            "config_gold.json",
+            "config_gold_forex.json",
+            # Replaced by upgraded strategies
+            "config_arb.json",                  # replaced by config_arbusdt_ichi4h.json
+            "config_btc_ichi.json",             # BTC Ichi 1H — not deployed
+            "config_1000shibusdt_ichi.json",    # replaced by config_1000shibusdt_ichi4h.json
+            "config_trxusdt_ichi.json",         # replaced by config_trxusdt_ichi4htrail.json
+            "config_xlmusdt_ichi.json",         # replaced by config_xlmusdt_ichi4htrail.json
+            "config_saharausdt_supertrend.json", # replaced by config_saharausdt_ichi4htrail.json
+            "config_polusdt_ichi4htrail.json",  # replaced by config_polusdt_ichi.json
+        }
+        if cfg_path.name in skip_configs:
             continue
         try:
             with open(cfg_path) as f:
