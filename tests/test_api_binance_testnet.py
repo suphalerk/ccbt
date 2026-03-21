@@ -11,6 +11,7 @@ import sys
 import os
 import time
 import json
+import math
 
 # Ensure project root is on path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -31,10 +32,8 @@ CONFIG = {
 
 # Minimum BTC trade size on Binance futures testnet.
 # Binance requires minimum notional of $100.  At ~$70k/BTC, 0.002 BTC = ~$140.
-# If market price changes significantly, the test will dynamically recalculate
-# (see MIN_NOTIONAL_USD + get-price fallback below).
-MIN_BTC_SIZE = 0.002  # 0.002 BTC — satisfies $100 minimum notional at current price
-MIN_NOTIONAL_USD = 110.0  # Target notional with a 10% buffer over the $100 minimum
+MIN_BTC_SIZE = 0.002
+MIN_NOTIONAL_USD = 110.0
 
 # ---------------------------------------------------------------------------
 # Test framework helpers
@@ -49,9 +48,8 @@ def result(idx: int, name: str, ok: bool, detail: str) -> None:
     """Print a single test result and record it."""
     global _passed
     status = "PASS" if ok else "FAIL"
-    # Pad name for alignment
-    padded = f"{name} ".ljust(40, ".")
-    print(f"[{idx:2d}/18] {padded} {status}  ({detail})")
+    padded = f"{name} ".ljust(45, ".")
+    print(f"[{idx:2d}/{_total}] {padded} {status}  ({detail})")
     _results.append((name, ok, detail))
     if ok:
         _passed += 1
@@ -67,16 +65,16 @@ def sleep(seconds: float = 0.5) -> None:
 
 def run_tests() -> None:
     global _total
-    _total = 18
+    _total = 21
 
     print()
-    print("=" * 65)
-    print("  BINANCE TESTNET API TEST SUITE")
-    print("=" * 65)
+    print("=" * 70)
+    print("  BINANCE TESTNET API TEST SUITE (updated for separate SL/TP orders)")
+    print("=" * 70)
     print()
 
     # ------------------------------------------------------------------
-    # Initialise client (GROUP 1 — tests 1 & 2 happen inside init/after)
+    # GROUP 1 — Initialization
     # ------------------------------------------------------------------
     client: BybitClient | None = None
 
@@ -91,7 +89,6 @@ def run_tests() -> None:
             result(1, "load_markets", False, f"{symbol} NOT in {len(markets)} markets")
     except Exception as e:
         result(1, "load_markets", False, str(e))
-        # Cannot continue without a client
         _print_summary()
         return
 
@@ -99,12 +96,11 @@ def run_tests() -> None:
 
     # Test 2: set_leverage
     try:
-        client.set_leverage(CONFIG["leverage"], client.symbol)
-        result(2, "set_leverage", True, f"{CONFIG['leverage']}x set for {client.symbol}")
+        actual_lev = client.set_leverage(CONFIG["leverage"], client.symbol)
+        result(2, "set_leverage", True, f"{actual_lev}x set for {client.symbol}")
     except Exception as e:
-        # Binance testnet sometimes returns "already set" style errors
         if "already" in str(e).lower() or "not modified" in str(e).lower():
-            result(2, "set_leverage", True, f"{CONFIG['leverage']}x already set (no-op)")
+            result(2, "set_leverage", True, f"already set (no-op)")
         else:
             result(2, "set_leverage", False, str(e))
 
@@ -118,9 +114,9 @@ def run_tests() -> None:
     try:
         balance = client.get_balance()
         if balance > 0:
-            result(3, "fetch_balance", True, f"USDT free balance = {balance:.2f}")
+            result(3, "fetch_balance", True, f"USDT free = {balance:.2f}")
         else:
-            result(3, "fetch_balance", False, f"balance is 0 or negative: {balance}")
+            result(3, "fetch_balance", False, f"balance = {balance}")
     except Exception as e:
         result(3, "fetch_balance", False, str(e))
 
@@ -130,28 +126,23 @@ def run_tests() -> None:
     # GROUP 3 — Market Data
     # ------------------------------------------------------------------
 
-    # Test 4: fetch_ohlcv 15m (signal timeframe)
+    last_close = None
+
+    # Test 4: fetch_ohlcv 15m
     try:
         df_15m = client.get_ohlcv(client.symbol, "15m", limit=100)
         rows = len(df_15m)
         last_close = float(df_15m["close"].iloc[-1])
-        if rows >= 90:
-            result(4, "fetch_ohlcv 15m", True, f"{rows} candles, last close={last_close:.2f}")
-        else:
-            result(4, "fetch_ohlcv 15m", False, f"only {rows} candles returned (expected 100)")
+        result(4, "fetch_ohlcv 15m", rows >= 90, f"{rows} candles, last={last_close:.2f}")
     except Exception as e:
         result(4, "fetch_ohlcv 15m", False, str(e))
-        last_close = None
-    else:
-        last_close = float(df_15m["close"].iloc[-1])
 
     sleep()
 
-    # Test 5: fetch_ohlcv 1h (trend timeframe)
+    # Test 5: fetch_ohlcv 1h
     try:
         df_1h = client.get_ohlcv(client.symbol, "1h", limit=100)
-        rows = len(df_1h)
-        result(5, "fetch_ohlcv 1h", rows >= 90, f"{rows} candles")
+        result(5, "fetch_ohlcv 1h", len(df_1h) >= 90, f"{len(df_1h)} candles")
     except Exception as e:
         result(5, "fetch_ohlcv 1h", False, str(e))
 
@@ -162,20 +153,16 @@ def run_tests() -> None:
         price = client.get_ticker_price(client.symbol)
         if price > 0:
             result(6, "fetch_ticker", True, f"last price = {price:.2f}")
-            last_close = price  # Use live price for subsequent order sizing
+            last_close = price
         else:
-            result(6, "fetch_ticker", False, f"price is {price}")
+            result(6, "fetch_ticker", False, f"price = {price}")
     except Exception as e:
         result(6, "fetch_ticker", False, str(e))
 
-    # Recalculate minimum trade size to satisfy Binance $100 notional minimum.
-    # Apply exchange precision (step size) so the order is accepted.
+    # Calculate min trade size dynamically
     if last_close and last_close > 0:
-        raw_min_size = MIN_NOTIONAL_USD / last_close
-        # Round up to nearest 0.001 BTC step (Binance BTC step size)
-        import math
         step = 0.001
-        min_trade_size = math.ceil(raw_min_size / step) * step
+        min_trade_size = math.ceil((MIN_NOTIONAL_USD / last_close) / step) * step
         min_trade_size = round(min_trade_size, 3)
     else:
         min_trade_size = MIN_BTC_SIZE
@@ -185,7 +172,7 @@ def run_tests() -> None:
     # Test 7: fetch_funding_rate
     try:
         rate = client.get_funding_rate(client.symbol)
-        result(7, "fetch_funding_rate", True, f"funding rate = {rate:.6f} ({rate*100:.4f}%)")
+        result(7, "fetch_funding_rate", True, f"rate = {rate:.6f} ({rate*100:.4f}%)")
     except Exception as e:
         result(7, "fetch_funding_rate", False, str(e))
 
@@ -207,326 +194,272 @@ def run_tests() -> None:
         bids = len(ob.get("bids", []))
         asks = len(ob.get("asks", []))
         if bids > 0 and asks > 0:
-            best_bid = ob["bids"][0][0]
-            best_ask = ob["asks"][0][0]
-            result(9, "fetch_order_book", True, f"bid={best_bid:.2f} ask={best_ask:.2f} ({bids} bids, {asks} asks)")
+            result(9, "fetch_order_book", True, f"bid={ob['bids'][0][0]:.2f} ask={ob['asks'][0][0]:.2f}")
         else:
-            result(9, "fetch_order_book", False, f"empty order book (bids={bids}, asks={asks})")
+            result(9, "fetch_order_book", False, f"empty (bids={bids}, asks={asks})")
     except Exception as e:
         result(9, "fetch_order_book", False, str(e))
 
     sleep()
 
     # ------------------------------------------------------------------
-    # GROUP 4 — Order Management (LONG)
+    # GROUP 4 — Order Management (LONG round-trip)
     # ------------------------------------------------------------------
 
-    long_order_id: str | None = None
-    long_filled_size: float = min_trade_size
+    long_filled_size = min_trade_size
 
-    # Test 10: create long order
+    # Test 10: open long (no SL/TP)
     try:
-        order = client.place_order(
-            side="buy",
-            size=min_trade_size,
-            sl=None,
-            tp=None,
-            reduce_only=False,
-        )
-        long_order_id = order.order_id
+        order = client.place_order("buy", min_trade_size)
         long_filled_size = order.size
-        result(
-            10,
-            "create_order long",
-            True,
-            f"order_id={long_order_id} size={long_filled_size} price={order.price}",
-        )
+        result(10, "open_long (market)", True,
+               f"id={order.order_id} size={long_filled_size} price={order.price}")
     except Exception as e:
-        result(10, "create_order long", False, str(e))
+        result(10, "open_long (market)", False, str(e))
 
     sleep()
 
-    # Test 11: fetch_positions (verify long open)
-    long_position_found = False
+    # Test 11: verify long position exists
     try:
         positions = client.get_positions()
-        for p in positions:
-            if float(p.get("contracts", 0)) > 0:
-                long_position_found = True
-                side_str = p.get("side", "?")
-                contracts = float(p.get("contracts", 0))
-                entry = p.get("entryPrice") or p.get("info", {}).get("entryPrice", "?")
-                result(
-                    11,
-                    "fetch_positions (long open)",
-                    True,
-                    f"side={side_str} contracts={contracts} entry={entry}",
-                )
-                break
-        if not long_position_found:
-            result(11, "fetch_positions (long open)", False, "no active position found")
-    except Exception as e:
-        result(11, "fetch_positions (long open)", False, str(e))
-
-    sleep()
-
-    # Test 12: SL/TP can be set (place order with SL+TP params)
-    # We use a new small order with SL+TP and immediately close it.
-    sl_tp_order_id: str | None = None
-    sl_tp_size: float = min_trade_size
-    try:
-        # Get live price for realistic SL/TP
-        live_price = client.get_ticker_price(client.symbol)
-        sl_price = round(live_price * 0.98, 2)   # 2% below
-        tp_price = round(live_price * 1.04, 2)   # 4% above
-        sl_tp_order = client.place_order(
-            side="buy",
-            size=min_trade_size,
-            sl=sl_price,
-            tp=tp_price,
-            reduce_only=False,
-        )
-        sl_tp_order_id = sl_tp_order.order_id
-        sl_tp_size = sl_tp_order.size
-        result(
-            12,
-            "SL/TP order placement",
-            True,
-            f"order_id={sl_tp_order_id} sl={sl_price} tp={tp_price}",
-        )
-    except Exception as e:
-        result(12, "SL/TP order placement", False, str(e))
-
-    sleep()
-
-    # Test 13: close long position (reduceOnly)
-    # Determine total open long contracts to close
-    try:
-        positions = client.get_positions()
-        total_long_contracts = sum(
-            float(p.get("contracts", 0))
-            for p in positions
-            if p.get("side", "") == "long"
-        )
-        if total_long_contracts <= 0:
-            # Fall back to what we opened
-            total_long_contracts = long_filled_size + sl_tp_size
-
-        close_order = client.place_order(
-            side="sell",
-            size=total_long_contracts,
-            reduce_only=True,
-        )
-        result(
-            13,
-            "close long (reduceOnly sell)",
-            True,
-            f"order_id={close_order.order_id} size={close_order.size} status={close_order.status}",
-        )
-    except Exception as e:
-        result(13, "close long (reduceOnly sell)", False, str(e))
-
-    sleep()
-
-    # Test 14: fetch_positions (verify position closed)
-    try:
-        positions_after = client.get_positions()
-        long_still_open = any(
+        long_found = any(
             p.get("side") == "long" and float(p.get("contracts", 0)) > 0
-            for p in positions_after
+            for p in positions
         )
-        if not long_still_open:
-            result(14, "fetch_positions (long closed)", True, "no active long position")
-        else:
-            remaining = [(p["side"], p["contracts"]) for p in positions_after]
-            result(14, "fetch_positions (long closed)", False, f"position still open: {remaining}")
+        result(11, "verify_long_position", long_found,
+               f"positions={[(p['side'], p['contracts']) for p in positions]}")
     except Exception as e:
-        result(14, "fetch_positions (long closed)", False, str(e))
+        result(11, "verify_long_position", False, str(e))
 
     sleep()
 
-    # ------------------------------------------------------------------
-    # GROUP 5 — Trade History
-    # ------------------------------------------------------------------
-
-    # Test 15: fetch_my_trades
+    # Test 12: close long
     try:
-        since_ms = int((time.time() - 3600) * 1000)  # last 1 hour
-        trades = client.exchange.fetch_my_trades(client.symbol, since=since_ms, limit=50)
-        if trades:
-            result(15, "fetch_my_trades", True, f"{len(trades)} trades returned")
-        else:
-            # Empty is acceptable — testnet may not surface them immediately
-            result(15, "fetch_my_trades", True, "0 trades (empty — may lag on testnet)")
+        positions = client.get_positions()
+        total_long = sum(
+            float(p.get("contracts", 0)) for p in positions if p.get("side") == "long"
+        )
+        if total_long <= 0:
+            total_long = long_filled_size
+        close_order = client.place_order("sell", total_long, reduce_only=True)
+        result(12, "close_long (reduceOnly)", True,
+               f"id={close_order.order_id} size={close_order.size}")
     except Exception as e:
-        result(15, "fetch_my_trades", False, str(e))
+        result(12, "close_long (reduceOnly)", False, str(e))
 
     sleep()
 
     # ------------------------------------------------------------------
-    # GROUP 6 — Order Cleanup
+    # GROUP 5 — SL/TP as Separate Orders (NEW — critical Binance test)
     # ------------------------------------------------------------------
 
-    # Test 16: cancel_all_orders
+    # Test 13: place_order with SL+TP → verify algo orders created
+    try:
+        live_price = client.get_ticker_price(client.symbol)
+        sl_price = client.price_precision(live_price * 0.96)  # 4% below
+        tp_price = client.price_precision(live_price * 1.06)  # 6% above
+
+        order = client.place_order("buy", min_trade_size, sl=sl_price, tp=tp_price)
+        sleep(1.5)
+
+        # Verify SL/TP exist as algo conditional orders
+        algo_orders = client._get_binance_algo_orders(client.symbol)
+        sl_found = any(o.get("orderType") == "STOP_MARKET" for o in algo_orders)
+        tp_found = any(o.get("orderType") == "TAKE_PROFIT_MARKET" for o in algo_orders)
+
+        result(13, "place_order SL+TP (algo orders)", sl_found and tp_found,
+               f"sl={sl_found} tp={tp_found} algo_count={len(algo_orders)}")
+    except Exception as e:
+        result(13, "place_order SL+TP (algo orders)", False, str(e))
+
+    sleep()
+
+    # Test 14: verify SL/TP trigger prices match
+    try:
+        algo_orders = client._get_binance_algo_orders(client.symbol)
+        sl_trigger = 0.0
+        tp_trigger = 0.0
+        for ao in algo_orders:
+            if ao.get("orderType") == "STOP_MARKET":
+                sl_trigger = float(ao.get("triggerPrice", 0))
+            elif ao.get("orderType") == "TAKE_PROFIT_MARKET":
+                tp_trigger = float(ao.get("triggerPrice", 0))
+
+        sl_match = abs(sl_trigger - sl_price) < 1.0 if sl_trigger > 0 else False
+        tp_match = abs(tp_trigger - tp_price) < 1.0 if tp_trigger > 0 else False
+
+        result(14, "SL/TP trigger prices match", sl_match and tp_match,
+               f"sl={sl_trigger} (want {sl_price}) tp={tp_trigger} (want {tp_price})")
+    except Exception as e:
+        result(14, "SL/TP trigger prices match", False, str(e))
+
+    sleep()
+
+    # Test 15: modify_sl (cancel old STOP_MARKET algo, place new)
+    try:
+        new_sl = client.price_precision(live_price * 0.95)  # 5% below
+        ok = client.modify_sl(symbol=client.symbol, side="buy", new_sl=new_sl)
+        sleep(1.5)
+
+        # Verify: old SL gone, new SL present in algo orders
+        algo_orders = client._get_binance_algo_orders(client.symbol)
+        new_sl_found = False
+        sl_count = 0
+        for ao in algo_orders:
+            if ao.get("orderType") == "STOP_MARKET":
+                sl_count += 1
+                trigger = float(ao.get("triggerPrice", 0))
+                if abs(trigger - new_sl) < 1.0:
+                    new_sl_found = True
+
+        result(15, "modify_sl (cancel-recreate)", ok and new_sl_found and sl_count == 1,
+               f"ok={ok} new_sl_found={new_sl_found} sl_count={sl_count} target={new_sl}")
+    except Exception as e:
+        result(15, "modify_sl (cancel-recreate)", False, str(e))
+
+    sleep()
+
+    # Test 16: verify TP survived modify_sl (should NOT be cancelled)
+    try:
+        algo_orders = client._get_binance_algo_orders(client.symbol)
+        tp_survived = any(o.get("orderType") == "TAKE_PROFIT_MARKET" for o in algo_orders)
+        result(16, "TP survives modify_sl", tp_survived,
+               f"tp_exists={tp_survived} algo_count={len(algo_orders)}")
+    except Exception as e:
+        result(16, "TP survives modify_sl", False, str(e))
+
+    sleep()
+
+    # Cleanup: cancel all orders + close position
     try:
         client.cancel_all_orders(client.symbol)
-        result(16, "cancel_all_orders", True, f"all open orders cancelled for {client.symbol}")
-    except Exception as e:
-        # If there are no open orders, some exchanges return an error — treat as OK
-        if "no order" in str(e).lower() or "empty" in str(e).lower():
-            result(16, "cancel_all_orders", True, "no open orders to cancel")
-        else:
-            result(16, "cancel_all_orders", False, str(e))
+    except Exception:
+        pass
+    sleep(0.5)
+    try:
+        positions = client.get_positions()
+        total_long = sum(
+            float(p.get("contracts", 0)) for p in positions if p.get("side") == "long"
+        )
+        if total_long > 0:
+            client.place_order("sell", total_long, reduce_only=True)
+    except Exception:
+        pass
 
     sleep()
 
     # ------------------------------------------------------------------
-    # GROUP 7 — Short Side
+    # GROUP 6 — Short Round-Trip
     # ------------------------------------------------------------------
 
-    # Test 17: open SHORT, verify position, close it
+    # Test 17: short round-trip with SL+TP
     try:
-        short_order = client.place_order(
-            side="sell",
-            size=min_trade_size,
-            reduce_only=False,
-        )
-        sleep(1.0)  # give exchange a moment to register position
+        live_price = client.get_ticker_price(client.symbol)
+        short_sl = client.price_precision(live_price * 1.04)  # 4% above
+        short_tp = client.price_precision(live_price * 0.94)  # 6% below
 
-        # Verify short position exists
+        short_order = client.place_order("sell", min_trade_size, sl=short_sl, tp=short_tp)
+        sleep(1.5)
+
+        # Verify position + algo orders
         positions = client.get_positions()
         short_found = any(
             p.get("side") == "short" and float(p.get("contracts", 0)) > 0
             for p in positions
         )
+        algo_orders = client._get_binance_algo_orders(client.symbol)
+        sl_found = any(o.get("orderType") == "STOP_MARKET" for o in algo_orders)
+        tp_found = any(o.get("orderType") == "TAKE_PROFIT_MARKET" for o in algo_orders)
 
-        # Close the short — use actual contracts to handle partial fills
-        total_short_contracts = sum(
-            float(p.get("contracts", 0))
-            for p in positions
-            if p.get("side", "") == "short"
-        )
-        close_size = total_short_contracts if total_short_contracts > 0 else min_trade_size
-        short_close = client.place_order(
-            side="buy",
-            size=close_size,
-            reduce_only=True,
-        )
-        sleep(0.5)
-
-        detail = (
-            f"short open={short_found} "
-            f"short_order_id={short_order.order_id} "
-            f"close_order_id={short_close.order_id}"
-        )
-        result(17, "short round-trip", short_found, detail)
-    except Exception as e:
-        result(17, "short round-trip", False, str(e))
-
-    # ------------------------------------------------------------------
-    # GROUP 8 — modify_sl (Binance cancel-and-recreate)
-    # ------------------------------------------------------------------
-
-    # Test 18: open a long, call modify_sl to set a new SL, verify it lands,
-    #          then clean up (cancel orders + close position).
-    try:
-        live_price = client.get_ticker_price(client.symbol)
-
-        # Open a small long position without SL so we can set one via modify_sl
-        mod_order = client.place_order(
-            side="buy",
-            size=min_trade_size,
-            sl=None,
-            tp=None,
-            reduce_only=False,
-        )
-        sleep(1.0)  # let exchange register the position
-
-        initial_sl = round(live_price * 0.97, 2)   # 3% below — initial SL
-        new_sl = round(live_price * 0.96, 2)        # 4% below — modified SL
-
-        # Set an initial SL via a STOP_MARKET order so modify_sl has something to cancel.
-        # closePosition=True is mutually exclusive with reduceOnly on Binance (error -1106).
-        client.exchange.create_order(
-            client.symbol,
-            "stop_market",
-            "sell",
-            None,
-            None,
-            {
-                "stopPrice": initial_sl,
-                "closePosition": True,
-            },
-        )
-        sleep(0.5)
-
-        # Call modify_sl — should cancel the initial SL and place a new one
-        ok = client.modify_sl(symbol=client.symbol, side="buy", new_sl=new_sl)
-
-        # Verify: a STOP_MARKET algo order with the new triggerPrice should exist.
-        # Binance futures stores closePosition SL orders as conditional algo orders
-        # which do NOT appear in fetch_open_orders — must query the algo endpoint.
-        sl_found = False
-        if ok:
-            sleep(0.5)
-            try:
-                market = client.exchange.market(client.symbol)
-                algo_orders = client.exchange.fapiPrivateGetOpenAlgoOrders(
-                    {"symbol": market["id"]}
-                )
-                for o in algo_orders:
-                    raw_stop = float(o.get("triggerPrice") or 0)
-                    raw_type = (o.get("orderType") or "").upper()
-                    if raw_type in ("STOP_MARKET", "STOP") and abs(raw_stop - new_sl) < 1.0:
-                        sl_found = True
-                        break
-            except Exception:
-                pass
-
-        result(
-            18,
-            "modify_sl (cancel-recreate)",
-            ok and sl_found,
-            f"modify_sl_returned={ok} new_sl_order_found={sl_found} new_sl={new_sl}",
-        )
-
-        # Cleanup: cancel regular + algo orders, then close the position
+        # Cleanup
         try:
             client.cancel_all_orders(client.symbol)
         except Exception:
             pass
-        try:
-            market = client.exchange.market(client.symbol)
-            client.exchange.fapiPrivateDeleteAlgoOpenOrders({"symbol": market["id"]})
-        except Exception:
-            pass
-        sleep(0.5)
-        positions = client.get_positions()
-        total_longs = sum(
-            float(p.get("contracts", 0))
-            for p in positions
-            if p.get("side", "") == "long"
+        sleep(0.3)
+        total_short = sum(
+            float(p.get("contracts", 0)) for p in positions if p.get("side") == "short"
         )
-        if total_longs > 0:
-            client.place_order(side="sell", size=total_longs, reduce_only=True)
+        if total_short > 0:
+            client.place_order("buy", total_short, reduce_only=True)
+
+        result(17, "short round-trip + SL+TP", short_found and sl_found and tp_found,
+               f"pos={short_found} sl={sl_found} tp={tp_found}")
     except Exception as e:
-        result(18, "modify_sl (cancel-recreate)", False, str(e))
+        result(17, "short round-trip + SL+TP", False, str(e))
+
+    sleep()
+
+    # ------------------------------------------------------------------
+    # GROUP 7 — Trade History
+    # ------------------------------------------------------------------
+
+    # Test 18: fetch_my_trades
+    try:
+        since_ms = int((time.time() - 3600) * 1000)
+        trades = client.exchange.fetch_my_trades(client.symbol, since=since_ms, limit=50)
+        result(18, "fetch_my_trades", True, f"{len(trades)} trades")
+    except Exception as e:
+        result(18, "fetch_my_trades", False, str(e))
+
+    sleep()
+
+    # Test 19: get_closed_pnl
+    try:
+        since_ms = int((time.time() - 3600) * 1000)
+        closed = client.get_closed_pnl(client.symbol, since_ms=since_ms)
+        result(19, "get_closed_pnl", True, f"{len(closed)} records")
+    except Exception as e:
+        result(19, "get_closed_pnl", False, str(e))
+
+    sleep()
+
+    # ------------------------------------------------------------------
+    # GROUP 8 — Price Precision
+    # ------------------------------------------------------------------
+
+    # Test 20: price_precision works for BTC
+    try:
+        precise = client.price_precision(87654.321)
+        # BTC/USDT:USDT should have 1 or 2 decimal precision
+        result(20, "price_precision BTC", precise > 0, f"87654.321 → {precise}")
+    except Exception as e:
+        result(20, "price_precision BTC", False, str(e))
+
+    # ------------------------------------------------------------------
+    # GROUP 9 — Final Cleanup
+    # ------------------------------------------------------------------
+
+    # Test 21: cancel_all_orders + close_all_positions
+    try:
+        client.cancel_all_orders(client.symbol)
+        client.close_all_positions(client.symbol)
+        positions = client.get_positions()
+        clean = all(float(p.get("contracts", 0)) == 0 for p in positions) if positions else True
+        result(21, "final_cleanup", clean,
+               f"all orders cancelled, positions closed")
+    except Exception as e:
+        if "no order" in str(e).lower() or "no position" in str(e).lower():
+            result(21, "final_cleanup", True, "nothing to clean")
+        else:
+            result(21, "final_cleanup", False, str(e))
 
     _print_summary()
 
 
 def _print_summary() -> None:
-    failed = [name for name, ok, _ in _results if not ok]
+    failed = [(name, detail) for name, ok, detail in _results if not ok]
     print()
-    print("=" * 65)
+    print("=" * 70)
     print(f"  RESULTS: {_passed}/{_total} PASSED")
     if failed:
         print()
         print("  FAILED:")
-        for name in failed:
-            detail = next(d for n, ok, d in _results if n == name)
+        for name, detail in failed:
             print(f"    - {name}: {detail}")
-    print("=" * 65)
+    else:
+        print("  ALL TESTS PASSED!")
+    print("=" * 70)
     print()
 
 

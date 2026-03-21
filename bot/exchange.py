@@ -307,16 +307,15 @@ class BybitClient:
             params["reduceOnly"] = True
 
         if self._exchange_name == "binance":
-            # Binance futures uses flat stopPrice / takeProfit params,
-            # not the nested Bybit dict format.
+            # Binance futures: SL/TP are placed as separate algo conditional
+            # orders via ccxt stopLossPrice/takeProfitPrice params (routed to
+            # /fapi/v1/algo endpoint).  Do NOT pass in main market order.
             if sl is not None:
                 sl = _safe_precision(self.exchange, self.symbol, sl, "price")
-                params["stopLoss"] = sl
             if tp is not None:
                 tp = _safe_precision(self.exchange, self.symbol, tp, "price")
-                params["takeProfit"] = tp
         else:
-            # Bybit uses nested triggerPrice dicts
+            # Bybit uses nested triggerPrice dicts in the main order
             if sl is not None:
                 sl = _safe_precision(self.exchange, self.symbol, sl, "price")
                 params["stopLoss"] = {"triggerPrice": sl}
@@ -334,8 +333,39 @@ class BybitClient:
             params,
         )
 
-        # Use actual filled size, not requested size (handles partial fills)
+        # Compute filled size BEFORE placing SL/TP so they use actual size
         filled_size = float(order.get("filled") or order.get("amount") or size)
+
+        # Binance: place SL and TP as separate algo conditional orders
+        # using ccxt unified stopLossPrice / takeProfitPrice params which
+        # route to the Binance /fapi/v1/algo endpoint automatically.
+        # IMPORTANT: use filled_size, not requested size — prevents SL/TP
+        # quantity mismatch on partial fills.
+        if self._exchange_name == "binance" and filled_size > 0:
+            sl_order_side = "sell" if side == "buy" else "buy"
+            sl_placed = False
+            if sl is not None:
+                try:
+                    self._retry(
+                        self.exchange.create_order,
+                        self.symbol, "market", sl_order_side, filled_size, None,
+                        {"stopLossPrice": sl, "reduceOnly": True},
+                    )
+                    sl_placed = True
+                    logger.info("binance_sl_order_placed", extra={"sl": sl, "size": filled_size})
+                except Exception as e:
+                    logger.error("binance_sl_order_failed", extra={"sl": sl, "error": str(e)})
+            # Only place TP if SL was successfully placed (never have TP without SL)
+            if tp is not None and (sl_placed or sl is None):
+                try:
+                    self._retry(
+                        self.exchange.create_order,
+                        self.symbol, "market", sl_order_side, filled_size, None,
+                        {"takeProfitPrice": tp, "reduceOnly": True},
+                    )
+                    logger.info("binance_tp_order_placed", extra={"tp": tp, "size": filled_size})
+                except Exception as e:
+                    logger.error("binance_tp_order_failed", extra={"tp": tp, "error": str(e)})
         if filled_size < size * 0.95:
             logger.warning(
                 "partial_fill_detected",
@@ -384,11 +414,31 @@ class BybitClient:
     def cancel_all_orders(self, symbol: Optional[str] = None) -> None:
         """Cancel all open orders for a symbol.
 
+        On Binance, also cancels algo conditional orders (SL/TP) which live
+        in a separate order book from regular orders.
+
         Args:
             symbol: Trading pair. Defaults to configured symbol.
         """
         symbol = symbol or self.symbol
-        self._retry(self.exchange.cancel_all_orders, symbol)
+        try:
+            self._retry(self.exchange.cancel_all_orders, symbol)
+        except Exception as e:
+            # Binance may return error if no regular orders exist
+            if "no order" not in str(e).lower():
+                logger.warning("cancel_regular_orders_failed", extra={"error": str(e)})
+
+        # Binance: also cancel algo conditional orders (SL/TP)
+        if self._exchange_name == "binance":
+            try:
+                market = self.exchange.market(symbol)
+                self._retry(
+                    self.exchange.fapiPrivateDeleteAlgoOpenOrders,
+                    {"symbol": market["id"]},
+                )
+            except Exception as e:
+                logger.warning("cancel_algo_orders_failed", extra={"error": str(e)})
+
         logger.info("orders_cancelled", extra={"symbol": symbol})
 
     def close_all_positions(self, symbol: Optional[str] = None) -> None:
@@ -426,6 +476,19 @@ class BybitClient:
         active = [p for p in positions if float(p.get("contracts", 0)) > 0]
         logger.info("positions_fetched", extra={"count": len(active)})
         return active
+
+    def price_precision(self, price: float, symbol: Optional[str] = None) -> float:
+        """Round a price value to exchange-specific precision.
+
+        Args:
+            price: Raw price value.
+            symbol: Trading pair. Defaults to configured symbol.
+
+        Returns:
+            Precision-adjusted price.
+        """
+        symbol = symbol or self.symbol
+        return _safe_precision(self.exchange, symbol, price, "price")
 
     def get_funding_rate(self, symbol: Optional[str] = None) -> float:
         """Get current funding rate for a symbol.
@@ -492,16 +555,49 @@ class BybitClient:
             logger.warning("get_closed_pnl_failed", extra={"error": str(e)})
             return []
 
+    def _get_binance_algo_orders(self, symbol: str) -> list[dict]:
+        """Fetch open algo conditional orders for a symbol on Binance.
+
+        Binance futures stores SL/TP (STOP_MARKET, TAKE_PROFIT_MARKET) as
+        algo conditional orders that do NOT appear in fetch_open_orders.
+        Must use the /fapi/v1/algo/openOrders endpoint instead.
+
+        Args:
+            symbol: Normalised ccxt symbol (e.g. 'BTC/USDT:USDT').
+
+        Returns:
+            List of raw algo order dicts with keys: algoId, orderType,
+            triggerPrice, algoStatus, side, etc.
+        """
+        market = self.exchange.market(symbol)
+        exchange_symbol = market["id"]
+        try:
+            response = self._retry(
+                self.exchange.fapiPrivateGetOpenAlgoOrders,
+                {"symbol": exchange_symbol},
+            )
+            # Binance returns {"orders": [...], "total": n} — NOT a raw list.
+            # A bare isinstance(response, list) check silently returns [] every time.
+            if isinstance(response, list):
+                return response
+            if isinstance(response, dict):
+                return response.get("orders", [])
+            return []
+        except Exception as e:
+            logger.warning("binance_get_algo_orders_failed", extra={"error": str(e)})
+            return []
+
     def _modify_sl_binance(self, symbol: str, side: str, new_sl: float) -> bool:
         """Modify stop loss on Binance via cancel-and-recreate pattern.
 
-        Binance futures stores SL orders as conditional algo orders
-        (algoType=CONDITIONAL). They do NOT appear in fetch_open_orders —
-        they are managed via the /fapi/v1/algo/orders family of endpoints.
+        Binance futures stores SL orders as algo conditional orders
+        (algoType=CONDITIONAL, orderType=STOP_MARKET).  They do NOT appear
+        in fetch_open_orders — must use fapiPrivateGetOpenAlgoOrders to
+        query and fapiPrivateDeleteAlgoOrder to cancel individual orders.
 
         Steps:
-        1. Cancel all open conditional algo orders for the symbol.
-        2. Place a new STOP_MARKET closePosition order at new_sl.
+        1. Fetch open algo orders, cancel only STOP_MARKET ones (preserve TP).
+        2. Place a new SL via ccxt stopLossPrice param (routed to algo API).
 
         Args:
             symbol: Normalised ccxt symbol (e.g. 'BTC/USDT:USDT').
@@ -511,39 +607,32 @@ class BybitClient:
         Returns:
             True if the new SL was successfully placed.
         """
-        # Determine the order side for the SL (opposite to position side)
         sl_order_side = "sell" if side == "buy" else "buy"
-        # Exchange symbol ID (e.g. 'BTCUSDT') required by raw fapi endpoints
         market = self.exchange.market(symbol)
         exchange_symbol = market["id"]
+
+        cancelled_sl = False
         try:
-            # Step 1: Cancel only SL algo orders (not TP).
-            # Fetch open algo orders and cancel only STOP_MARKET ones.
-            cancelled_sl = False
+            # Step 1: Cancel only STOP_MARKET algo orders (preserve TP orders)
             try:
-                algo_orders = self._retry(
-                    self.exchange.fapiPrivateGetAlgoOpenOrders,
-                    {"symbol": exchange_symbol},
-                )
-                orders = algo_orders.get("orders", algo_orders) if isinstance(algo_orders, dict) else algo_orders
-                if isinstance(orders, list):
-                    for ao in orders:
-                        order_type = str(ao.get("type", ao.get("origType", ""))).upper()
-                        if order_type in ("STOP_MARKET", "STOP"):
-                            algo_id = ao.get("algoId", ao.get("orderId"))
-                            if algo_id:
-                                try:
-                                    self._retry(
-                                        self.exchange.fapiPrivateDeleteAlgoOrder,
-                                        {"symbol": exchange_symbol, "algoId": str(algo_id)},
-                                    )
-                                    cancelled_sl = True
-                                except Exception:
-                                    pass
+                algo_orders = self._get_binance_algo_orders(symbol)
+                for ao in algo_orders:
+                    order_type = str(ao.get("orderType", "")).upper()
+                    if order_type in ("STOP_MARKET", "STOP"):
+                        algo_id = ao.get("algoId")
+                        if algo_id:
+                            try:
+                                self._retry(
+                                    self.exchange.fapiPrivateDeleteAlgoOrder,
+                                    {"symbol": exchange_symbol, "algoId": str(algo_id)},
+                                )
+                                cancelled_sl = True
+                            except Exception:
+                                pass
                 if cancelled_sl:
-                    logger.info("binance_sl_order_cancelled", extra={"symbol": symbol})
+                    logger.info("binance_sl_algo_cancelled", extra={"symbol": symbol})
                 else:
-                    logger.info("binance_no_sl_to_cancel", extra={"symbol": symbol})
+                    logger.info("binance_no_sl_algo_to_cancel", extra={"symbol": symbol})
             except Exception as cancel_err:
                 err_str = str(cancel_err).lower()
                 if "-2011" in str(cancel_err) or "no open" in err_str or "not found" in err_str:
@@ -551,22 +640,32 @@ class BybitClient:
                 else:
                     raise
 
-            # Step 2: place new STOP_MARKET order.
-            # closePosition=True tells Binance to close the full position when the
-            # trigger fires. Do NOT also pass reduceOnly — Binance rejects the
-            # combination with error -1106.
+            # Step 2: Place new SL via ccxt stopLossPrice → algo API
             new_sl_price = _safe_precision(self.exchange, symbol, new_sl, "price")
+
+            # Need position size for the new SL order
+            positions = self._retry(self.exchange.fetch_positions, [symbol])
+            pos_size = 0.0
+            for pos in positions:
+                if float(pos.get("contracts", 0)) > 0:
+                    pos_size = float(pos["contracts"])
+                    break
+
+            if pos_size <= 0:
+                logger.warning(
+                    "binance_sl_modify_no_position",
+                    extra={"symbol": symbol, "reason": "no active position found, cannot place SL"},
+                )
+                return False
+
             self._retry(
                 self.exchange.create_order,
                 symbol,
-                "stop_market",
+                "market",
                 sl_order_side,
-                None,   # amount — closePosition handles sizing
-                None,   # price — market order, no limit price
-                {
-                    "stopPrice": new_sl_price,
-                    "closePosition": True,
-                },
+                pos_size,
+                None,
+                {"stopLossPrice": new_sl_price, "reduceOnly": True},
             )
             logger.info(
                 "binance_sl_placed",
@@ -578,19 +677,92 @@ class BybitClient:
                 "binance_sl_modify_failed",
                 extra={"symbol": symbol, "new_sl": new_sl, "error": str(e)},
             )
-            # If we cancelled the old SL but failed to place new one,
-            # attempt emergency SL placement with original price
+            # If we cancelled old SL but failed to place new one, try emergency
+            # using actual position size (never a hardcoded fallback)
             if cancelled_sl:
                 try:
                     emergency_sl = _safe_precision(self.exchange, symbol, new_sl, "price")
-                    self.exchange.create_order(
-                        symbol, "stop_market", sl_order_side, None, None,
-                        {"stopPrice": emergency_sl, "closePosition": True},
+                    emergency_positions = self._retry(self.exchange.fetch_positions, [symbol])
+                    emergency_size = 0.0
+                    for ep in emergency_positions:
+                        if float(ep.get("contracts", 0)) > 0:
+                            emergency_size = float(ep["contracts"])
+                            break
+                    if emergency_size <= 0:
+                        logger.error(
+                            "binance_emergency_sl_no_position",
+                            extra={"symbol": symbol},
+                        )
+                        return False
+                    self._retry(
+                        self.exchange.create_order,
+                        symbol, "market", sl_order_side, emergency_size, None,
+                        {"stopLossPrice": emergency_sl, "reduceOnly": True},
                     )
                     logger.warning("binance_emergency_sl_placed", extra={"sl": emergency_sl})
                     return True
                 except Exception as e2:
                     logger.error("binance_emergency_sl_failed", extra={"error": str(e2)})
+            return False
+
+    def modify_tp_binance(self, symbol: Optional[str] = None, side: str = "buy", new_tp: float = 0.0) -> bool:
+        """Modify take profit on Binance via cancel-and-recreate pattern.
+
+        Cancels existing TAKE_PROFIT_MARKET algo orders and places a new one.
+
+        Args:
+            symbol: Trading pair. Defaults to configured symbol.
+            side: Position side ('buy' for long, 'sell' for short).
+            new_tp: New take profit trigger price.
+
+        Returns:
+            True if the new TP was successfully placed.
+        """
+        symbol = symbol or self.symbol
+        if self._exchange_name != "binance":
+            return False
+
+        tp_order_side = "sell" if side == "buy" else "buy"
+        market = self.exchange.market(symbol)
+        exchange_symbol = market["id"]
+
+        try:
+            # Cancel existing TAKE_PROFIT_MARKET algo orders only
+            algo_orders = self._get_binance_algo_orders(symbol)
+            for ao in algo_orders:
+                if str(ao.get("orderType", "")).upper() in ("TAKE_PROFIT_MARKET", "TAKE_PROFIT"):
+                    algo_id = ao.get("algoId")
+                    if algo_id:
+                        try:
+                            self._retry(
+                                self.exchange.fapiPrivateDeleteAlgoOrder,
+                                {"symbol": exchange_symbol, "algoId": str(algo_id)},
+                            )
+                        except Exception:
+                            pass
+
+            # Place new TP with actual position size
+            new_tp_price = _safe_precision(self.exchange, symbol, new_tp, "price")
+            positions = self._retry(self.exchange.fetch_positions, [symbol])
+            pos_size = 0.0
+            for pos in positions:
+                if float(pos.get("contracts", 0)) > 0:
+                    pos_size = float(pos["contracts"])
+                    break
+
+            if pos_size <= 0:
+                logger.warning("binance_tp_modify_no_position", extra={"symbol": symbol})
+                return False
+
+            self._retry(
+                self.exchange.create_order,
+                symbol, "market", tp_order_side, pos_size, None,
+                {"takeProfitPrice": new_tp_price, "reduceOnly": True},
+            )
+            logger.info("binance_tp_modified", extra={"symbol": symbol, "new_tp": new_tp_price})
+            return True
+        except Exception as e:
+            logger.error("binance_tp_modify_failed", extra={"symbol": symbol, "error": str(e)})
             return False
 
     def modify_sl(self, symbol: Optional[str] = None, side: str = "buy", new_sl: float = 0.0) -> bool:
@@ -643,25 +815,72 @@ class BybitClient:
             logger.warning("sl_modify_failed", extra={"error": str(e)})
             return False
 
-    def set_leverage(self, leverage: int, symbol: Optional[str] = None) -> None:
-        """Set leverage for a symbol.
+    def set_leverage(self, leverage: int, symbol: Optional[str] = None) -> int:
+        """Set leverage for a symbol, auto-reducing if exchange rejects it.
+
+        Binance returns error -4028 when requested leverage exceeds the
+        symbol's maximum.  When that happens we halve the leverage and retry
+        (up to 5 attempts, minimum 1x).
 
         Args:
-            leverage: Leverage multiplier.
+            leverage: Desired leverage multiplier.
             symbol: Trading pair. Defaults to configured symbol.
+
+        Returns:
+            The leverage value that was actually set on the exchange.
         """
         symbol = symbol or self.symbol
-        try:
-            self._retry(self.exchange.set_leverage, leverage, symbol)
-        except Exception as e:
-            # Bybit returns error 110043 if leverage is already set to this value
-            if "not modified" in str(e):
-                logger.info(
-                    "leverage_already_set",
-                    extra={"symbol": symbol, "leverage": leverage},
-                )
-                return
-            raise
-        logger.info(
-            "leverage_set", extra={"symbol": symbol, "leverage": leverage}
+        current_lev = leverage
+
+        for attempt in range(5):
+            try:
+                self._retry(self.exchange.set_leverage, current_lev, symbol)
+                if current_lev != leverage:
+                    logger.warning(
+                        "leverage_auto_reduced",
+                        extra={
+                            "symbol": symbol,
+                            "requested": leverage,
+                            "actual": current_lev,
+                        },
+                    )
+                else:
+                    logger.info(
+                        "leverage_set",
+                        extra={"symbol": symbol, "leverage": current_lev},
+                    )
+                return current_lev
+            except Exception as e:
+                err_msg = str(e).lower()
+                # Bybit: leverage already set to this value
+                if "not modified" in err_msg:
+                    logger.info(
+                        "leverage_already_set",
+                        extra={"symbol": symbol, "leverage": current_lev},
+                    )
+                    return current_lev
+                # Binance -4028 or generic leverage rejection
+                if any(kw in err_msg for kw in ("-4028", "invalid", "exceed", "max")) and "leverage" in err_msg:
+                    new_lev = max(current_lev // 2, 1)
+                    logger.warning(
+                        "leverage_rejected_retrying",
+                        extra={
+                            "symbol": symbol,
+                            "rejected": current_lev,
+                            "next_try": new_lev,
+                            "attempt": attempt + 1,
+                            "error": str(e),
+                        },
+                    )
+                    if new_lev == current_lev:
+                        # Already at 1x, can't go lower
+                        return current_lev
+                    current_lev = new_lev
+                    continue
+                raise
+        # Exhausted retries — return last attempted value
+        logger.warning(
+            "leverage_set_exhausted_retries",
+            extra={"symbol": symbol, "final_leverage": current_lev},
         )
+        return current_lev

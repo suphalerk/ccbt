@@ -211,6 +211,20 @@ def check_closed_positions(
             )
             closed.append(trade_id)
 
+    # Cancel orphaned algo orders (e.g. TP remaining after SL trigger, or vice
+    # versa).  On Binance, algo orders live in a separate book and persist even
+    # after the position is gone — they would fire on the next same-direction
+    # position if not cleaned up.
+    if closed and client is not None:
+        try:
+            client.cancel_all_orders(symbol)
+            logger.info(
+                "orphaned_orders_cleaned",
+                extra={"symbol": symbol, "closed_trades": len(closed)},
+            )
+        except Exception as e:
+            logger.warning("orphaned_order_cleanup_failed", extra={"error": str(e)})
+
     for tid in closed:
         del open_trade_ids[tid]
 
@@ -398,8 +412,17 @@ class TradingEngine:
 
         self._log_all_decisions = ai_config.get("log_all_decisions", True)
 
-        # Set leverage
-        self._client.set_leverage(config["leverage"])
+        # Set leverage (capture actual in case exchange auto-reduces)
+        actual_leverage = self._client.set_leverage(config["leverage"])
+        if actual_leverage and actual_leverage != config["leverage"]:
+            logger.warning(
+                "leverage_adjusted",
+                extra={
+                    "requested": config["leverage"],
+                    "actual": actual_leverage,
+                },
+            )
+            config["leverage"] = actual_leverage
 
         log_level = "warning" if not config.get("use_testnet", True) else "info"
         logger.log(
@@ -668,7 +691,7 @@ class TradingEngine:
                                     be_success = self._client.modify_sl(
                                         symbol=config["symbol"],
                                         side=info["side"],
-                                        new_sl=round(breakeven, 2),
+                                        new_sl=self._client.price_precision(breakeven),
                                     )
                                     if be_success:
                                         info["sl"] = breakeven
@@ -693,7 +716,7 @@ class TradingEngine:
                     success = self._client.modify_sl(
                         symbol=config["symbol"],
                         side=info["side"],
-                        new_sl=round(new_sl, 2),
+                        new_sl=self._client.price_precision(new_sl),
                     )
                     if success:
                         info["sl"] = new_sl
@@ -701,8 +724,8 @@ class TradingEngine:
                             "trailing_stop_updated",
                             extra={
                                 "trade_id": trade_id,
-                                "old_sl": round(old_sl, 2),
-                                "new_sl": round(new_sl, 2),
+                                "old_sl": self._client.price_precision(old_sl),
+                                "new_sl": self._client.price_precision(new_sl),
                                 "current_price": current_price,
                                 "atr": round(effective_atr, 4),
                                 "regime": regime,
@@ -1089,28 +1112,37 @@ class TradingEngine:
             order = self._client.place_order(
                 side=side,
                 size=round(contract_size, 6),
-                sl=round(adjusted_sl, 2),
-                tp=round(adjusted_tp, 2),
+                sl=self._client.price_precision(adjusted_sl),
+                tp=self._client.price_precision(adjusted_tp),
             )
 
-            # Verify SL was actually set on the position with retry
+            # Verify SL was actually set with retry
             sl_verified = False
             for sl_attempt in range(3):
                 try:
                     await asyncio.sleep(0.3 * (sl_attempt + 1))
-                    verify_positions = self._client.get_positions()
-                    for vp in verify_positions:
-                        if vp.get("side") == ("long" if side == "buy" else "short"):
-                            sl_val = float(
-                                vp.get("stopLossPrice")           # Bybit unified field
-                                or vp.get("stopLoss")             # ccxt unified fallback
-                                or vp.get("info", {}).get("stopPrice")  # Binance raw field
-                                or vp.get("info", {}).get("stopLoss", 0)  # Bybit raw field
-                                or 0
-                            )
-                            if sl_val > 0:
+                    if self._client._exchange_name == "binance":
+                        # Binance: SL is an algo conditional order
+                        algo_orders = self._client._get_binance_algo_orders(config["symbol"])
+                        for ao in algo_orders:
+                            if str(ao.get("orderType", "")).upper() == "STOP_MARKET":
                                 sl_verified = True
-                            break
+                                break
+                    else:
+                        # Bybit: SL embedded in position
+                        verify_positions = self._client.get_positions()
+                        for vp in verify_positions:
+                            if vp.get("side") == ("long" if side == "buy" else "short"):
+                                sl_val = float(
+                                    vp.get("stopLossPrice")
+                                    or vp.get("stopLoss")
+                                    or vp.get("info", {}).get("stopPrice")
+                                    or vp.get("info", {}).get("stopLoss", 0)
+                                    or 0
+                                )
+                                if sl_val > 0:
+                                    sl_verified = True
+                                break
                     if sl_verified:
                         break
                     logger.warning(
@@ -1120,7 +1152,7 @@ class TradingEngine:
                     self._client.modify_sl(
                         symbol=config["symbol"],
                         side=side,
-                        new_sl=round(adjusted_sl, 2),
+                        new_sl=self._client.price_precision(adjusted_sl),
                     )
                 except Exception as e:
                     logger.error(
@@ -1135,6 +1167,8 @@ class TradingEngine:
                 )
                 close_ok = False
                 try:
+                    # Cancel algo orders first to prevent orphaned SL/TP
+                    self._client.cancel_all_orders()
                     self._client.close_all_positions()
                     close_ok = True
                 except Exception as close_err:
@@ -1149,6 +1183,60 @@ class TradingEngine:
                 if await self._interruptible_sleep(60):
                     return True
                 return False
+
+            # Verify TP was set (Binance: check algo orders for TAKE_PROFIT_MARKET)
+            tp_verified = False
+            for tp_attempt in range(3):
+                try:
+                    await asyncio.sleep(0.3 * (tp_attempt + 1))
+                    if self._client._exchange_name == "binance":
+                        # Binance: TP is an algo conditional order
+                        algo_orders = self._client._get_binance_algo_orders(config["symbol"])
+                        for ao in algo_orders:
+                            if str(ao.get("orderType", "")).upper() == "TAKE_PROFIT_MARKET":
+                                tp_verified = True
+                                break
+                    else:
+                        # Bybit: TP embedded in position — check position field
+                        verify_positions = self._client.get_positions()
+                        for vp in verify_positions:
+                            if vp.get("side") == ("long" if side == "buy" else "short"):
+                                tp_val = float(
+                                    vp.get("takeProfitPrice")
+                                    or vp.get("takeProfit")
+                                    or vp.get("info", {}).get("takeProfit", 0)
+                                    or 0
+                                )
+                                if tp_val > 0:
+                                    tp_verified = True
+                                break
+                    if tp_verified:
+                        break
+                    logger.warning(
+                        "tp_not_set_retrying",
+                        extra={"attempt": tp_attempt + 1},
+                    )
+                    # Retry placing TP via ccxt stopLossPrice/takeProfitPrice
+                    if self._client._exchange_name == "binance":
+                        tp_side = "sell" if side == "buy" else "buy"
+                        self._client._retry(
+                            self._client.exchange.create_order,
+                            config["symbol"], "market", tp_side, contract_size, None,
+                            {"takeProfitPrice": self._client.price_precision(adjusted_tp), "reduceOnly": True},
+                        )
+                except Exception as e:
+                    logger.error(
+                        "tp_verification_failed",
+                        extra={"attempt": tp_attempt + 1, "error": str(e)},
+                    )
+
+            if not tp_verified:
+                logger.warning(
+                    "tp_verification_failed_continuing",
+                    extra={"order_id": order.order_id, "tp": adjusted_tp},
+                )
+                # TP failure is less critical than SL — log warning but continue
+                # (trailing stop or manual exit can still protect the trade)
 
             # Use actual fill price and size, not requested
             actual_entry = order.price if order.price else trade_signal.entry_price
@@ -1171,16 +1259,22 @@ class TradingEngine:
                     extra={
                         "requested_entry": trade_signal.entry_price,
                         "fill_entry": actual_entry,
-                        "old_sl": round(adjusted_sl, 2),
-                        "new_sl": round(fill_adjusted_sl, 2),
-                        "old_tp": round(adjusted_tp, 2),
-                        "new_tp": round(fill_adjusted_tp, 2),
+                        "old_sl": self._client.price_precision(adjusted_sl),
+                        "new_sl": self._client.price_precision(fill_adjusted_sl),
+                        "old_tp": self._client.price_precision(adjusted_tp),
+                        "new_tp": self._client.price_precision(fill_adjusted_tp),
                     },
                 )
                 self._client.modify_sl(
                     symbol=config["symbol"],
                     side=side,
-                    new_sl=round(fill_adjusted_sl, 2),
+                    new_sl=self._client.price_precision(fill_adjusted_sl),
+                )
+                # Also update TP on exchange (Binance: cancel old + place new)
+                self._client.modify_tp_binance(
+                    symbol=config["symbol"],
+                    side=side,
+                    new_tp=self._client.price_precision(fill_adjusted_tp),
                 )
                 adjusted_sl = fill_adjusted_sl
                 adjusted_tp = fill_adjusted_tp
