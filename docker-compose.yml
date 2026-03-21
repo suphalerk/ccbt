@@ -33,7 +33,7 @@ services:
       - YOLO_MODE=1
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config.json:/app/config.json:ro
     deploy:
       resources:
@@ -63,7 +63,7 @@ services:
       - BOT_DATA_DIR=/app/data
       - YOLO_MODE=1
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_wif.json:/app/config_wif.json:ro
     deploy:
       resources:
@@ -97,7 +97,7 @@ services:
       - BOT_DATA_DIR=/app/data
       - YOLO_MODE=1
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_arcusdt_ema.json:/app/config_arcusdt_ema.json:ro
     deploy:
       resources:
@@ -130,7 +130,7 @@ services:
       - CONFIG_FILE=config_avax_ichi.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_avax_ichi.json:/app/config_avax_ichi.json:ro
     deploy:
       resources:
@@ -160,7 +160,7 @@ services:
       - CONFIG_FILE=config_polusdt_ichi4htrail.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_polusdt_ichi4htrail.json:/app/config_polusdt_ichi4htrail.json:ro
     deploy:
       resources:
@@ -189,7 +189,7 @@ services:
       - CONFIG_FILE=config_gunusdt_ichi.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_gunusdt_ichi.json:/app/config_gunusdt_ichi.json:ro
     deploy:
       resources:
@@ -218,7 +218,7 @@ services:
       - CONFIG_FILE=config_berausdt_ichi.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_berausdt_ichi.json:/app/config_berausdt_ichi.json:ro
     deploy:
       resources:
@@ -247,7 +247,7 @@ services:
       - CONFIG_FILE=config_athusdt_ichi.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_athusdt_ichi.json:/app/config_athusdt_ichi.json:ro
     deploy:
       resources:
@@ -276,7 +276,7 @@ services:
       - CONFIG_FILE=config_injusdt_ichi.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_injusdt_ichi.json:/app/config_injusdt_ichi.json:ro
     deploy:
       resources:
@@ -305,7 +305,7 @@ services:
       - CONFIG_FILE=config_trumpusdt_ichi.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_trumpusdt_ichi.json:/app/config_trumpusdt_ichi.json:ro
     deploy:
       resources:
@@ -334,7 +334,7 @@ services:
       - CONFIG_FILE=config_animeusdt_ichi.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_animeusdt_ichi.json:/app/config_animeusdt_ichi.json:ro
     deploy:
       resources:
@@ -367,7 +367,7 @@ services:
       - CONFIG_FILE=config_ipusdt_ichi.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_ipusdt_ichi.json:/app/config_ipusdt_ichi.json:ro
     deploy:
       resources:
@@ -401,7 +401,7 @@ services:
       - CONFIG_FILE=config_1000shibusdt_ichi.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_1000shibusdt_ichi.json:/app/config_1000shibusdt_ichi.json:ro
     deploy:
       resources:
@@ -430,7 +430,7 @@ services:
       - CONFIG_FILE=config_taousdt_ichi4h.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_taousdt_ichi4h.json:/app/config_taousdt_ichi4h.json:ro
     deploy:
       resources:
@@ -459,7 +459,7 @@ services:
       - CONFIG_FILE=config_renderusdt_ichi4h.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_renderusdt_ichi4h.json:/app/config_renderusdt_ichi4h.json:ro
     deploy:
       resources:
@@ -489,7 +489,7 @@ services:
       - CONFIG_FILE=config_arb.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_arb.json:/app/config_arb.json:ro
     deploy:
       resources:
@@ -522,7 +522,7 @@ services:
       - CONFIG_FILE=config_signusdt_ichi4h.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_signusdt_ichi4h.json:/app/config_signusdt_ichi4h.json:ro
     deploy:
       resources:
@@ -551,7 +551,7 @@ services:
       - CONFIG_FILE=config_tiausdt_ichi4h.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_tiausdt_ichi4h.json:/app/config_tiausdt_ichi4h.json:ro
     deploy:
       resources:
@@ -580,7 +580,7 @@ services:
       - CONFIG_FILE=config_ondousdt_ichi4h.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_ondousdt_ichi4h.json:/app/config_ondousdt_ichi4h.json:ro
     deploy:
       resources:
@@ -609,7 +609,7 @@ services:
       - CONFIG_FILE=config_husdt_ichi4h.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_husdt_ichi4h.json:/app/config_husdt_ichi4h.json:ro
     deploy:
       resources:
@@ -638,7 +638,7 @@ services:
       - CONFIG_FILE=config_axsusdt_ichi4h.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_axsusdt_ichi4h.json:/app/config_axsusdt_ichi4h.json:ro
     deploy:
       resources:
@@ -671,7 +671,7 @@ services:
       - CONFIG_FILE=config_algousdt_ichi4htrail.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_algousdt_ichi4htrail.json:/app/config_algousdt_ichi4htrail.json:ro
     deploy:
       resources:
@@ -701,7 +701,7 @@ services:
       - CONFIG_FILE=config_trxusdt_ichi.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_trxusdt_ichi.json:/app/config_trxusdt_ichi.json:ro
     deploy:
       resources:
@@ -730,7 +730,7 @@ services:
       - CONFIG_FILE=config_polyxusdt_ichi4htrail.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_polyxusdt_ichi4htrail.json:/app/config_polyxusdt_ichi4htrail.json:ro
     deploy:
       resources:
@@ -759,7 +759,7 @@ services:
       - CONFIG_FILE=config_fetusdt_ichi4htrail.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_fetusdt_ichi4htrail.json:/app/config_fetusdt_ichi4htrail.json:ro
     deploy:
       resources:
@@ -789,7 +789,7 @@ services:
       - CONFIG_FILE=config_xlmusdt_ichi.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_xlmusdt_ichi.json:/app/config_xlmusdt_ichi.json:ro
     deploy:
       resources:
@@ -819,7 +819,7 @@ services:
       - CONFIG_FILE=config_saharausdt_supertrend.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_saharausdt_supertrend.json:/app/config_saharausdt_supertrend.json:ro
     deploy:
       resources:
@@ -852,7 +852,7 @@ services:
       - CONFIG_FILE=config_mstrusdt_supertrend.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_mstrusdt_supertrend.json:/app/config_mstrusdt_supertrend.json:ro
     deploy:
       resources:
@@ -881,7 +881,7 @@ services:
       - CONFIG_FILE=config_xagusdt_supertrend.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_xagusdt_supertrend.json:/app/config_xagusdt_supertrend.json:ro
     deploy:
       resources:
@@ -914,7 +914,7 @@ services:
       - CONFIG_FILE=config_1000pepeusdt_volexp.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_1000pepeusdt_volexp.json:/app/config_1000pepeusdt_volexp.json:ro
     deploy:
       resources:
@@ -943,7 +943,7 @@ services:
       - CONFIG_FILE=config_wldusdt_volexp.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_wldusdt_volexp.json:/app/config_wldusdt_volexp.json:ro
     deploy:
       resources:
@@ -976,7 +976,7 @@ services:
       - CONFIG_FILE=config_aptusdt_emaichi4h.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_aptusdt_emaichi4h.json:/app/config_aptusdt_emaichi4h.json:ro
     deploy:
       resources:
@@ -1005,7 +1005,7 @@ services:
       - CONFIG_FILE=config_near_ichi.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_near_ichi.json:/app/config_near_ichi.json:ro
     deploy:
       resources:
@@ -1034,7 +1034,7 @@ services:
       - CONFIG_FILE=config_zetausdt_ichi.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_zetausdt_ichi.json:/app/config_zetausdt_ichi.json:ro
     deploy:
       resources:
@@ -1067,7 +1067,7 @@ services:
       - CONFIG_FILE=config_ltcusdt_ichist4h.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_ltcusdt_ichist4h.json:/app/config_ltcusdt_ichist4h.json:ro
     deploy:
       resources:
@@ -1100,7 +1100,7 @@ services:
       - CONFIG_FILE=config_lightusdt_alligator.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_lightusdt_alligator.json:/app/config_lightusdt_alligator.json:ro
     deploy:
       resources:
@@ -1133,7 +1133,7 @@ services:
       - CONFIG_FILE=config_hbarusdt_ichi4h.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_hbarusdt_ichi4h.json:/app/config_hbarusdt_ichi4h.json:ro
     deploy:
       resources:
@@ -1162,7 +1162,7 @@ services:
       - CONFIG_FILE=config_qntusdt_alligator4h.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_qntusdt_alligator4h.json:/app/config_qntusdt_alligator4h.json:ro
     deploy:
       resources:
@@ -1191,7 +1191,7 @@ services:
       - CONFIG_FILE=config_arcusdt_ichi.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_arcusdt_ichi.json:/app/config_arcusdt_ichi.json:ro
     deploy:
       resources:
@@ -1220,7 +1220,7 @@ services:
       - CONFIG_FILE=config_linkusdt_alligator4h.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_linkusdt_alligator4h.json:/app/config_linkusdt_alligator4h.json:ro
     deploy:
       resources:
@@ -1249,7 +1249,7 @@ services:
       - CONFIG_FILE=config_suiusdt_alligator4h.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_suiusdt_alligator4h.json:/app/config_suiusdt_alligator4h.json:ro
     deploy:
       resources:
@@ -1282,7 +1282,7 @@ services:
       - CONFIG_FILE=config_lynusdt_dualst.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_lynusdt_dualst.json:/app/config_lynusdt_dualst.json:ro
     deploy:
       resources:
@@ -1311,7 +1311,7 @@ services:
       - CONFIG_FILE=config_humausdt_dualst.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_humausdt_dualst.json:/app/config_humausdt_dualst.json:ro
     deploy:
       resources:
@@ -1344,7 +1344,7 @@ services:
       - CONFIG_FILE=config_enjusdt_dualst4h.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_enjusdt_dualst4h.json:/app/config_enjusdt_dualst4h.json:ro
     deploy:
       resources:
@@ -1373,7 +1373,7 @@ services:
       - CONFIG_FILE=config_xplusdt_dualst4h.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_xplusdt_dualst4h.json:/app/config_xplusdt_dualst4h.json:ro
     deploy:
       resources:
@@ -1402,7 +1402,7 @@ services:
       - CONFIG_FILE=config_xrpusdt_dualst4h.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_xrpusdt_dualst4h.json:/app/config_xrpusdt_dualst4h.json:ro
     deploy:
       resources:
@@ -1431,7 +1431,7 @@ services:
       - CONFIG_FILE=config_aktusdt_dualst4h.json
       - BOT_DATA_DIR=/app/data
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       - ./config_aktusdt_dualst4h.json:/app/config_aktusdt_dualst4h.json:ro
     deploy:
       resources:
@@ -1473,7 +1473,7 @@ services:
     ports:
       - "127.0.0.1:8501:8501"
     volumes:
-      - bot-data:/app/data
+      - ./data:/app/data
       # All config files mounted for multi-bot portfolio view
       - ./config.json:/app/config.json:ro
       - ./config_aggressive.json:/app/config_aggressive.json:ro
@@ -1547,7 +1547,5 @@ services:
         max-size: "10m"
         max-file: "3"
 
-# Named volume for data persistence
-volumes:
-  bot-data:
-    driver: local
+# Data directory bind-mounted from host (./data) so local dashboard
+# and monitoring tools can access trades.db and heartbeat files directly.
