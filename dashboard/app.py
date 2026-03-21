@@ -778,8 +778,10 @@ else:
         latest_ts = log_entries[-1]["timestamp"]
         if "T" in latest_ts:
             latest_display = latest_ts.split("T")[1][:8]
+        elif " " in latest_ts:
+            latest_display = latest_ts.split(" ")[1][:8]
         else:
-            latest_display = latest_ts[:19]
+            latest_display = latest_ts[-8:]
         st.metric("Latest", latest_display)
 
     html_lines = []
@@ -787,8 +789,10 @@ else:
         ts = entry["timestamp"]
         if "T" in ts:
             time_str = ts.split("T")[1][:8]
+        elif " " in ts:
+            time_str = ts.split(" ")[1][:8]
         else:
-            time_str = ts[:8]
+            time_str = ts[-8:]
 
         level = entry["level"]
         message = entry["message"]
@@ -815,7 +819,7 @@ else:
         '<div class="log-container" id="log-container">'
         + "\n".join(html_lines)
         + '</div>'
-        + '<script>var c=document.getElementById("log-container");if(c)c.scrollTop=c.scrollHeight;</script>'
+        + ''  # No auto-scroll needed — newest entries are already at top
     )
     st.markdown(log_html, unsafe_allow_html=True)
 
