@@ -117,6 +117,14 @@ Three strategies validated on 2.4yr XAU/USD 1H data (simple simulator):
 - **Timeout**: 10s with fallback to execute without AI
 - **Model**: claude-sonnet-4-6
 
+## Signal Scorer (Multi-Signal Conviction)
+- **Purpose**: Supplements binary signal checks with weighted conviction scoring
+- **Signals**: 6 OHLCV (EMA alignment, momentum, volume, RSI, ATR, candle strength) + funding rate
+- **Mode**: Score gates low-conviction trades (below threshold) and modulates position size
+- **Best config**: Funding rate weight=0.35, threshold=0.10 → BTC PF 1.68→1.85 (+10%)
+- **Funding data**: Auto-loaded from `data/{symbol}_funding_rate.csv` (shift(1) for bias prevention)
+- **Disabled per-coin**: Falls back to OHLCV-only scoring if no funding file exists
+
 ## Risk Management (Autonomous Safety Net)
 Bot runs fully autonomous — risk management is the primary safety layer:
 - 2% base risk per trade (default profile), 9% max daily loss
@@ -141,13 +149,15 @@ Bot runs fully autonomous — risk management is the primary safety layer:
 
 ## Profiles (5yr backtest, $1,000 start, verified no look-ahead bias)
 
-| Profile | File | Risk | Lev | 5yr | /yr | PF | DD | Trades |
-|---------|------|------|-----|-----|-----|-----|-----|--------|
-| **Safe** | `config.json` | 2% | 7x | +72% | ~11% | 1.62 | 17% | 103 |
-| **Aggressive** | `config_aggressive.json` | 5% | 10x | +158% | ~21% | 1.53 | 15% | 103 |
-| **YOLO (bear mode)** | `config_yolo.json` | 10% | 25x | +78%/yr | 1.41 | 32% | MTD ON |
-| **MAX** | `config_max.json` | 15% | 25x | +33%/yr | 1.29 | 36% | MTD OFF |
-| **Sniper** | `config_sniper.json` | 2% | 7x | +12%/yr | 1.62 | 17% | MTD OFF |
+| Profile | File | Risk | Lev | 5yr | /yr | PF | DD | Trades | Notes |
+|---------|------|------|-----|-----|-----|-----|-----|--------|-------|
+| **Safe** | `config.json` | 2% | 7x | +72% | ~11% | 1.85* | 17% | 103 | Funding scorer ON |
+| **Aggressive** | `config_aggressive.json` | 5% | 10x | +158% | ~21% | 1.53 | 15% | 103 | |
+| **YOLO (bear mode)** | `config_yolo.json` | 10% | 25x | +78%/yr | 1.41 | 32% | MTD ON | |
+| **MAX** | `config_max.json` | 15% | 25x | +33%/yr | 1.29 | 36% | MTD OFF | |
+| **Sniper** | `config_sniper.json` | 2% | 7x | +12%/yr | 1.62 | 17% | MTD OFF | |
+
+*Safe profile PF updated from 1.68 (scorer disabled) to 1.85 (funding scorer enabled, weight=0.35).
 
 Default = R10%/L25x NO MTD (+115%/yr recent, +40%/yr 5yr average).
 YOLO config = same params but MTD ON — switch to this during bear/sideways markets.

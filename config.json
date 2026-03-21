@@ -177,16 +177,17 @@
     ]
   },
   "signal_scorer": {
-    "enabled": false,
-    "entry_threshold": 0.3,
-    "high_conviction": 0.6,
+    "enabled": true,
+    "entry_threshold": 0.10,
+    "high_conviction": 0.5,
     "weights": {
-      "ema_alignment": 0.25,
-      "momentum_mtf": 0.20,
-      "volume_surge": 0.15,
-      "rsi_zone": 0.15,
-      "atr_regime": 0.10,
-      "candle_strength": 0.15
+      "ema_alignment": 0.15,
+      "momentum_mtf": 0.10,
+      "volume_surge": 0.10,
+      "rsi_zone": 0.10,
+      "atr_regime": 0.05,
+      "candle_strength": 0.15,
+      "funding_rate": 0.35
     }
   },
   "ai_layer": {
