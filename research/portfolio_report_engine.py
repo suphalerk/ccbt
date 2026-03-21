@@ -43,6 +43,7 @@ BOT_ABBREVS = [
     "TAO4H", "RDR4H", "HBR4H",
     "POL4T", "PLX4T", "FET4T", "ALG4T",
     "MSTR", "XAG", "SAHAR",
+    "PEPE", "WLD",
 ]
 
 PORTFOLIO = [
@@ -231,6 +232,19 @@ PORTFOLIO = [
         "name": "SAHARA",
         "config": "config_saharausdt_supertrend.json",
         "signal_data": "data/saharausdt_1h_2y.csv",
+        "trend_data": None,
+    },
+    # --- Strategy 8: Vol Expansion Breakout 1H ---
+    {
+        "name": "1000PEPE",
+        "config": "config_1000pepeusdt_volexp.json",
+        "signal_data": "data/1000pepeusdt_1h_2y.csv",
+        "trend_data": None,
+    },
+    {
+        "name": "WLD",
+        "config": "config_wldusdt_volexp.json",
+        "signal_data": "data/wldusdt_1h_2y.csv",
         "trend_data": None,
     },
 ]

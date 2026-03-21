@@ -901,6 +901,75 @@ def check_ichimoku_conditions(
     return True
 
 
+def check_vol_expansion_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Volatility Expansion Breakout entry conditions.
+
+    LONG:  ATR expanding above its rolling mean  AND  close broke above recent high
+           AND  close is above EMA(50) trend filter.
+    SHORT: ATR expanding above its rolling mean  AND  close broke below recent low
+           AND  close is below EMA(50) trend filter.
+
+    Requires vol_expanding, vol_break_high, vol_break_low columns (added by
+    add_indicators() when vol_expansion signal is enabled in config).
+
+    Uses prev_row (closed candle) to avoid look-ahead bias.
+
+    Args:
+        row: Current candle row (unused, kept for consistent interface).
+        prev_row: Previous closed candle row with vol_expansion indicators.
+        config: Bot configuration with vol_expansion parameters.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if Volatility Expansion Breakout conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("vol_expansion", {}).get("enabled", False):
+        return False
+
+    # All required columns must be present and non-NaN
+    for col in ("vol_expanding", "vol_break_high", "vol_break_low", "atr"):
+        val = prev_row.get(col)
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    # ATR expanding state — primary volatility gate
+    if not prev_row.get("vol_expanding", False):
+        return False
+
+    # ATR minimum volatility check
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(prev_row.get("atr")) or prev_row["atr"] < atr_min:
+        return False
+
+    # EMA(50) trend filter: use ema_trend (from add_trend_filter) or ema50 from data
+    ema50 = prev_row.get("ema_trend", prev_row.get("ema_trend_1h", prev_row.get("ema50", 0)))
+    if pd.isna(ema50) or ema50 == 0:
+        return False
+
+    if signal_type == SignalType.LONG:
+        if not prev_row.get("vol_break_high", False):
+            return False
+        # Trend filter: close must be above EMA(50)
+        if prev_row["close"] <= ema50:
+            return False
+        return True
+
+    elif signal_type == SignalType.SHORT:
+        if not prev_row.get("vol_break_low", False):
+            return False
+        # Trend filter: close must be below EMA(50)
+        if prev_row["close"] >= ema50:
+            return False
+        return True
+
+    return False
+
+
 def compute_levels(
     entry_price: float, atr: float, signal_type: SignalType, config: dict
 ) -> tuple[float, float]:

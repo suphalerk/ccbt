@@ -64,6 +64,7 @@ config files:
   config_*usdt_ichi4h.json → Auto-generated 4H Ichimoku configs (1% risk, mass expansion v2)
   config_*usdt_ichi4htrail.json → 4H Ichimoku trailing exit configs (1% risk)
   config_*usdt_supertrend.json → Supertrend configs (1% risk)
+  config_*_volexp.json     → Vol Expansion Breakout configs (1% risk)
 ```
 
 ## Key Commands
@@ -146,15 +147,16 @@ Three strategies validated on 2.4yr XAU/USD 1H data (simple simulator):
 5. **Ichimoku Cloud 4H** — Same Tenkan/Kijun cross + cloud filter but on 4H resampled data. Reduces noise for large-cap coins.
 6. **4H Ichimoku Trailing Exit** — 4H Ichimoku entry with ATR trailing stop instead of fixed TP. Captures longer trends.
 7. **Supertrend 1H** — ATR-adaptive trend-following bands. Direction change = entry signal. Works on MSTR, XAG, SAHARA.
+8. **Vol Expansion Breakout 1H** — ATR exceeds rolling mean × threshold + price breaks above/below recent high/low + EMA(50) trend filter. Captures volatility spikes. Works on 1000PEPE, WLD.
 
 ### Key Differences per Strategy
-| | EMA 15m | Ichimoku 1H | Ichimoku 4H | 4H Trail | Supertrend 1H |
-|---|---------|-------------|-------------|----------|---------------|
-| Signal | EMA crossover + RSI + vol | Tenkan/Kijun + cloud | Tenkan/Kijun + cloud | Tenkan/Kijun + cloud | ATR band direction change |
-| Timeframe | 15m signal, 1h trend | 1h | 4h (resampled) | 4h (resampled) | 1h |
-| SL/TP | 1.0/3.0 ATR | 1.5-2.5/4.0-5.0 ATR | 2.0-2.5/4.0-5.0 ATR | SL only + trail | 2.0-2.5/3.0-5.0 ATR |
-| Best for | BTC, meme (DOGE/WIF) | Mid-cap (AVAX/NEAR/SOL) | Large-cap (TAO/RENDER) | ALGO/FET/POL | MSTR/XAG/SAHARA |
-| Trades/yr | 20-30/coin | 10-15/coin | 6-9/coin | 5-7/coin | 5-7/coin |
+| | EMA 15m | Ichimoku 1H | Ichimoku 4H | 4H Trail | Supertrend 1H | Vol Expansion 1H |
+|---|---------|-------------|-------------|----------|---------------|-------------------|
+| Signal | EMA crossover + RSI + vol | Tenkan/Kijun + cloud | Tenkan/Kijun + cloud | Tenkan/Kijun + cloud | ATR band direction change | ATR > MA×threshold + breakout |
+| Timeframe | 15m signal, 1h trend | 1h | 4h (resampled) | 4h (resampled) | 1h | 1h |
+| SL/TP | 1.0/3.0 ATR | 1.5-2.5/4.0-5.0 ATR | 2.0-2.5/4.0-5.0 ATR | SL only + trail | 2.0-2.5/3.0-5.0 ATR | 2.5/3.0 ATR |
+| Best for | BTC, meme (DOGE/WIF) | Mid-cap (AVAX/NEAR/SOL) | Large-cap (TAO/RENDER) | ALGO/FET/POL | MSTR/XAG/SAHARA | 1000PEPE/WLD |
+| Trades/yr | 20-30/coin | 10-15/coin | 6-9/coin | 5-7/coin | 5-7/coin | 6-8/coin |
 
 ### Research Findings (300+ backtests)
 - Price Action: fails on all coins/timeframes (avg PF 0.73-0.85)
@@ -176,6 +178,15 @@ Three strategies validated on 2.4yr XAU/USD 1H data (simple simulator):
 - Keltner Channel: high trade count but low PF in full engine
 - 6 undeployed sweep winners REJECTED: all had < 6 months data (CRCL/GUA/BEAT/ENSO/KITE/UAI)
 - **4 rounds of research**: 7→19→22→26→29 bots, PF 1.68→1.77, DD 8.3%→6.4%
+
+### Round 5 Research (March 2026)
+- **Vol Expansion Breakout: NEW strategy** — ATR > rolling_mean × 1.8 + price breakout + EMA(50) trend filter
+- **439 sweep winners** across 43 unique coins (1H + 4H), largest new technique pool
+- Engine-verified: 1000PEPE PF 10.85 (80% WR), WLD PF 3.25 (73% WR) → deployed
+- STO rejected (only 0.9yr data), SAND failed engine (PF 1.19), ASTER/HYPE failed (PF <1.3)
+- MTF Confluence: 92 winners but hurts deployed coins, only SIREN/PIPPIN new (not verified)
+- Regime-Adaptive Exit: infrastructure built (entry-time regime locks TP/trail), default params don't help (PF 1.77→1.60)
+- **5 rounds of research**: 7→19→22→26→29→31 bots, PF 1.77→2.06, DD 6.4%→1.9%
 
 ## AI Advisor Layer
 - **Mode**: "advisor" — provides nuanced adjustments, NOT binary gate
@@ -219,6 +230,7 @@ Bot runs fully autonomous — risk management is the primary safety layer:
 - `config_*usdt_ichi4h.json` — Mass expansion 4H Ichimoku configs (auto-generated, 1% risk)
 - `config_*usdt_ichi4htrail.json` — 4H Ichimoku trailing exit configs (auto-generated, 1% risk)
 - `config_*usdt_supertrend.json` — Supertrend configs (auto-generated, 1% risk)
+- `config_*_volexp.json` — Vol Expansion Breakout configs (auto-generated, 1% risk)
 - `.env` — API keys (Bybit/Binance, Anthropic, Telegram, CryptoPanic)
 - `use_testnet: true` must be explicitly changed to go live
 - `--config <path>` or `CONFIG_FILE` env var selects config file
@@ -282,13 +294,19 @@ Bot runs fully autonomous — risk management is the primary safety layer:
 | **XAG** | `config_xagusdt_supertrend.json` | 2.09 | 44% | 5 | 2.47 | 2.0% |
 | **SAHARA** | `config_saharausdt_supertrend.json` | 1.27 | 50% | 7 | 0.53 | 1.4% |
 
-**Portfolio total: 731 trades, ~365/yr (~1/day) across 29 bots**
-**PF 1.77 | Sharpe 4.49 | Max DD 6.4% | $200 → $1,240 (+520%)**
-**Original 7 bots: 2-5% risk | New 22 bots: 1% risk each**
-**5 strategy types: EMA 15m, Ichimoku 1H, Ichimoku 4H, 4H Trail, Supertrend**
+### Strategy 8: Vol Expansion Breakout 1H (1% risk each)
+| Coin | Config | PF | WR% | Tr/yr | Sharpe | DD% |
+|------|--------|-----|-----|-------|--------|-----|
+| **1000PEPE** | `config_1000pepeusdt_volexp.json` | 10.85 | 80% | 8 | 2.81 | 0.6% |
+| **WLD** | `config_wldusdt_volexp.json` | 3.25 | 73% | 6 | 1.47 | 1.0% |
+
+**Portfolio total: 757 trades, ~378/yr (~1/day) across 31 bots**
+**PF 2.06 | Max DD 1.9% | $200 → $1,273 (+537%)**
+**Original 7 bots: 2-5% risk | New 24 bots: 1% risk each**
+**8 strategy types: EMA 15m, Ichimoku 1H, Ichimoku 4H, 4H Trail, Supertrend, Vol Expansion**
 
 ```bash
-# Run all 29 bots
+# Run all 31 bots
 
 # === EMA Crossover 15m (5 bots) ===
 YOLO_MODE=1 python main.py --config config.json &          # BTC (5% risk)
@@ -328,6 +346,10 @@ python main.py --config config_polyxusdt_ichi4htrail.json & # POLYX 4HT (PF 1.49
 python main.py --config config_mstrusdt_supertrend.json &   # MSTR (PF 2.66)
 python main.py --config config_xagusdt_supertrend.json &    # XAG (PF 2.09)
 python main.py --config config_saharausdt_supertrend.json & # SAHARA (PF 1.27)
+
+# === Vol Expansion Breakout 1H (2 bots) ===
+python main.py --config config_1000pepeusdt_volexp.json &   # 1000PEPE (PF 10.85)
+python main.py --config config_wldusdt_volexp.json &        # WLD (PF 3.25)
 
 # Docker deployment (all bots)
 docker compose up -d --build

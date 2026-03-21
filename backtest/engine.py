@@ -26,6 +26,7 @@ from bot.strategy import (
     check_rsi_divergence_conditions,
     check_squeeze_release_conditions,
     check_supertrend_conditions,
+    check_vol_expansion_conditions,
     compute_levels,
     compute_net_rr,
     compute_signal_quality_score,
@@ -60,6 +61,10 @@ class BacktestTrade:
     pyramid_count: int = 0
     pyramid_sizes: list = field(default_factory=list)
     avg_entry_price: float = 0.0  # Weighted average entry (for PnL calc with pyramids)
+    # Regime-adaptive exit: trail multiplier locked at entry-time regime
+    # None means use the standard rolling regime per candle (default behaviour)
+    entry_regime: str = ""
+    regime_trail_mult: float = 0.0  # 0.0 = not set (use rolling per-candle regime)
 
 
 @dataclass
@@ -108,6 +113,24 @@ class BacktestEngine:
             self._scorer = SignalScorer(config)
         else:
             self._scorer = None
+
+        # Regime-adaptive exit configuration.
+        # When enabled, TP and trail multipliers are selected at entry time based
+        # on the regime detected from the signal candle, and locked for the trade
+        # duration.  When disabled (default), behaviour is identical to before.
+        self._regime_adaptive_exit: bool = config.get("regime_adaptive_exit", False)
+        base_tp = config.get("atr_tp_mult", 3.0)
+        base_trail = config.get("atr_trail_mult", 2.0)
+        self._regime_tp: dict[str, float] = {
+            "trending": config.get("regime_trending_tp_mult", base_tp),
+            "ranging": config.get("regime_ranging_tp_mult", base_tp * 0.6),
+            "volatile": config.get("regime_volatile_tp_mult", base_tp * 0.8),
+        }
+        self._regime_trail: dict[str, float] = {
+            "trending": config.get("regime_trending_trail_mult", base_trail),
+            "ranging": config.get("regime_ranging_trail_mult", base_trail * 0.6),
+            "volatile": config.get("regime_volatile_trail_mult", base_trail * 0.75),
+        }
 
     @staticmethod
     def _get_slippage_multiplier(timestamp) -> float:
@@ -421,6 +444,17 @@ class BacktestEngine:
                         ):
                             signal_source = "supertrend"
 
+            # Volatility Expansion Breakout: uses signal_row (closed candle) as the
+            # prev_row argument — vol_expanding, vol_break_high/low are computed at
+            # indicator build time, so signal_row already contains the state for the
+            # last closed candle (candle_idx-1).  No additional prev row needed.
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("vol_expansion", {}).get("enabled", False):
+                    if check_vol_expansion_conditions(
+                        signal_row, signal_row, self.config, signal_type
+                    ):
+                        signal_source = "vol_expansion"
+
             if signal_source is None:
                 continue
 
@@ -452,6 +486,25 @@ class BacktestEngine:
             # --- End signal scorer gate ---
 
             atr = signal_row["atr"]
+
+            # Determine entry-time regime for regime-adaptive exit.
+            # The regime column was pre-computed per row in the main loop.
+            entry_regime = signal_row.get("regime", "trending") if hasattr(signal_row, "get") else "trending"
+            if not isinstance(entry_regime, str):
+                entry_regime = "trending"
+
+            # Build an effective config for compute_levels, optionally overriding
+            # atr_tp_mult with the regime-specific value.  When regime_adaptive_exit
+            # is disabled this produces a config identical to self.config so all
+            # downstream behaviour (including TP price) is unchanged.
+            if self._regime_adaptive_exit:
+                adaptive_tp_mult = self._regime_tp.get(entry_regime, self.config.get("atr_tp_mult", 3.0))
+                levels_config = {**self.config, "atr_tp_mult": adaptive_tp_mult}
+                locked_trail_mult: float = self._regime_trail.get(entry_regime, self.config.get("atr_trail_mult", 2.0))
+            else:
+                levels_config = self.config
+                locked_trail_mult = 0.0  # 0.0 = not locked, use rolling per-candle regime
+
             # Mean-reversion uses tighter SL/TP multipliers
             if signal_source == "mean_reversion":
                 sl_mult = self.config.get("mr_atr_sl_mult", 1.0)
@@ -460,16 +513,16 @@ class BacktestEngine:
                     entry_price, atr, signal_type,
                     {"atr_sl_mult": sl_mult, "atr_tp_mult": tp_mult},
                 )
-            elif signal_source in ("ichimoku_cloud", "supertrend"):
+            elif signal_source in ("ichimoku_cloud", "supertrend", "vol_expansion"):
                 # When atr_tp_mult is 0, set TP very far so trailing stop is the real exit
-                tp_mult = self.config.get("atr_tp_mult", 3.0)
-                tp_mult_effective = 100.0 if tp_mult == 0 else tp_mult
+                effective_tp = levels_config.get("atr_tp_mult", 3.0)
+                tp_mult_effective = 100.0 if effective_tp == 0 else effective_tp
                 sl, tp = compute_levels(
                     entry_price, atr, signal_type,
-                    {**self.config, "atr_tp_mult": tp_mult_effective},
+                    {**levels_config, "atr_tp_mult": tp_mult_effective},
                 )
             else:
-                sl, tp = compute_levels(entry_price, atr, signal_type, self.config)
+                sl, tp = compute_levels(entry_price, atr, signal_type, levels_config)
 
             # Flexible cooldown: check signal quality to override
             if in_cooldown:
@@ -622,6 +675,8 @@ class BacktestEngine:
                 tp1_hit=False,
                 risk_amount=risk_amount,
                 signal_source=signal_source,
+                entry_regime=entry_regime,
+                regime_trail_mult=locked_trail_mult,
             )
             break  # Only one entry per candle
 
@@ -838,27 +893,37 @@ class BacktestEngine:
                     )
         # --- End pyramiding ---
 
-        # Trailing stop update with regime-adaptive multiplier
+        # Trailing stop update with regime-adaptive multiplier.
+        # When regime_adaptive_exit is enabled, the trail multiplier is locked to
+        # the entry-time regime (stored on the trade) for the entire trade duration.
+        # When disabled, the original rolling per-candle regime logic is used so
+        # behaviour is identical to before.
         if pd.notna(row.get("atr")):
             signal_type = SignalType.LONG if pos.side == "long" else SignalType.SHORT
-            # Determine regime from row if available, else default to trending
-            regime = row.get("regime", "trending") if hasattr(row, "get") else "trending"
-            if not isinstance(regime, str):
-                regime = "trending"
             regime_trail_config = self.config.copy()
-            if regime == "ranging":
-                regime_trail_config["atr_trail_mult"] = self.config.get(
-                    "atr_trail_mult_ranging", self.config.get("atr_trail_mult", 1.8)
-                )
-            elif regime == "volatile":
-                regime_trail_config["atr_trail_mult"] = self.config.get(
-                    "atr_trail_mult_volatile", self.config.get("atr_trail_mult", 1.8)
-                )
+
+            if self._regime_adaptive_exit and pos.regime_trail_mult > 0.0:
+                # Locked trail mult from entry-time regime
+                regime_trail_config["atr_trail_mult"] = pos.regime_trail_mult
             else:
-                regime_trail_config["atr_trail_mult"] = self.config.get(
-                    "atr_trail_mult_trending", self.config.get("atr_trail_mult", 1.8)
-                )
-            # Use wider trail after TP1 hit
+                # Original rolling per-candle regime logic (unchanged from before)
+                regime = row.get("regime", "trending") if hasattr(row, "get") else "trending"
+                if not isinstance(regime, str):
+                    regime = "trending"
+                if regime == "ranging":
+                    regime_trail_config["atr_trail_mult"] = self.config.get(
+                        "atr_trail_mult_ranging", self.config.get("atr_trail_mult", 1.8)
+                    )
+                elif regime == "volatile":
+                    regime_trail_config["atr_trail_mult"] = self.config.get(
+                        "atr_trail_mult_volatile", self.config.get("atr_trail_mult", 1.8)
+                    )
+                else:
+                    regime_trail_config["atr_trail_mult"] = self.config.get(
+                        "atr_trail_mult_trending", self.config.get("atr_trail_mult", 1.8)
+                    )
+
+            # Use wider trail after TP1 hit (applies in both modes)
             if pos.tp1_hit:
                 post_tp1_mult = self.config.get("atr_trail_mult_post_tp1")
                 if post_tp1_mult is not None:

@@ -227,6 +227,24 @@ def add_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     if "ichimoku_tenkan" in config:
         df = add_ichimoku_indicators(df, config)
 
+    # Volatility Expansion Breakout — computed when vol_expansion signal is enabled
+    if config.get("signals", {}).get("vol_expansion", {}).get("enabled", False):
+        atr = df["atr"] if "atr" in df.columns else compute_atr(
+            df["high"], df["low"], df["close"], config.get("atr_period", 14)
+        )
+        atr_ma_period = config.get("vol_expansion_atr_ma_period", 20)
+        threshold = config.get("vol_expansion_threshold", 1.5)
+        lookback = config.get("vol_expansion_lookback", 1)
+        df["atr_ma_20"] = atr.rolling(atr_ma_period).mean()
+        df["vol_expanding"] = atr > df["atr_ma_20"] * threshold
+        df["vol_break_high"] = df["close"] > df["high"].shift(lookback)
+        df["vol_break_low"] = df["close"] < df["low"].shift(lookback)
+        # EMA(50) trend filter for vol_expansion — computed here when not already
+        # present via add_trend_filter (i.e., when running on 1H signal data directly).
+        ema50_period = config.get("vol_expansion_ema_trend_period", 50)
+        if "ema_trend" not in df.columns and "ema_trend_1h" not in df.columns and "ema50" not in df.columns:
+            df["ema50"] = compute_ema(df["close"], ema50_period)
+
     # Price Action patterns — computed when any PA signal is enabled
     if (
         config.get("signals", {}).get("pin_bar", {}).get("enabled", False)
