@@ -61,6 +61,7 @@ config files:
   config_gold_forex.json → XAU/USD OANDA (H1 signal, H4 trend)
   config_*usdt_ichi.json → Auto-generated Ichimoku configs (1% risk, mass expansion)
   config_*usdt_ema.json  → Auto-generated EMA configs (1% risk, mass expansion)
+  config_*usdt_ichi4h.json → Auto-generated 4H Ichimoku configs (1% risk, mass expansion v2)
 ```
 
 ## Key Commands
@@ -140,15 +141,17 @@ Three strategies validated on 2.4yr XAU/USD 1H data (simple simulator):
 2. **Ichimoku Cloud 1H** — Tenkan/Kijun cross above/below cloud on altcoins
 3. **Signal Scorer** — 6 OHLCV signals + funding rate weighted scoring for conviction
 4. **Funding Rate Filter** — contrarian crowding signal (weight 0.35 on BTC/WIF)
+5. **Ichimoku Cloud 4H** — Same Tenkan/Kijun cross + cloud filter but on 4H resampled data. Reduces noise for large-cap coins.
 
 ### Key Differences per Strategy
-| | EMA 15m | Ichimoku 1H |
-|---|---------|-------------|
-| Signal | EMA crossover + RSI + volume | Tenkan/Kijun cross + cloud filter |
-| Timeframe | 15m signal, 1h trend | 1h signal (cloud IS trend) |
-| SL/TP | 1.0/3.0 ATR | 1.5-2.5/4.0-5.0 ATR |
-| Best for | BTC, meme coins (DOGE/WIF) | Mid-cap altcoins (AVAX/NEAR/SOL) |
-| Scorer | Funding rate helps BTC/WIF | Not used (cloud = quality gate) |
+| | EMA 15m | Ichimoku 1H | Ichimoku 4H |
+|---|---------|-------------|-------------|
+| Signal | EMA crossover + RSI + volume | Tenkan/Kijun cross + cloud | Tenkan/Kijun cross + cloud |
+| Timeframe | 15m signal, 1h trend | 1h signal (cloud IS trend) | 4h resampled from 1h |
+| SL/TP | 1.0/3.0 ATR | 1.5-2.5/4.0-5.0 ATR | 2.0-2.5/4.0-5.0 ATR |
+| Best for | BTC, meme coins (DOGE/WIF) | Mid-cap altcoins (AVAX/NEAR/SOL) | Large-cap (TAO, RENDER, HBAR) |
+| Trades/yr | 20-30/coin | 10-15/coin | 7-9/coin |
+| Scorer | Funding rate helps BTC/WIF | Not used (cloud = quality gate) | Not used (cloud = quality gate) |
 
 ### Research Findings (300+ backtests)
 - Price Action: fails on all coins/timeframes (avg PF 0.73-0.85)
@@ -156,6 +159,15 @@ Three strategies validated on 2.4yr XAU/USD 1H data (simple simulator):
 - EMA on ETH/SOL/ADA: fails (PF <1.04) — EMA edge is BTC + meme specific
 - Ichimoku 1H: works on AVAX/NEAR/SOL (PF 1.69-1.95)
 - Funding rate: improves BTC PF +10%, WIF +27%, but destroys DOGE (-94%)
+
+### Mass Expansion v2 Research (March 2026)
+- **4H Ichimoku: NEW strategy** — resampling 1H→4H unlocks large-cap coins that fail at 1H
+- Long-only Ichimoku: works but BacktestEngine doesn't support long-only flag yet
+- Fast Ichimoku (7/22/44): marginal improvement on some coins
+- Momentum ROC: few winners, not reliable on crypto
+- Adaptive SL/TP: found ANKR/PIXEL/XAN with different SL/TP combos
+- EMA(12/26): minimal improvement over 9/21
+- 6 undeployed sweep winners REJECTED: all had < 6 months data (CRCL/GUA/BEAT/ENSO/KITE/UAI)
 
 ## AI Advisor Layer
 - **Mode**: "advisor" — provides nuanced adjustments, NOT binary gate
@@ -196,6 +208,7 @@ Bot runs fully autonomous — risk management is the primary safety layer:
 - `config_gold_forex.json` — XAU/USD OANDA (H1 signal, H4 trend)
 - `config_*usdt_ichi.json` — Mass expansion Ichimoku configs (auto-generated, 1% risk)
 - `config_*usdt_ema.json` — Mass expansion EMA configs (auto-generated, 1% risk)
+- `config_*usdt_ichi4h.json` — Mass expansion 4H Ichimoku configs (auto-generated, 1% risk)
 - `.env` — API keys (Bybit/Binance, Anthropic, Telegram, CryptoPanic)
 - `use_testnet: true` must be explicitly changed to go live
 - `--config <path>` or `CONFIG_FILE` env var selects config file
@@ -237,9 +250,16 @@ Bot runs fully autonomous — risk management is the primary safety layer:
 |------|--------|-----|-----|-------|--------|-----|
 | **ARC** | `config_arcusdt_ema.json` | 1.89 | 45% | 10 | 1.13 | 2.4% |
 
-**Portfolio total: ~285 trades/yr (~5.5/week) across 19 bots**
-**Original 7 bots: 2-5% risk | New 12 bots: 1% risk each**
-**Max exposure: 32% (original 20% + 12% new bots)**
+### Strategy 5: Mass Expansion v2 — 4H Ichimoku (new, 1% risk each)
+| Coin | Config | PF | WR% | Tr/yr | Sharpe | DD% |
+|------|--------|-----|-----|-------|--------|-----|
+| **TAO** | `config_taousdt_ichi4h.json` | 5.19 | 67% | 9 | 2.36 | 1.1% |
+| **RENDER** | `config_renderusdt_ichi4h.json` | 3.73 | 64% | 7 | 1.71 | 1.3% |
+| **HBAR** | `config_hbarusdt_ichi4h.json` | 2.72 | 50% | 7 | 1.10 | 2.0% |
+
+**Portfolio total: ~308 trades/yr (~6/week) across 22+ bots (depending on Tier 2 results)**
+**Original 7 bots: 2-5% risk | New 15 bots: 1% risk each**
+**Max exposure: 35% (original 20% + 15% new bots)**
 
 ```bash
 # Run all 19 bots
@@ -269,6 +289,11 @@ python main.py --config config_trxusdt_ichi.json &          # TRX (PF 1.20)
 
 # Mass Expansion — EMA 15m (1 bot, 1% risk)
 YOLO_MODE=1 python main.py --config config_arcusdt_ema.json & # ARC EMA (PF 1.89)
+
+# 4H Ichimoku (3 bots, mass expansion v2)
+python main.py --config config_taousdt_ichi4h.json &        # TAO 4H (PF 5.19)
+python main.py --config config_renderusdt_ichi4h.json &     # RENDER 4H (PF 3.73)
+python main.py --config config_hbarusdt_ichi4h.json &       # HBAR 4H (PF 2.72)
 
 # Docker deployment (all bots)
 docker compose up -d --build

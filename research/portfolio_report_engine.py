@@ -32,7 +32,7 @@ from backtest.engine import BacktestEngine
 REPO_ROOT = "/Users/iceai/Work/ccbt"
 
 # Engine uses this as starting capital for all bots.
-INITIAL_BALANCE = 10_000.0
+INITIAL_BALANCE = 200.0
 
 # Column abbreviations used in the wide monthly/daily tables.
 # Order matches PORTFOLIO list below.
@@ -40,6 +40,7 @@ BOT_ABBREVS = [
     "BTC", "DOGE", "ARB", "WIF", "AVAX", "NEAR", "SOL",
     "GUN", "BERA", "ATH", "ZETA", "ARC", "ANI", "TRMP",
     "INJ", "XLM", "SHIB", "TRX", "ARC2",
+    "TAO4H", "RDR4H", "HBR4H",
 ]
 
 PORTFOLIO = [
@@ -160,6 +161,28 @@ PORTFOLIO = [
         "signal_data": "data/arcusdt_15m_2y.csv",
         "trend_data": "data/arcusdt_1h_2y.csv",
     },
+    # --- Ichimoku Cloud 4H (resample 1H data to 4H before engine) ---
+    {
+        "name": "TAO_4H",
+        "config": "config_taousdt_ichi4h.json",
+        "signal_data": "data/taousdt_1h_2y.csv",
+        "trend_data": None,
+        "resample_4h": True,
+    },
+    {
+        "name": "RENDER_4H",
+        "config": "config_renderusdt_ichi4h.json",
+        "signal_data": "data/renderusdt_1h_2y.csv",
+        "trend_data": None,
+        "resample_4h": True,
+    },
+    {
+        "name": "HBAR_4H",
+        "config": "config_hbarusdt_ichi4h.json",
+        "signal_data": "data/hbarusdt_1h_2y.csv",
+        "trend_data": None,
+        "resample_4h": True,
+    },
 ]
 
 # Map full bot names to short column abbreviations (same order as PORTFOLIO).
@@ -223,6 +246,14 @@ def run_bot(bot_def: dict) -> tuple[list[dict], object]:
 
     engine = BacktestEngine(config, initial_balance=INITIAL_BALANCE)
     signal_data = load_ohlcv(signal_path)
+
+    # Resample 1H data to 4H for 4H Ichimoku bots
+    if bot_def.get("resample_4h"):
+        signal_data = (
+            signal_data.resample("4h")
+            .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
+            .dropna()
+        )
 
     trend_data: Optional[pd.DataFrame] = None
     if bot_def["trend_data"] is not None:
@@ -351,7 +382,7 @@ def print_part2_monthly(
 ) -> None:
     """Print Part 2: monthly PnL table across all months."""
     print("=" * 120)
-    print("PART 2: MONTHLY PnL (full period, $10,000 starting balance)")
+    print("PART 2: MONTHLY PnL (full period, $200 starting balance per bot)")
     print("=" * 120)
 
     if all_trades_df.empty:
