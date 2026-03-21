@@ -1464,7 +1464,7 @@ services:
       --server.headless=true
       --browser.gatherUsageStats=false
       --server.enableCORS=false
-      --server.enableXsrfProtection=true
+      --server.enableXsrfProtection=false
     env_file:
       - .env
     environment:
