@@ -1,5 +1,6 @@
 {
   "_comment": "LIGHT \u2014 engine verified PF 5.16",
+  "strategy_name": "Alligator 1H",
   "exchange": "binance",
   "symbol": "LIGHTUSDT",
   "timeframe_signal": "1h",

@@ -1,5 +1,6 @@
 {
   "_comment": "APT \u2014 engine verified PF 8.17",
+  "strategy_name": "EMA+Ichi 4H",
   "exchange": "binance",
   "symbol": "APTUSDT",
   "timeframe_signal": "4h",

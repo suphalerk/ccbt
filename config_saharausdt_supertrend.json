@@ -1,5 +1,6 @@
 {
   "_comment": "SAHARA Supertrend 1H \u2014 full engine: PF 1.27, 14 trades, WR 50%, DD 1.4%",
+  "strategy_name": "Supertrend",
   "exchange": "binance",
   "symbol": "SAHARAUSDT",
   "timeframe_signal": "1h",

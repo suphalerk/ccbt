@@ -1,5 +1,6 @@
 {
   "_comment": "ANIME Ichimoku 1H \u2014 auto-generated from mass sweep, PF 1.51, 8 trades/yr",
+  "strategy_name": "Ichi 1H",
   "exchange": "binance",
   "symbol": "ANIMEUSDT",
   "timeframe_signal": "1h",

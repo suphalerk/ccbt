@@ -1,5 +1,6 @@
 {
   "_comment": "TRUMP Ichimoku 1H \u2014 auto-generated from mass sweep, PF 1.48, 12 trades/yr",
+  "strategy_name": "Ichi 1H",
   "exchange": "binance",
   "symbol": "TRUMPUSDT",
   "timeframe_signal": "1h",

@@ -1,5 +1,6 @@
 {
   "_comment": "LYN \u2014 engine verified PF 3.11",
+  "strategy_name": "Dual ST 1H",
   "exchange": "binance",
   "symbol": "LYNUSDT",
   "timeframe_signal": "1h",

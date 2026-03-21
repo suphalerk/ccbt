@@ -1,5 +1,6 @@
 {
   "_comment": "TIA \u2014 engine verified PF 2.08",
+  "strategy_name": "Ichi 4H",
   "exchange": "binance",
   "symbol": "TIAUSDT",
   "timeframe_signal": "4h",

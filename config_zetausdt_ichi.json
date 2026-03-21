@@ -1,5 +1,6 @@
 {
   "_comment": "ZETA \u2014 upgraded to EMA+Ichi 4H, engine verified PF 3.96 (was Ichi 1H PF 1.41)",
+  "strategy_name": "EMA+Ichi 4H",
   "exchange": "binance",
   "symbol": "ZETAUSDT",
   "timeframe_signal": "4h",

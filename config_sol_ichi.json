@@ -1,5 +1,6 @@
 {
-  "_comment": "SOL Ichimoku 1H — verified PF 1.63, Sharpe 1.03, DD 11.8%, 11 trades/yr (5yr backtest)",
+  "_comment": "SOL Ichimoku 1H \u2014 verified PF 1.63, Sharpe 1.03, DD 11.8%, 11 trades/yr (5yr backtest)",
+  "strategy_name": "Ichi 1H",
   "exchange": "binance",
   "symbol": "SOLUSDT",
   "timeframe_signal": "1h",
@@ -67,15 +68,33 @@
     "log_overrides": true
   },
   "signals": {
-    "ema_crossover": {"enabled": false},
-    "ema_fast_crossover": {"enabled": false},
-    "ema_pullback": {"enabled": false},
-    "rsi_divergence": {"enabled": false},
-    "bb_breakout": {"enabled": false},
-    "mean_reversion": {"enabled": false},
-    "body_dominance": {"enabled": false},
-    "squeeze_release": {"enabled": false},
-    "ichimoku_cloud": {"enabled": true}
+    "ema_crossover": {
+      "enabled": false
+    },
+    "ema_fast_crossover": {
+      "enabled": false
+    },
+    "ema_pullback": {
+      "enabled": false
+    },
+    "rsi_divergence": {
+      "enabled": false
+    },
+    "bb_breakout": {
+      "enabled": false
+    },
+    "mean_reversion": {
+      "enabled": false
+    },
+    "body_dominance": {
+      "enabled": false
+    },
+    "squeeze_release": {
+      "enabled": false
+    },
+    "ichimoku_cloud": {
+      "enabled": true
+    }
   },
   "body_dominance_min_body": 0.65,
   "body_dominance_min_mom": 0.02,
@@ -95,10 +114,18 @@
   "bb_volume_mult": 1.2,
   "swing_lookback": 5,
   "divergence_lookback": 20,
-  "adaptive_sizing": {"enabled": false},
-  "pyramiding": {"enabled": false},
-  "mtd_accelerator": {"enabled": false},
-  "signal_scorer": {"enabled": false},
+  "adaptive_sizing": {
+    "enabled": false
+  },
+  "pyramiding": {
+    "enabled": false
+  },
+  "mtd_accelerator": {
+    "enabled": false
+  },
+  "signal_scorer": {
+    "enabled": false
+  },
   "ai_layer": {
     "enabled": false,
     "mode": "advisor",

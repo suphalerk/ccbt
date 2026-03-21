@@ -1,5 +1,6 @@
 {
   "_comment": "LTC \u2014 engine verified PF 6.9",
+  "strategy_name": "Ichi+ST 4H",
   "exchange": "binance",
   "symbol": "LTCUSDT",
   "timeframe_signal": "4h",

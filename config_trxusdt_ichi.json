@@ -1,5 +1,6 @@
 {
   "_comment": "TRX Ichimoku 1H \u2014 auto-generated from mass sweep, PF 1.20, 24 trades/yr",
+  "strategy_name": "Ichi 1H",
   "exchange": "binance",
   "symbol": "TRXUSDT",
   "timeframe_signal": "1h",

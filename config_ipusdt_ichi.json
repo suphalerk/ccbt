@@ -1,5 +1,6 @@
 {
   "_comment": "IP \u2014 engine verified PF 1.84",
+  "strategy_name": "Ichi 1H",
   "exchange": "binance",
   "symbol": "IPUSDT",
   "timeframe_signal": "1h",

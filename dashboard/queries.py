@@ -620,6 +620,54 @@ def get_bot_statuses(project_root: Path, max_stale_seconds: float = 600) -> list
     return results
 
 
+def get_bot_health(db_path: Optional[str] = None) -> pd.DataFrame:
+    """Read bot_health table for rich status display.
+
+    Returns DataFrame with columns: symbol, strategy, mode, status,
+    last_heartbeat, position_side, position_size, position_entry,
+    error_count, loop_count, total_trades, total_pnl, updated_at.
+
+    If the table doesn't exist (old DB), returns empty DataFrame with
+    the expected columns so callers can always rely on the schema.
+    """
+    _EXPECTED_COLS = [
+        "symbol", "strategy", "mode", "status",
+        "last_heartbeat", "position_side", "position_size", "position_entry",
+        "error_count", "loop_count", "total_trades", "total_pnl", "updated_at",
+    ]
+
+    path = db_path or str(DEFAULT_DB_PATH)
+    if not Path(path).exists():
+        return pd.DataFrame(columns=_EXPECTED_COLS)
+
+    try:
+        with sqlite3.connect(path) as conn:
+            # Check table exists first to avoid noisy exception on old DBs
+            cursor = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='bot_health'"
+            )
+            if cursor.fetchone() is None:
+                return pd.DataFrame(columns=_EXPECTED_COLS)
+
+            df = pd.read_sql_query(
+                """
+                SELECT symbol, strategy, mode, status,
+                       last_heartbeat, position_side, position_size, position_entry,
+                       error_count, loop_count, total_trades, total_pnl, updated_at
+                FROM bot_health
+                ORDER BY symbol ASC
+                """,
+                conn,
+            )
+            # Fill missing optional columns so callers never KeyError
+            for col in _EXPECTED_COLS:
+                if col not in df.columns:
+                    df[col] = None
+            return df[_EXPECTED_COLS]
+    except Exception:
+        return pd.DataFrame(columns=_EXPECTED_COLS)
+
+
 def get_consecutive_losses(
     db_path: Optional[str] = None,
     symbol: Optional[str] = None,

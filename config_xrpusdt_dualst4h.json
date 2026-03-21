@@ -1,5 +1,6 @@
 {
   "_comment": "XRP \u2014 engine verified PF 1.59",
+  "strategy_name": "Dual ST 4H",
   "exchange": "binance",
   "symbol": "XRPUSDT",
   "timeframe_signal": "4h",

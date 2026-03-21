@@ -1,5 +1,6 @@
 {
   "_comment": "XPL \u2014 engine verified PF 1.9",
+  "strategy_name": "Dual ST 4H",
   "exchange": "binance",
   "symbol": "XPLUSDT",
   "timeframe_signal": "4h",

@@ -351,6 +351,7 @@ class TradingEngine:
         # Symbol clean for heartbeat and mode files
         self._symbol_clean = config["symbol"].replace("/", "").replace(":", "")
         self._current_mode = BotMode.NORMAL
+        self._loop_count: int = 0
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -449,6 +450,8 @@ class TradingEngine:
         # --- Main loop ---
         while not self._shutdown_event.is_set():
             try:
+                self._loop_count += 1
+
                 # Check bot mode (filesystem-based control from dashboard)
                 new_mode = read_bot_mode(self._symbol_clean)
                 if new_mode != self._current_mode:
@@ -1474,6 +1477,32 @@ class TradingEngine:
         heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
         heartbeat_path.write_text(str(time.time()))
 
+        # Update bot health in SQLite
+        try:
+            pos_side = None
+            pos_size = 0.0
+            pos_entry = 0.0
+            if self._tracked_trades:
+                first_trade = next(iter(self._tracked_trades.values()))
+                pos_side = first_trade["side"]
+                pos_size = first_trade.get("size", 0)
+                pos_entry = first_trade.get("entry_price", 0)
+
+            self._journal.upsert_health(
+                symbol=config["symbol"],
+                config_file=os.getenv("CONFIG_FILE", "config.json"),
+                strategy=config.get("strategy_name", ""),
+                mode=self._current_mode.value,
+                status="running",
+                position_side=pos_side,
+                position_size=pos_size,
+                position_entry=pos_entry,
+                error_count=self._risk_mgr.state.consecutive_api_errors if self._risk_mgr else 0,
+                loop_count=self._loop_count,
+            )
+        except Exception:
+            pass  # Health update is non-critical
+
         # Sleep until ~2s after candle close (give exchange time to finalise)
         sleep_time = max(10, min(seconds_until_close + 2, signal_minutes * 60))
         return await self._interruptible_sleep(sleep_time)
@@ -1578,6 +1607,15 @@ class TradingEngine:
                         )
         except Exception as e:
             logger.error("graceful_shutdown_failed", extra={"error": str(e)})
+
+        try:
+            self._journal.upsert_health(
+                symbol=config["symbol"],
+                status="stopped",
+                mode=self._current_mode.value,
+            )
+        except Exception:
+            pass
 
         logger.info("bot_stopped")
 

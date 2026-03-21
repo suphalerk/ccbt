@@ -104,9 +104,36 @@ class TradeJournal:
             pass
 
     def _init_db(self) -> None:
-        """Create the trades table and indexes if they don't exist."""
+        """Create the trades table, bot_health table, and indexes if they don't exist."""
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS bot_health (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL UNIQUE,
+                config_file TEXT,
+                strategy TEXT,
+                mode TEXT NOT NULL DEFAULT 'normal',
+                status TEXT NOT NULL DEFAULT 'starting',
+                last_heartbeat TEXT,
+                last_signal TEXT,
+                last_signal_time TEXT,
+                position_side TEXT,
+                position_size REAL DEFAULT 0,
+                position_entry REAL DEFAULT 0,
+                unrealized_pnl REAL DEFAULT 0,
+                error_count INTEGER DEFAULT 0,
+                last_error TEXT,
+                last_error_time TEXT,
+                loop_count INTEGER DEFAULT 0,
+                total_trades INTEGER DEFAULT 0,
+                total_pnl REAL DEFAULT 0,
+                started_at TEXT,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
         self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS trades (
@@ -351,6 +378,68 @@ class TradeJournal:
             (limit,),
         ).fetchall()
         return [row[0] for row in rows]
+
+    def upsert_health(self, symbol: str, **kwargs) -> None:
+        """Insert or update bot health status. Called every loop iteration.
+
+        Uses INSERT OR REPLACE on the symbol UNIQUE constraint so every call
+        is an upsert.  All extra keyword arguments are treated as optional
+        columns; unknown keys are silently ignored.
+
+        Args:
+            symbol: Trading symbol (e.g. 'BTC/USDT:USDT').
+            **kwargs: Any subset of bot_health columns.
+        """
+        now_bkk = datetime.now(_TZ_BKK).strftime("%Y-%m-%d %H:%M:%S")
+        kwargs.setdefault("updated_at", now_bkk)
+
+        # On first insert, record started_at if not already in DB
+        existing = self._conn.execute(
+            "SELECT started_at FROM bot_health WHERE symbol = ?", (symbol,)
+        ).fetchone()
+        if existing is None:
+            kwargs.setdefault("started_at", now_bkk)
+
+        # Build column list from allowed schema columns (avoid SQL injection)
+        _ALLOWED_COLS = {
+            "config_file", "strategy", "mode", "status",
+            "last_heartbeat", "last_signal", "last_signal_time",
+            "position_side", "position_size", "position_entry",
+            "unrealized_pnl", "error_count", "last_error", "last_error_time",
+            "loop_count", "total_trades", "total_pnl", "started_at", "updated_at",
+        }
+        cols = {k: v for k, v in kwargs.items() if k in _ALLOWED_COLS}
+        cols["updated_at"] = now_bkk  # always refresh
+
+        # Merge with existing row so INSERT OR REPLACE doesn't wipe unchanged cols
+        if existing is not None:
+            # Fetch full row to preserve untouched columns
+            row = self._conn.execute(
+                "SELECT * FROM bot_health WHERE symbol = ?", (symbol,)
+            ).fetchone()
+            if row:
+                col_names = [desc[0] for desc in self._conn.execute(
+                    "SELECT * FROM bot_health WHERE symbol = ?", (symbol,)
+                ).description or []]
+                # Re-fetch with description
+                cur = self._conn.execute(
+                    "SELECT * FROM bot_health WHERE symbol = ?", (symbol,)
+                )
+                col_names = [d[0] for d in cur.description]
+                existing_row = dict(zip(col_names, cur.fetchone()))
+                existing_row.update(cols)
+                cols = {k: v for k, v in existing_row.items() if k != "id"}
+
+        all_cols = ["symbol"] + list(cols.keys())
+        all_vals = [symbol] + list(cols.values())
+        placeholders = ", ".join("?" * len(all_cols))
+        col_str = ", ".join(all_cols)
+
+        self._conn.execute(
+            f"INSERT OR REPLACE INTO bot_health ({col_str}) VALUES ({placeholders})",
+            all_vals,
+        )
+        self._conn.commit()
 
 
 class CalibrationTracker:

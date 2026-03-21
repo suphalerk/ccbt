@@ -1,5 +1,6 @@
 {
   "_comment": "MSTR Supertrend 1H \u2014 full engine: PF 2.66, 11 trades, WR 64%, DD 1.9%",
+  "strategy_name": "Supertrend",
   "exchange": "binance",
   "symbol": "MSTRUSDT",
   "timeframe_signal": "1h",

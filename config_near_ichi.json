@@ -1,5 +1,6 @@
 {
   "_comment": "NEAR \u2014 upgraded to EMA+Ichi 4H, engine verified PF 4.06 (was Ichi 1H PF 1.82)",
+  "strategy_name": "EMA+Ichi 4H",
   "exchange": "binance",
   "symbol": "NEARUSDT",
   "timeframe_signal": "4h",

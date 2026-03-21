@@ -1,5 +1,6 @@
 {
   "_comment": "HBAR \u2014 upgraded to Alligator 4H, engine verified PF 4.23 (was Ichi 4H PF 3.26)",
+  "strategy_name": "Alligator 4H",
   "exchange": "binance",
   "symbol": "HBARUSDT",
   "timeframe_signal": "4h",

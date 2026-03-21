@@ -1,5 +1,6 @@
 {
   "_comment": "HUMA \u2014 engine verified PF 1.49",
+  "strategy_name": "Dual ST 1H",
   "exchange": "binance",
   "symbol": "HUMAUSDT",
   "timeframe_signal": "1h",

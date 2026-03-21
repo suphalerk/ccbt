@@ -1,5 +1,6 @@
 {
   "_comment": "ENJ \u2014 engine verified PF 2.35",
+  "strategy_name": "Dual ST 4H",
   "exchange": "binance",
   "symbol": "ENJUSDT",
   "timeframe_signal": "4h",

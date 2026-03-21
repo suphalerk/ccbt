@@ -1,5 +1,6 @@
 {
-  "_comment": "POL Ichimoku 4H Trail — engine verified PF 1.74, Sharpe 0.55, DD 2.3%, 10 trades, WR 40%, SL1.5/Trail4.0",
+  "_comment": "POL Ichimoku 4H Trail \u2014 engine verified PF 1.74, Sharpe 0.55, DD 2.3%, 10 trades, WR 40%, SL1.5/Trail4.0",
+  "strategy_name": "4H Trail",
   "exchange": "binance",
   "symbol": "POLUSDT",
   "timeframe_signal": "4h",
@@ -67,15 +68,33 @@
     "log_overrides": true
   },
   "signals": {
-    "ema_crossover": {"enabled": false},
-    "ema_fast_crossover": {"enabled": false},
-    "ema_pullback": {"enabled": false},
-    "rsi_divergence": {"enabled": false},
-    "bb_breakout": {"enabled": false},
-    "mean_reversion": {"enabled": false},
-    "body_dominance": {"enabled": false},
-    "squeeze_release": {"enabled": false},
-    "ichimoku_cloud": {"enabled": true}
+    "ema_crossover": {
+      "enabled": false
+    },
+    "ema_fast_crossover": {
+      "enabled": false
+    },
+    "ema_pullback": {
+      "enabled": false
+    },
+    "rsi_divergence": {
+      "enabled": false
+    },
+    "bb_breakout": {
+      "enabled": false
+    },
+    "mean_reversion": {
+      "enabled": false
+    },
+    "body_dominance": {
+      "enabled": false
+    },
+    "squeeze_release": {
+      "enabled": false
+    },
+    "ichimoku_cloud": {
+      "enabled": true
+    }
   },
   "body_dominance_min_body": 0.65,
   "body_dominance_min_mom": 0.02,
@@ -95,10 +114,18 @@
   "bb_volume_mult": 1.2,
   "swing_lookback": 5,
   "divergence_lookback": 20,
-  "adaptive_sizing": {"enabled": false},
-  "pyramiding": {"enabled": false},
-  "mtd_accelerator": {"enabled": false},
-  "signal_scorer": {"enabled": false},
+  "adaptive_sizing": {
+    "enabled": false
+  },
+  "pyramiding": {
+    "enabled": false
+  },
+  "mtd_accelerator": {
+    "enabled": false
+  },
+  "signal_scorer": {
+    "enabled": false
+  },
   "ai_layer": {
     "enabled": false,
     "mode": "advisor",

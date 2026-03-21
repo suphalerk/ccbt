@@ -1,5 +1,6 @@
 {
   "_comment": "ARC \u2014 upgraded to Alligator 4H, engine verified PF 3.15 (was Ichi 1H PF 1.81)",
+  "strategy_name": "Alligator 4H",
   "exchange": "binance",
   "symbol": "ARCUSDT",
   "timeframe_signal": "4h",

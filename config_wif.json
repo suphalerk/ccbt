@@ -1,5 +1,6 @@
 {
   "exchange": "binance",
+  "strategy_name": "EMA 15m",
   "symbol": "WIFUSDT",
   "timeframe_signal": "15m",
   "timeframe_trend": "1h",
@@ -178,13 +179,13 @@
   },
   "signal_scorer": {
     "enabled": true,
-    "entry_threshold": 0.10,
+    "entry_threshold": 0.1,
     "high_conviction": 0.5,
     "weights": {
       "ema_alignment": 0.15,
-      "momentum_mtf": 0.10,
-      "volume_surge": 0.10,
-      "rsi_zone": 0.10,
+      "momentum_mtf": 0.1,
+      "volume_surge": 0.1,
+      "rsi_zone": 0.1,
       "atr_regime": 0.05,
       "candle_strength": 0.15,
       "funding_rate": 0.35

@@ -195,6 +195,7 @@
     }
   },
   "_comment": "ARC EMA 15m \u2014 auto-generated from mass sweep, PF 1.89, 10 trades/yr",
+  "strategy_name": "EMA 15m",
   "signal_scorer": {
     "enabled": false
   }

@@ -1,5 +1,6 @@
 {
   "_comment": "LINK \u2014 engine verified PF 1.66",
+  "strategy_name": "Alligator 4H",
   "exchange": "binance",
   "symbol": "LINKUSDT",
   "timeframe_signal": "4h",

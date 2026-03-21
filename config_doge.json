@@ -1,5 +1,6 @@
 {
   "exchange": "binance",
+  "strategy_name": "EMA 15m",
   "symbol": "DOGEUSDT",
   "timeframe_signal": "15m",
   "timeframe_trend": "1h",

@@ -1,5 +1,6 @@
 {
   "_comment": "AXS \u2014 engine verified PF 1.31",
+  "strategy_name": "Ichi 4H",
   "exchange": "binance",
   "symbol": "AXSUSDT",
   "timeframe_signal": "4h",

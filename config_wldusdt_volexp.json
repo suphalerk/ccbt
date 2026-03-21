@@ -1,5 +1,6 @@
 {
-  "_comment": "WLD Vol Expansion 1H — verified PF 3.25, Sharpe 1.47, DD 1.0%, 6 trades/yr (2yr backtest)",
+  "_comment": "WLD Vol Expansion 1H \u2014 verified PF 3.25, Sharpe 1.47, DD 1.0%, 6 trades/yr (2yr backtest)",
+  "strategy_name": "VolExp",
   "exchange": "binance",
   "symbol": "WLDUSDT",
   "timeframe_signal": "1h",
@@ -67,21 +68,49 @@
     "log_overrides": true
   },
   "signals": {
-    "ema_crossover": {"enabled": false},
-    "ema_fast_crossover": {"enabled": false},
-    "ema_pullback": {"enabled": false},
-    "rsi_divergence": {"enabled": false},
-    "bb_breakout": {"enabled": false},
-    "mean_reversion": {"enabled": false},
-    "body_dominance": {"enabled": false},
-    "squeeze_release": {"enabled": false},
-    "ichimoku_cloud": {"enabled": false},
-    "vol_expansion": {"enabled": true}
+    "ema_crossover": {
+      "enabled": false
+    },
+    "ema_fast_crossover": {
+      "enabled": false
+    },
+    "ema_pullback": {
+      "enabled": false
+    },
+    "rsi_divergence": {
+      "enabled": false
+    },
+    "bb_breakout": {
+      "enabled": false
+    },
+    "mean_reversion": {
+      "enabled": false
+    },
+    "body_dominance": {
+      "enabled": false
+    },
+    "squeeze_release": {
+      "enabled": false
+    },
+    "ichimoku_cloud": {
+      "enabled": false
+    },
+    "vol_expansion": {
+      "enabled": true
+    }
   },
-  "adaptive_sizing": {"enabled": false},
-  "pyramiding": {"enabled": false},
-  "mtd_accelerator": {"enabled": false},
-  "signal_scorer": {"enabled": false},
+  "adaptive_sizing": {
+    "enabled": false
+  },
+  "pyramiding": {
+    "enabled": false
+  },
+  "mtd_accelerator": {
+    "enabled": false
+  },
+  "signal_scorer": {
+    "enabled": false
+  },
   "ai_layer": {
     "enabled": false,
     "mode": "advisor",

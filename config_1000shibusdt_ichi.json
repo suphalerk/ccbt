@@ -1,5 +1,6 @@
 {
   "_comment": "1000SHIB Ichimoku 1H \u2014 auto-generated from mass sweep, PF 1.26, 16 trades/yr",
+  "strategy_name": "Ichi 1H",
   "exchange": "binance",
   "symbol": "1000SHIBUSDT",
   "timeframe_signal": "1h",

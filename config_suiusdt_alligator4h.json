@@ -1,5 +1,6 @@
 {
   "_comment": "SUI \u2014 engine verified PF 1.58",
+  "strategy_name": "Alligator 4H",
   "exchange": "binance",
   "symbol": "SUIUSDT",
   "timeframe_signal": "4h",

@@ -1,5 +1,6 @@
 {
   "_comment": "GUN Ichimoku 1H \u2014 auto-generated from mass sweep, PF 4.00, 8 trades/yr",
+  "strategy_name": "Ichi 1H",
   "exchange": "binance",
   "symbol": "GUNUSDT",
   "timeframe_signal": "1h",

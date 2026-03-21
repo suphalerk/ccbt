@@ -1,5 +1,6 @@
 {
   "_comment": "XAG Supertrend 1H \u2014 full engine: PF 2.09, 9 trades, WR 44%, DD 2.0%",
+  "strategy_name": "Supertrend",
   "exchange": "binance",
   "symbol": "XAGUSDT",
   "timeframe_signal": "1h",

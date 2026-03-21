@@ -33,6 +33,7 @@ from dashboard.components import (
 from dashboard.queries import (
     db_exists,
     get_ai_decisions,
+    get_bot_health,
     get_bot_statuses,
     get_calibration_data,
     get_calibration_stats,
@@ -310,6 +311,11 @@ def load_bot_statuses() -> list:
     return get_bot_statuses(PROJECT_ROOT)
 
 
+@st.cache_data(ttl=30)
+def load_bot_health() -> pd.DataFrame:
+    return get_bot_health(db_path=DB_PATH)
+
+
 # ---------------------------------------------------------------------------
 # HEADER — Account Overview
 # ---------------------------------------------------------------------------
@@ -487,8 +493,61 @@ if is_portfolio_view:
 
     st.markdown("---")
 
-    # Per-bot summary table
-    st.markdown("### Per-Bot Summary")
+    # -------------------------------------------------------------------
+    # Bot Overview — merged health table (live status from bot_health)
+    # -------------------------------------------------------------------
+    st.markdown("### Bot Overview")
+    health_df = load_bot_health()
+    if not health_df.empty:
+        display = health_df[
+            ["symbol", "strategy", "mode", "status",
+             "position_side", "position_size", "error_count",
+             "loop_count", "total_trades", "total_pnl"]
+        ].copy()
+
+        # Strip USDT suffix for readability
+        display["symbol"] = display["symbol"].apply(
+            lambda x: x.replace("USDT", "") if isinstance(x, str) else x
+        )
+        # Blank out "normal" mode — only show non-default modes
+        display["mode"] = display["mode"].apply(
+            lambda x: "" if x == "normal" or pd.isna(x) else str(x)
+        )
+        # Combine position side + size into one column
+        display["position"] = display.apply(
+            lambda r: (
+                f"{r['position_side']} {float(r['position_size']):.4f}"
+                if r["position_side"] and pd.notna(r["position_side"])
+                else "-"
+            ),
+            axis=1,
+        )
+        # Format PnL
+        display["total_pnl"] = display["total_pnl"].apply(
+            lambda x: f"${float(x):+.2f}" if pd.notna(x) else "$0.00"
+        )
+
+        show_cols = ["symbol", "strategy", "mode", "status", "position",
+                     "error_count", "loop_count", "total_trades", "total_pnl"]
+        st.dataframe(
+            display[show_cols].rename(columns={
+                "symbol": "Coin", "strategy": "Strategy", "mode": "Mode",
+                "status": "Status", "position": "Position",
+                "error_count": "Errors", "loop_count": "Loops",
+                "total_trades": "Trades", "total_pnl": "PnL",
+            }),
+            use_container_width=True,
+            height=min(600, 40 + len(display) * 35),
+        )
+    else:
+        st.info("Bot health table not available yet — will populate once bots write their first heartbeat to DB.")
+
+    st.markdown("---")
+
+    # -------------------------------------------------------------------
+    # Trade History Summary — from trades DB
+    # -------------------------------------------------------------------
+    st.markdown("### Trade History Summary")
     bot_summary = load_per_bot_summary()
 
     if bot_summary.empty:

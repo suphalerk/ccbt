@@ -49,7 +49,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 # Paths
 BOT_DATA_DIR = Path(os.getenv("BOT_DATA_DIR", "/app/data"))
-HEARTBEAT_FILE = BOT_DATA_DIR / "heartbeat"
+HEARTBEAT_FILE = BOT_DATA_DIR / "heartbeat"  # legacy single-bot heartbeat (fallback)
 DB_PATH = BOT_DATA_DIR / "trades.db"
 
 # Monitor state file: tracks previous check results to avoid duplicate alerts.
@@ -182,7 +182,7 @@ def check_container_running() -> tuple[bool, str]:
 
 
 def check_heartbeat() -> tuple[bool, float]:
-    """Check if the bot heartbeat file is recent.
+    """Check if the bot heartbeat file is recent (legacy single-bot fallback).
 
     Returns:
         Tuple of (is_healthy, age_in_seconds).
@@ -197,6 +197,59 @@ def check_heartbeat() -> tuple[bool, float]:
     except (ValueError, OSError) as e:
         logger.error("Error reading heartbeat: %s", e)
         return False, -1.0
+
+
+def check_per_bot_heartbeats(max_stale_seconds: float = HEARTBEAT_MAX_AGE_SECONDS) -> list[dict]:
+    """Scan data/heartbeat_* files and return per-bot health status.
+
+    Reads the bot_health DB table (if available) to detect bots in
+    graceful_stop mode, which should not trigger stale alerts.
+
+    Returns:
+        List of dicts with keys: symbol, age_seconds, status, mode.
+        Only includes bots whose heartbeat file is stale or missing
+        (i.e. bots that are potentially stuck or down).
+    """
+    now = time.time()
+    stale_bots: list[dict] = []
+
+    # Read bot_health table to get mode per symbol (skip graceful_stop bots)
+    mode_by_symbol: dict[str, str] = {}
+    if DB_PATH.exists():
+        try:
+            with sqlite3.connect(str(DB_PATH)) as conn:
+                cursor = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='bot_health'"
+                )
+                if cursor.fetchone():
+                    rows = conn.execute("SELECT symbol, mode FROM bot_health").fetchall()
+                    for symbol, mode in rows:
+                        mode_by_symbol[symbol] = mode or "normal"
+        except sqlite3.Error as e:
+            logger.warning("Could not read bot_health table: %s", e)
+
+    if not BOT_DATA_DIR.exists():
+        return stale_bots
+
+    for hb_file in BOT_DATA_DIR.glob("heartbeat_*"):
+        symbol = hb_file.name[len("heartbeat_"):]
+        bot_mode = mode_by_symbol.get(symbol, "normal")
+
+        # Skip bots in graceful_stop — they intentionally wind down
+        if bot_mode == "graceful_stop":
+            logger.info("Skipping stale check for %s (graceful_stop mode)", symbol)
+            continue
+
+        try:
+            ts = float(hb_file.read_text().strip())
+            age = now - ts
+            if age > max_stale_seconds:
+                stale_bots.append({"symbol": symbol, "age_seconds": age, "status": "stale", "mode": bot_mode})
+        except (ValueError, OSError) as e:
+            logger.warning("Could not read heartbeat for %s: %s", symbol, e)
+            stale_bots.append({"symbol": symbol, "age_seconds": -1.0, "status": "missing", "mode": bot_mode})
+
+    return stale_bots
 
 
 def get_last_trade_time() -> Optional[datetime]:
@@ -415,22 +468,50 @@ def run_checks() -> None:
             )
         state["container_down"] = False
 
-    # --- Check 2: Heartbeat ---
-    heartbeat_ok, heartbeat_age = check_heartbeat()
+    # --- Check 2: Heartbeat (per-bot) ---
+    # Use per-bot heartbeat files (data/heartbeat_<symbol>) when available.
+    # Falls back to the legacy single-file check if no per-bot files exist.
+    stale_bots = check_per_bot_heartbeats()
+    prev_stale_symbols: set = set(state.get("stale_bot_symbols", []))
+    current_stale_symbols: set = {b["symbol"] for b in stale_bots}
 
-    if not heartbeat_ok and container_ok:
-        was_stale = state.get("heartbeat_stale", False)
-        if not was_stale:
-            age_str = f"{heartbeat_age:.0f}s" if heartbeat_age >= 0 else "no heartbeat file"
-            alerts.append(
-                "⚠️ <b>HEARTBEAT STALE</b>\n"
-                f"Bot may be stuck or crashed inside container.\n"
-                f"Last heartbeat: {age_str} ago\n"
-                f"Threshold: {HEARTBEAT_MAX_AGE_SECONDS}s"
-            )
-        state["heartbeat_stale"] = True
-    else:
-        state["heartbeat_stale"] = False
+    # Alert on newly stale bots only (avoid repeat alerts every 5 min)
+    newly_stale = [b for b in stale_bots if b["symbol"] not in prev_stale_symbols]
+    for bot in newly_stale:
+        age_str = f"{bot['age_seconds']:.0f}s" if bot["age_seconds"] >= 0 else "no heartbeat file"
+        alerts.append(
+            "⚠️ <b>HEARTBEAT STALE</b>\n"
+            f"Bot <b>{bot['symbol']}</b> may be stuck or crashed.\n"
+            f"Last heartbeat: {age_str} ago\n"
+            f"Mode: {bot['mode']}"
+        )
+
+    # Recovery alerts for bots that were stale but are healthy again
+    recovered = prev_stale_symbols - current_stale_symbols
+    for symbol in recovered:
+        alerts.append(
+            "✅ <b>BOT HEARTBEAT RECOVERED</b>\n"
+            f"Bot <b>{symbol}</b> is sending heartbeats again."
+        )
+
+    state["stale_bot_symbols"] = list(current_stale_symbols)
+
+    # Legacy single-file fallback: if no per-bot files found at all, check old file
+    if not list(BOT_DATA_DIR.glob("heartbeat_*")) if BOT_DATA_DIR.exists() else True:
+        heartbeat_ok, heartbeat_age = check_heartbeat()
+        if not heartbeat_ok and container_ok:
+            was_stale = state.get("heartbeat_stale", False)
+            if not was_stale:
+                age_str = f"{heartbeat_age:.0f}s" if heartbeat_age >= 0 else "no heartbeat file"
+                alerts.append(
+                    "⚠️ <b>HEARTBEAT STALE</b>\n"
+                    f"Bot may be stuck or crashed inside container.\n"
+                    f"Last heartbeat: {age_str} ago\n"
+                    f"Threshold: {HEARTBEAT_MAX_AGE_SECONDS}s"
+                )
+            state["heartbeat_stale"] = True
+        else:
+            state["heartbeat_stale"] = False
 
     # --- Check 3: Recent trades ---
     recent_trades = get_recent_trades(hours=1)
