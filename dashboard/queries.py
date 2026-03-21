@@ -588,7 +588,17 @@ def get_bot_statuses(project_root: Path, max_stale_seconds: float = 600) -> list
 
         if symbol_clean in heartbeat_map:
             ts, age = heartbeat_map[symbol_clean]
-            status = "running" if age <= max_stale_seconds else "stopped"
+            # Dynamic stale threshold based on bot timeframe:
+            # 15m → 20min, 1h → 75min, 4h → 255min (4h+15min buffer)
+            tf = cfg.get("timeframe_signal", "1h")
+            if "h" in tf:
+                tf_seconds = int(tf.replace("h", "")) * 3600
+            elif "m" in tf:
+                tf_seconds = int(tf.replace("m", "")) * 60
+            else:
+                tf_seconds = 900
+            bot_stale_threshold = tf_seconds + 300  # timeframe + 5min buffer
+            status = "running" if age <= bot_stale_threshold else "stopped"
             last_hb = datetime.utcfromtimestamp(ts)
         else:
             age = float("inf")
