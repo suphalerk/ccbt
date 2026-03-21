@@ -329,6 +329,11 @@ max_consec_losses = config.get("max_consecutive_losses", 3)
 
 # Header metrics row
 if is_portfolio_view:
+    # Count running bots from heartbeat (not DB)
+    _bot_statuses = load_bot_statuses()
+    _running_bots = sum(1 for b in _bot_statuses if b["status"] == "running")
+    _total_bots = len(_bot_statuses)
+
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric("Total PnL", f"${stats['total_pnl']:,.2f}")
@@ -336,7 +341,7 @@ if is_portfolio_view:
         pnl_prefix = "+" if today_pnl >= 0 else ""
         st.metric("Today PnL", f"{pnl_prefix}${today_pnl:,.2f}")
     with col3:
-        st.metric("Active Bots", f"{len(symbols)}")
+        st.metric("Active Bots", f"{_running_bots}/{_total_bots}")
     with col4:
         st.metric("Open Positions", f"{len(open_trades)}")
     with col5:
@@ -787,12 +792,14 @@ else:
     html_lines = []
     for entry in log_entries:
         ts = entry["timestamp"]
+        # Show full date+time: "03-21 23:44:34"
         if "T" in ts:
-            time_str = ts.split("T")[1][:8]
-        elif " " in ts:
-            time_str = ts.split(" ")[1][:8]
+            time_str = ts.replace("T", " ")[:19]
         else:
-            time_str = ts[-8:]
+            time_str = ts[:19]
+        # Trim year prefix for compact display: "2026-03-21 23:44" → "03-21 23:44:34"
+        if len(time_str) >= 16 and time_str[:4].isdigit():
+            time_str = time_str[5:]
 
         level = entry["level"]
         message = entry["message"]
