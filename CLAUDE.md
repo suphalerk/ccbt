@@ -69,6 +69,12 @@ config files:
   config_*usdt_ichi4htrail.json → 4H Ichimoku trailing exit configs (1% risk)
   config_*usdt_supertrend.json → Supertrend configs (1% risk)
   config_*_volexp.json     → Vol Expansion Breakout configs (1% risk)
+  config_*usdt_dualthrust.json → Dual Thrust configs (1% risk, R10+R12)
+  config_*usdt_dualst*.json → Dual Supertrend configs (1% risk, R8)
+  config_*usdt_alligator*.json → Alligator configs (1% risk, R8)
+  config_*usdt_emaichi4h.json → EMA+Ichimoku 4H configs (1% risk, R8)
+  config_*usdt_emaribbon.json → EMA Ribbon configs (1% risk, R12)
+  config_*usdt_ichist4h.json → Ichi+Supertrend 4H configs (1% risk, R10)
 ```
 
 ## Key Commands
@@ -551,10 +557,11 @@ Signal: ROC(10) zero-cross + EMA(50) trend. SL 2.0 ATR, TP 4.0 ATR.
 | **DOGE** | EMA 15m | 1.11 | All strategies PF < 1.2 |
 | **SOL** | Ichi 1H | 1.17 | All strategies PF < 1.2 |
 
-**Portfolio total: 136 bots across 30 strategy types**
+**Portfolio total: 136 bots across 30 strategy types (51 deployed in Docker)**
 **$200 shared wallet → $1,790 (+795%) realistic backtest (R-multiple, max 5 concurrent, 1yr)**
 **1,541 trades | DD 23.0% | 10/13 months profitable**
-**30 strategy types including 5 combo signals: DualThrust+ADX, Ichi+ADX, ZScore+Stoch, Ribbon+AO, Ribbon+RSI+Vol**
+**Deployed on Binance testnet | 51 Docker containers running**
+**3 upgrades deployed: AVAX→Dual Thrust, ARC→Dual Thrust, OP→EMA Ribbon (new)**
 
 ```bash
 # Run all 47 bots
@@ -731,6 +738,8 @@ YOLO_MODE                    — Set to "1" to enable YOLO validation limits
 - `ai_calibration` — AI decision outcomes for accuracy tracking
 
 ## Deployment
+- **51 Docker containers** (48 bots + dashboard + monitoring) running on Binance testnet
+- **Last deployed**: March 2026 — 3 upgrades (AVAX Dual Thrust, ARC Dual Thrust, OP EMA Ribbon)
 - Docker containers (bot + dashboard) with shared volume
 - Nginx reverse proxy (HTTPS, basic auth, rate limiting)
 - Systemd timers for monitoring (5min) and backup (daily)
