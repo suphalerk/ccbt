@@ -336,6 +336,20 @@ Three strategies validated on 2.4yr XAU/USD 1H data (simple simulator):
 - **Audit methodology**: signal verification (every trade), look-ahead check, fee check, walk-forward (first/second half), baseline comparison
 - Scripts: `research/core7_new_strategies.py`, `research/audit_btc_wif.py`, `research/sweep_op_zro.py`
 
+### Weak Bot Optimization — Parameter Sweep (March 2026)
+- **5,940 backtests**: 30 weak coins × 10 strategies × 10 param sets × 2 TF
+- **29/30 found improvements** in lightweight sweep (only BCH had no solution)
+- **Engine verification**: 8/29 PASS — Z-Score 1H collapsed (overfitting), 4H strategies won
+- **6 deploy-grade upgrades**:
+  - PENGU: Dual Thrust → Ichi 4H Trail (PF 6.01, 10 trades)
+  - POL: Ichi Trail → Ichi 4H Trail (PF 3.57, 13 trades)
+  - AVAX: Dual Thrust → EMA Ribbon 4H (PF 2.10, 30 trades)
+  - ALICE: Dual Thrust → Awesome Osc 4H (PF 1.97, 16 trades)
+  - DASH: Dual Thrust → Ichi 4H (PF 1.96, 14 trades)
+  - KAS: Range Bounce → EMA Ribbon 4H (PF 1.95, 28 trades)
+- **Key lesson**: Z-Score MeanRev sweep PFs (4-6) were overfitting — engine gets 0-5 trades. Always verify.
+- Scripts: `research/sweep_improve_weak.py`, `research/verify_weak_improvements.py`
+
 ## Auto-Research Pipeline
 One-command research script replaces manual iterative process:
 ```bash
