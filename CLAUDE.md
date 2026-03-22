@@ -571,11 +571,11 @@ Signal: ROC(10) zero-cross + EMA(50) trend. SL 2.0 ATR, TP 4.0 ATR.
 | **DOGE** | EMA 15m | 1.11 | All strategies PF < 1.2 |
 | **SOL** | Ichi 1H | 1.17 | All strategies PF < 1.2 |
 
-**Portfolio total: 136 bots across 30 strategy types (51 deployed in Docker)**
-**$200 shared wallet → $1,790 (+795%) realistic backtest (R-multiple, max 5 concurrent, 1yr)**
-**1,541 trades | DD 23.0% | 10/13 months profitable**
-**Deployed on Binance testnet | 51 Docker containers running**
-**3 upgrades deployed: AVAX→Dual Thrust, ARC→Dual Thrust, OP→EMA Ribbon (new)**
+**Portfolio total: 125 active bots across 30 strategy types**
+**$200 shared wallet → $2,036 (+918%) AUDITED backtest (R-multiple fixed, max 5 concurrent, 1yr)**
+**1,449 trades | DD 10.3% | 11/13 months profitable**
+**Deployed: 174 bots in 17 Docker containers (multi-bot mode, ~4GB RAM)**
+**6 weak-bot upgrades: PENGU/POL→Ichi4H Trail, AVAX/KAS→EMA Ribbon 4H, ALICE→AO 4H, DASH→Ichi4H**
 
 ```bash
 # Run all 47 bots
@@ -682,6 +682,7 @@ shared_balance += dollar_pnl
 
 ### Common Bugs to Avoid
 - **Double compounding**: NEVER do `pnl_frac = pnl / initial_balance` then `balance * pnl_frac` — this inflates 30-100% because engine compounds internally
+- **R-multiple risk mismatch**: When computing R-multiple, use ACTUAL engine risk (`config['risk_per_trade']`), not fixed 1%. BTC uses 5% risk → PnL 5x larger → if you divide by 1% you get R 5x too high. Fix: `r = pnl / (engine_bal × actual_risk)`, shared wallet always applies 1%
 - **No concurrent limit**: Must cap simultaneous open positions (max 5) — 61 bots on $200 can't all trade at once
 - **Loose filters**: Require data >= 12 months AND trades >= 10 per bot — otherwise statistically meaningless
 
@@ -702,22 +703,24 @@ shared_balance += dollar_pnl
 - Script template: `research/audit_btc_wif.py`
 
 ### Realistic Results History
-| Round | Bots | Return | DD | Trades | Method |
-|-------|------|--------|-----|--------|--------|
-| R8 | 14 | +149% | 8.1% | 320 | Conservative (only fully verified) |
-| R10 | 62 | +453% | 34% | 1,452 | + GitHub strategies |
-| R11 | 85 | +689% | 26.1% | 1,465 | + Stoch MTF, Z-Score, EMA Ribbon |
-| Mega100 | 51 | +403% | **12.5%** | 1,510 | Best risk-adjusted (DD lowest) |
-| **R12 Full** | **136** | **+795%** | **23.0%** | **1,541** | **+ 5 combo signals (best return)** |
+| Round | Bots | Return | DD | Trades | Method | Status |
+|-------|------|--------|-----|--------|--------|--------|
+| R8 | 14 | +149% | 8.1% | 320 | Conservative | ✅ Audited |
+| **Final** | **125** | **+918%** | **10.3%** | **1,449** | **All rounds + 6 upgrades** | **✅ AUDITED (R-multiple fixed)** |
+
+**⚠️ Previous results were inflated by R-multiple risk bug:**
+- R10 (+453%), R11 (+689%), R12 (+795%), R12 Full (+1,611%) — ALL had bug where BTC (5% risk) and WIF (3% risk) got 3-5x inflated PnL in shared wallet
+- Bug: `dollar_pnl = balance × bot_risk_pct × R` instead of `balance × 0.01 × R`
+- Scripts affected: full_portfolio_74.py, round10/11_verify_backtest.py (NOT portfolio_backtest_realistic.py)
+- Only `final_backtest.py` (fixed) and `portfolio_backtest_realistic.py` produce correct results
 
 ### Scripts
-- `research/full_portfolio_74.py` — latest full combined portfolio (R12, 136 bots)
-- `research/combo_verify_backtest.py` — combo signal verification (5 combo check functions)
-- `research/mega100_verify_backtest.py` — 100-strategy mega sweep verification
-- `research/round11_verify_backtest.py` — R11 pipeline
-- `research/round10_verify_backtest.py` — R10 pipeline
-- `research/portfolio_backtest_realistic.py` — corrected R-multiple method with all filters
-- `research/portfolio_backtest_v2.py` — DEPRECATED (has double compounding bug)
+- `research/final_backtest.py` — **CURRENT** full portfolio (R-multiple FIXED, 125 bots)
+- `research/portfolio_backtest_realistic.py` — corrected R-multiple (14 bots only)
+- `research/full_portfolio_74.py` — DEPRECATED (R-multiple risk bug)
+- `research/round10_verify_backtest.py` — DEPRECATED (R-multiple risk bug)
+- `research/round11_verify_backtest.py` — DEPRECATED (R-multiple risk bug)
+- `research/portfolio_backtest_v2.py` — DEPRECATED (double compounding bug)
 - `research/portfolio_backtest_full.py` — DEPRECATED (per-bot $200, not shared wallet)
 
 ## Development Rules
