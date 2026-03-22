@@ -79,6 +79,59 @@ def compute_volume_ma(volume: pd.Series, period: int = 20) -> pd.Series:
     return volume.rolling(window=period).mean()
 
 
+def compute_dual_thrust(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    lookback: int = 20,
+    k: float = 0.5,
+) -> tuple[pd.Series, pd.Series]:
+    """Compute Dual Thrust breakout bands.
+
+    Upper band = prev_close + k * rolling_range(lookback)
+    Lower band = prev_close - k * rolling_range(lookback)
+
+    Uses shift(1) on both range and close to prevent look-ahead bias:
+    the band at bar N uses only data from bars N-lookback to N-1.
+
+    Args:
+        high: High price series.
+        low: Low price series.
+        close: Close price series.
+        lookback: Rolling window for high/low range (default 20).
+        k: Band width multiplier applied to range (default 0.5).
+
+    Returns:
+        Tuple of (upper_band, lower_band) Series.
+    """
+    range_n = high.rolling(lookback).max() - low.rolling(lookback).min()
+    upper = close.shift(1) + k * range_n.shift(1)
+    lower = close.shift(1) - k * range_n.shift(1)
+    return upper, lower
+
+
+def compute_awesome_oscillator(high: pd.Series, low: pd.Series) -> pd.Series:
+    """Compute Bill Williams Awesome Oscillator.
+
+    AO = SMA(5, midpoint) - SMA(34, midpoint)
+    where midpoint = (high + low) / 2.
+
+    Positive and increasing = bullish momentum.
+    Negative and decreasing = bearish momentum.
+    Zero-cross = trend change signal.
+
+    Args:
+        high: High price series.
+        low: Low price series.
+
+    Returns:
+        Awesome Oscillator series.
+    """
+    midpoint = (high + low) / 2.0
+    ao = midpoint.rolling(5).mean() - midpoint.rolling(34).mean()
+    return ao
+
+
 def add_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """Add all required technical indicators to an OHLCV DataFrame.
 
@@ -359,6 +412,140 @@ def add_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
             st, st_dir = compute_supertrend(df["high"], df["low"], df["close"], st_atr_period, st_mult)
             df["supertrend"] = st
             df["supertrend_dir"] = st_dir
+
+    # Dual Thrust Breakout — computed when dual_thrust signal is enabled
+    if _sigs.get("dual_thrust", {}).get("enabled", False):
+        dt_lookback = config.get("dual_thrust_lookback", 20)
+        dt_k = config.get("dual_thrust_k", 0.5)
+        dt_upper, dt_lower = compute_dual_thrust(
+            df["high"], df["low"], df["close"], dt_lookback, dt_k
+        )
+        df["dt_upper"] = dt_upper
+        df["dt_lower"] = dt_lower
+        # EMA(50) trend filter for dual_thrust
+        if "ema50" not in df.columns and "ema_trend" not in df.columns and "ema_trend_1h" not in df.columns:
+            df["ema50"] = compute_ema(df["close"], config.get("dual_thrust_ema_trend_period", 50))
+
+    # Awesome Oscillator — computed when awesome_oscillator signal is enabled
+    if _sigs.get("awesome_oscillator", {}).get("enabled", False):
+        df["ao"] = compute_awesome_oscillator(df["high"], df["low"])
+        # EMA(50) trend filter for awesome_oscillator
+        if "ema50" not in df.columns and "ema_trend" not in df.columns and "ema_trend_1h" not in df.columns:
+            df["ema50"] = compute_ema(df["close"], config.get("ao_ema_trend_period", 50))
+
+    # Range Bounce — computed when range_bounce signal is enabled
+    if _sigs.get("range_bounce", {}).get("enabled", False):
+        rb_lookback = config.get("range_bounce_lookback", 20)
+        rb_range_percentile_period = config.get("range_bounce_percentile_period", 50)
+        rb_range_narrow_quantile = config.get("range_bounce_narrow_quantile", 0.3)
+        df["rb_support"] = df["low"].rolling(rb_lookback).min()
+        df["rb_resistance"] = df["high"].rolling(rb_lookback).max()
+        rb_range_width = (df["rb_resistance"] - df["rb_support"]) / df["close"].clip(lower=1e-10)
+        df["rb_is_ranging"] = rb_range_width < rb_range_width.rolling(rb_range_percentile_period).quantile(rb_range_narrow_quantile)
+
+    # Stochastic MTF — computed when stoch_mtf signal is enabled
+    if _sigs.get("stoch_mtf", {}).get("enabled", False):
+        stoch_k_period = config.get("stoch_k_period", 14)
+        stoch_d_period = config.get("stoch_d_period", 3)
+        stoch_k, stoch_d = compute_stochastic(
+            df["high"], df["low"], df["close"], stoch_k_period, stoch_d_period
+        )
+        df["stoch_k"] = stoch_k
+        df["stoch_d"] = stoch_d
+        # EMA(50) direction filter — used as higher-timeframe bias when no separate 4H data
+        if "ema50" not in df.columns and "ema_trend" not in df.columns and "ema_trend_1h" not in df.columns:
+            df["ema50"] = compute_ema(df["close"], config.get("stoch_mtf_ema_trend_period", 50))
+
+    # Z-Score Mean Reversion — computed when zscore_meanrev signal is enabled
+    if _sigs.get("zscore_meanrev", {}).get("enabled", False):
+        zscore_period = config.get("zscore_period", 20)
+        df["zscore"] = compute_zscore(df["close"], zscore_period)
+        if "ema50" not in df.columns and "ema_trend" not in df.columns and "ema_trend_1h" not in df.columns:
+            df["ema50"] = compute_ema(df["close"], config.get("zscore_ema_trend_period", 50))
+
+    # EMA Ribbon — computed when ema_ribbon signal is enabled
+    if _sigs.get("ema_ribbon", {}).get("enabled", False):
+        for period in (8, 13, 21, 34, 55, 89):
+            df[f"ema_ribbon_{period}"] = compute_ema(df["close"], period)
+
+    # --- Combo signals (require multiple indicators to agree) ---
+
+    # ribbon_rsi_vol: EMA Ribbon + RSI + Volume
+    # Needs ema_ribbon_{8,13,21,34,55,89}, rsi (already computed), volume_ma (already computed),
+    # plus an EMA(50) trend filter.
+    if _sigs.get("ribbon_rsi_vol", {}).get("enabled", False):
+        for period in (8, 13, 21, 34, 55, 89):
+            col = f"ema_ribbon_{period}"
+            if col not in df.columns:
+                df[col] = compute_ema(df["close"], period)
+        if "ema50" not in df.columns and "ema_trend" not in df.columns and "ema_trend_1h" not in df.columns:
+            df["ema50"] = compute_ema(df["close"], config.get("ribbon_rsi_vol_ema_trend_period", 50))
+
+    # dualthrust_adx: Dual Thrust + ADX
+    # Needs dt_upper/dt_lower (from dual_thrust), adx/di_plus/di_minus, ema50 trend filter.
+    if _sigs.get("dualthrust_adx", {}).get("enabled", False):
+        if "dt_upper" not in df.columns:
+            dt_lookback = config.get("dual_thrust_lookback", 20)
+            dt_k = config.get("dual_thrust_k", 0.5)
+            dt_upper, dt_lower = compute_dual_thrust(
+                df["high"], df["low"], df["close"], dt_lookback, dt_k
+            )
+            df["dt_upper"] = dt_upper
+            df["dt_lower"] = dt_lower
+        if "adx" not in df.columns:
+            adx_period = config.get("adx_period", 14)
+            adx, di_plus, di_minus = compute_adx_di(df["high"], df["low"], df["close"], adx_period)
+            df["adx"] = adx
+            df["di_plus"] = di_plus
+            df["di_minus"] = di_minus
+        if "ema50" not in df.columns and "ema_trend" not in df.columns and "ema_trend_1h" not in df.columns:
+            df["ema50"] = compute_ema(df["close"], config.get("dualthrust_adx_ema_trend_period", 50))
+
+    # zscore_stoch: Z-Score + Stochastic
+    # Needs zscore (from zscore_meanrev), stoch_k/stoch_d, ema50 trend filter.
+    if _sigs.get("zscore_stoch", {}).get("enabled", False):
+        if "zscore" not in df.columns:
+            zscore_period = config.get("zscore_period", 20)
+            df["zscore"] = compute_zscore(df["close"], zscore_period)
+        if "stoch_k" not in df.columns:
+            stoch_k_period = config.get("stoch_k_period", 14)
+            stoch_d_period = config.get("stoch_d_period", 3)
+            stoch_k, stoch_d = compute_stochastic(
+                df["high"], df["low"], df["close"], stoch_k_period, stoch_d_period
+            )
+            df["stoch_k"] = stoch_k
+            df["stoch_d"] = stoch_d
+        if "ema50" not in df.columns and "ema_trend" not in df.columns and "ema_trend_1h" not in df.columns:
+            df["ema50"] = compute_ema(df["close"], config.get("zscore_stoch_ema_trend_period", 50))
+
+    # ichi_adx: Ichimoku + ADX
+    # Needs ichimoku columns (tenkan, kijun, cloud_top, cloud_bottom) + adx.
+    # Ichimoku is already computed when "ichimoku_tenkan" key is present.
+    if _sigs.get("ichi_adx", {}).get("enabled", False):
+        if "ichimoku_tenkan" not in config:
+            # Inject default Ichimoku params so add_ichimoku_indicators can run
+            _ichi_cfg = {**config, "ichimoku_tenkan": 9, "ichimoku_kijun": 26, "ichimoku_senkou_b": 52}
+            df = add_ichimoku_indicators(df, _ichi_cfg)
+        elif "tenkan" not in df.columns:
+            df = add_ichimoku_indicators(df, config)
+        if "adx" not in df.columns:
+            adx_period = config.get("adx_period", 14)
+            adx, di_plus, di_minus = compute_adx_di(df["high"], df["low"], df["close"], adx_period)
+            df["adx"] = adx
+            df["di_plus"] = di_plus
+            df["di_minus"] = di_minus
+
+    # ribbon_ao: EMA Ribbon + Awesome Oscillator
+    # Needs ema_ribbon_{8,13,21,34,55,89} + ao + ema50 trend filter.
+    if _sigs.get("ribbon_ao", {}).get("enabled", False):
+        for period in (8, 13, 21, 34, 55, 89):
+            col = f"ema_ribbon_{period}"
+            if col not in df.columns:
+                df[col] = compute_ema(df["close"], period)
+        if "ao" not in df.columns:
+            df["ao"] = compute_awesome_oscillator(df["high"], df["low"])
+        if "ema50" not in df.columns and "ema_trend" not in df.columns and "ema_trend_1h" not in df.columns:
+            df["ema50"] = compute_ema(df["close"], config.get("ribbon_ao_ema_trend_period", 50))
 
     logger.info("indicators_computed", extra={"rows": len(df)})
     return df
@@ -940,6 +1127,26 @@ def compute_stochastic(
     k = k.clip(0.0, 100.0)
     d = k.rolling(window=d_period).mean()
     return k, d
+
+
+def compute_zscore(close: pd.Series, period: int = 20) -> pd.Series:
+    """Compute rolling Z-Score of close price.
+
+    Z-Score = (close - rolling_mean) / rolling_std
+
+    Values above +2.0 indicate overbought (price far above mean).
+    Values below -2.0 indicate oversold (price far below mean).
+
+    Args:
+        close: Close price series.
+        period: Rolling window period (default 20).
+
+    Returns:
+        Z-Score series (typically in range [-4, +4]).
+    """
+    rolling_mean = close.rolling(window=period).mean()
+    rolling_std = close.rolling(window=period).std()
+    return (close - rolling_mean) / rolling_std.replace(0, np.nan)
 
 
 def add_funding_rate(

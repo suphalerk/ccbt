@@ -269,6 +269,67 @@ Three strategies validated on 2.4yr XAU/USD 1H data (simple simulator):
 - **9 rounds of research**: 7→19→22→26→29→31→29→47→61 bots (14 verified), $200→$497 realistic
 - Script: `research/sweep_round9.py`, `research/round9_verify_and_backtest.py`
 
+### Round 10 Research — GitHub-Inspired Strategies (March 2026)
+- **5 strategies from top GitHub trading bots** (Freqtrade, je-suis-tm, OctoBot, NostalgiaForInfinity)
+- Swept 54 coins × parameter grids (108 combos/coin) = thousands of backtests
+- **ALL 5 strategies PASSED** — first time every strategy in a round has winners:
+  1. **Dual Thrust** (je-suis-tm 4.5K stars) — range breakout, ZEN 4H PF 8.34, DOT PF 7.77
+  2. **Kalman Filter Trend** (QuantConnect) — adaptive MA crossover, less lag than EMA
+  3. **Awesome Oscillator** (je-suis-tm) — AO zero-cross, VVV 4H PF 2.81, 28 winners
+  4. **Range Bounce** (OctoBot 4K stars) — ranging market bounces, AXS PF 13.46 (92% WR!), **45 winners**
+  5. **Multi-Indicator Confluence** (NostalgiaForInfinity 2.9K stars) — 3-4/5 indicators agree, IP 4H PF 2.11
+- **Key surprise**: Range Bounce (mean reversion variant) WORKS when gated by range detection + RSI
+- **High-frequency strategies FAIL**: 10 scalping strategies (15m) tested, all PF 0.32-0.71 — fees kill edge
+- Script: `research/sweep_github_inspired.py`, `research/sweep_highfreq.py`
+- Results: `data/sweep_github.json`, `data/sweep_highfreq.json`
+- **Engine verification**: 76/180 PASS. 3 strategies implemented (Dual Thrust, Awesome Oscillator, Range Bounce)
+- **Top verified new coins**: GALA DualThrust PF 7.84, PHA DualThrust PF 4.39, ZEC DualThrust PF 3.41, FIL RangeBounce PF 3.25, SAND AwesomeOsc PF 2.88
+- **Realistic backtest (62 bots, $200 shared, R-multiple, max 5 concurrent)**: $200→$1,106 (+453%), PF 1.20, DD 34%, 1,452 trades, 10/13 months profitable
+- **10 rounds of research**: 7→19→22→26→29→31→29→47→61→62 bots
+
+### Round 11 Research — FMZQuant/TradingView/Academic Strategies (March 2026)
+- **20 strategies** from FMZQuant, TradingView, Connors, academic papers — 2,811 backtests, 78 coins
+- **Top performers**: Stoch MTF (AXS PF 5.86), Z-Score MeanRev (AKT PF 2.94), EMA Ribbon (IP PF 2.45)
+- **3 new strategies implemented in engine**: stoch_mtf, zscore_meanrev, ema_ribbon
+- **Engine verification**: 36/87 PASS — zscore_meanrev 63% pass rate (best)
+- **Turtle Trading FAILS** on crypto (avg PF 0.85)
+- **Z-Score Mean Reversion WORKS** — first statistical mean reversion success with EMA50 filter
+- **Realistic backtest (85 bots, $200 shared, R-multiple, max 5 concurrent)**:
+  - **$200 → $1,579 (+689%)** | DD 26.1% | 1,465 trades | 11/13 months profitable
+  - Best months: Nov +$358, Jan +$384, Mar +$198
+  - Worst: Dec -$185
+- **11 rounds total**: 7→19→22→26→29→31→29→47→61→62→85 bots
+- Scripts: `research/sweep_round11.py`, `research/round11_verify_backtest.py`
+
+### Round 12 Research — 100-Strategy Mega Sweep + Combo Functions (March 2026)
+- **100 strategy COMBINATIONS** (2-3 indicators each) swept across 104 coins = **6,376 backtests**
+- **744 winners** (PF >= 1.3, trades >= 10)
+- **Top combos**: Ribbon+RSI+Vol (avgPF 1.44), DualThrust+ADX (32 winners), ZScore+Stoch (avgPF 1.28)
+- **5 combo check functions implemented in engine**: ribbon_rsi_vol, dualthrust_adx, zscore_stoch, ichi_adx, ribbon_ao
+- **Combo verification**: 23/120 PASS — DualThrust+ADX dominant (13 passes), Ichi+ADX (5), Ribbon+AO (3)
+- **Key finding**: combo strategies (2 indicators AND) outperform single signals — ADX confirmation is the #1 edge booster
+- **Pattern strategies FAIL**: Hammer, Engulfing, InsideBar all PF < 1.0 — candle patterns don't work on crypto
+- **Multi-confluence (4-5 indicators) doesn't help**: too selective, fewer trades = worse compounding
+- **Full combined portfolio (136 bots, $200 shared, R-multiple, max 5 concurrent)**:
+  - **$200 → $1,790 (+795%)** | DD 23.0% | 1,541 trades | 10/13 months profitable
+  - Best month: Nov +$617 | Worst: Dec -$188
+  - Top contributors: BTC EMA +$471, BERA ema_ribbon +$306
+- **12 rounds of research**: 7→19→22→26→29→31→29→47→61→62→85→136 bots, $200→$1,790 realistic
+
+### Core Coins Retested + Audited (March 2026)
+- **224 backtests**: 7 core coins × 32 strategies + OP/ZRO × 32 = 288 total
+- **Confirmed upgrades (walk-forward stable, trades >= 18)**:
+  - AVAX: Ichi 1H (PF 1.95) → **Dual Thrust 1H (PF 3.23, 31 trades)** — most reliable
+  - ARC: EMA 15m (PF 1.89) → **Dual Thrust 1H (PF 2.50, 18 trades)**
+  - OP: DualThrust → **EMA Ribbon 1H (PF 1.95, 24 trades)**
+- **REJECTED after deep audit (walk-forward fail / small sample)**:
+  - BTC Stoch MTF 1H: PF 2.96 but only 14 trades, walk-forward degrades 49% → **KEEP EMA 15m**
+  - WIF DualThrust+ADX 1H: PF 2.45 but only 8 trades, last 3 trades all losses → **KEEP EMA 15m**
+  - ZRO ADX+DI 1H: PF 21.22 but only 6 trades → **KEEP Dual ST 1H**
+- **Keep current (confirmed best)**: BTC (EMA 15m), WIF (EMA 15m), GUN (Ichi PF 4.00), ATH (Ichi PF 2.51), 1000PEPE (VolExp PF 10.85), ZRO (Dual ST 1H)
+- **Audit methodology**: signal verification (every trade), look-ahead check, fee check, walk-forward (first/second half), baseline comparison
+- Scripts: `research/core7_new_strategies.py`, `research/audit_btc_wif.py`, `research/sweep_op_zro.py`
+
 ## Auto-Research Pipeline
 One-command research script replaces manual iterative process:
 ```bash
@@ -490,10 +551,10 @@ Signal: ROC(10) zero-cross + EMA(50) trend. SL 2.0 ATR, TP 4.0 ATR.
 | **DOGE** | EMA 15m | 1.11 | All strategies PF < 1.2 |
 | **SOL** | Ichi 1H | 1.17 | All strategies PF < 1.2 |
 
-**Portfolio total: 61 bots configured, 14 verified (data >= 12mo, trades >= 10)**
-**$200 shared wallet → $497 (+149%/yr) realistic backtest (R-multiple, max 5 concurrent)**
-**Verified core bots: POL, BERA, BTC, IP, 1000PEPE, TRUMP, WIF, TON, ONDO, AVAX, TIA, XMR, ANIME, ARC**
-**47/61 bots filtered out: data < 12 months or trades < 10 — need more data before live deploy**
+**Portfolio total: 136 bots across 30 strategy types**
+**$200 shared wallet → $1,790 (+795%) realistic backtest (R-multiple, max 5 concurrent, 1yr)**
+**1,541 trades | DD 23.0% | 10/13 months profitable**
+**30 strategy types including 5 combo signals: DualThrust+ADX, Ichi+ADX, ZScore+Stoch, Ribbon+AO, Ribbon+RSI+Vol**
 
 ```bash
 # Run all 47 bots
@@ -609,7 +670,31 @@ shared_balance += dollar_pnl
 - **Concurrent limit**: Max 5 open positions at any time
 - **Data snooping**: Be aware that selecting best from 8,700+ backtests inflates results
 
+### Audit Checklist (before deploying any new strategy)
+1. **Signal verification** — print every trade, verify indicator values at entry match conditions
+2. **Look-ahead check** — signal uses iloc[-2] (closed candle), entry at iloc[-1] close
+3. **Fee check** — verify PnL includes commission + slippage correctly
+4. **Walk-forward test** — split data in half, run each separately. OOS PF should be >= 60% of IS PF
+5. **Trade count** — minimum 15 trades for deployment. Under 15 = high variance / luck
+6. **Baseline comparison** — compare vs current strategy on SAME data period
+- If walk-forward degrades > 40% OR trades < 15: **REJECT** regardless of PF
+- Script template: `research/audit_btc_wif.py`
+
+### Realistic Results History
+| Round | Bots | Return | DD | Trades | Method |
+|-------|------|--------|-----|--------|--------|
+| R8 | 14 | +149% | 8.1% | 320 | Conservative (only fully verified) |
+| R10 | 62 | +453% | 34% | 1,452 | + GitHub strategies |
+| R11 | 85 | +689% | 26.1% | 1,465 | + Stoch MTF, Z-Score, EMA Ribbon |
+| Mega100 | 51 | +403% | **12.5%** | 1,510 | Best risk-adjusted (DD lowest) |
+| **R12 Full** | **136** | **+795%** | **23.0%** | **1,541** | **+ 5 combo signals (best return)** |
+
 ### Scripts
+- `research/full_portfolio_74.py` — latest full combined portfolio (R12, 136 bots)
+- `research/combo_verify_backtest.py` — combo signal verification (5 combo check functions)
+- `research/mega100_verify_backtest.py` — 100-strategy mega sweep verification
+- `research/round11_verify_backtest.py` — R11 pipeline
+- `research/round10_verify_backtest.py` — R10 pipeline
 - `research/portfolio_backtest_realistic.py` — corrected R-multiple method with all filters
 - `research/portfolio_backtest_v2.py` — DEPRECATED (has double compounding bug)
 - `research/portfolio_backtest_full.py` — DEPRECATED (per-bot $200, not shared wallet)
@@ -654,51 +739,78 @@ YOLO_MODE                    — Set to "1" to enable YOLO validation limits
 
 ## Agent Team
 
-7 specialized agents configured as teammates that can collaborate via shared task lists and direct messaging. Enable via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` (already set in `.claude/settings.json`).
+11 specialized agents configured as teammates that can collaborate via shared task lists and direct messaging. Enable via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` (already set in `.claude/settings.json`).
 
 ### Team Structure
 ```
-              ┌──────────┐
-              │    PM     │ Product Owner — roadmap, priorities, features
-              │  sonnet   │
-              └─────┬─────┘
-         ┌──────────┼──────────┐
-         ▼          ▼          ▼
-   ┌──────────┐ ┌──────────┐ ┌──────────┐
-   │    SA    │ │  Trader  │ │  Crypto  │
-   │   opus   │ │  Expert  │ │  Expert  │
-   │ Arch.    │ │ Strategy │ │ Domain   │
-   └────┬─────┘ └──────────┘ └──────────┘
-   ┌────┼──────────┬──────────┐
-   ▼    ▼          ▼          ▼
-┌──────────┐ ┌──────────┐ ┌──────────┐
-│ Backend  │ │ Frontend │ │  DevOps  │
-│   Dev    │ │   Dev    │ │          │
-│  sonnet  │ │  sonnet  │ │  sonnet  │
-└──────────┘ └──────────┘ └──────────┘
+                        ┌──────────────┐
+                        │ ORCHESTRATOR │ Research loop coordinator
+                        │    opus      │ Discover→Test→Verify→Deploy
+                        └──────┬───────┘
+                               │
+                ┌──────────────┼──────────────┐
+                ▼              ▼              ▼
+         ┌──────────┐  ┌──────────┐  ┌──────────────┐
+         │    PM    │  │ Strategy │  │    Quant      │
+         │  sonnet  │  │  Scout   │  │  Researcher   │
+         │ Planning │  │  Ideas   │  │  Statistics   │
+         └────┬─────┘  └──────────┘  └──────────────┘
+              │
+    ┌─────────┼─────────┬─────────────┐
+    ▼         ▼         ▼             ▼
+┌────────┐┌────────┐┌──────────┐┌──────────┐
+│   SA   ││ Trader ││  Crypto  ││    QA    │
+│  opus  ││ Expert ││  Expert  ││ Verifier │
+│ Arch.  ││Strategy││ Domain   ││ Bugs/Bias│
+└───┬────┘└────────┘└──────────┘└──────────┘
+    │
+┌───┼─────────┬──────────┐
+▼   ▼         ▼          ▼
+┌────────┐┌────────┐┌────────┐
+│Backend ││Frontend││ DevOps │
+│  Dev   ││  Dev   ││        │
+│ sonnet ││ sonnet ││ sonnet │
+└────────┘└────────┘└────────┘
+```
+
+### Research Flow (agents communicate in this order)
+```
+1. DISCOVER:  orchestrator → [strategy-scout + crypto-expert + quant-researcher] (parallel)
+2. DESIGN:    orchestrator → [quant-researcher + trader-expert] (parallel)
+3. SWEEP:     orchestrator → backend-dev → quant-researcher (sequential)
+4. VERIFY:    orchestrator → [qa-verifier + trader-expert] (parallel, NEVER skip)
+5. IMPLEMENT: orchestrator → backend-dev → qa-verifier → sa (sequential)
+6. DEPLOY:    orchestrator → devops → frontend-dev (parallel)
 ```
 
 ### Agent Files: `.claude/agents/`
-| Agent | Model | Role | Key Skills |
-|-------|-------|------|------------|
-| `pm` | sonnet | Product Manager | scenario-analyzer, trader-memory-core |
+| Agent | Model | Role | Skills (12 total) |
+|-------|-------|------|-------------------|
+| `orchestrator` | opus | Research Loop Coordinator | team-orchestrator, research, trader-memory-core, scenario-analyzer, backtest-expert |
+| `pm` | sonnet | Product Manager | scenario-analyzer, trader-memory-core, team-orchestrator |
+| `strategy-scout` | sonnet | Strategy Idea Discovery | strategy-pivot-designer, edge-pipeline-orchestrator, technical-analyst, market-news-analyst, scenario-analyzer |
+| `quant-researcher` | opus | Experiment Design & Statistics | backtest-expert, position-sizer, technical-analyst, macro-regime-detector, crypto-signal-validator |
+| `qa-verifier` | opus | Bug/Bias Detection & QA | backtest-expert, crypto-signal-validator, position-sizer, technical-analyst |
 | `sa` | opus | Solution Architect | backtest-expert, edge-pipeline-orchestrator |
+| `trader-expert` | opus | Trading Strategy Authority | technical-analyst, backtest-expert, position-sizer, macro-regime-detector, strategy-pivot-designer, crypto-signal-validator, trader-memory-core |
+| `crypto-expert` | opus | Crypto Domain Authority | macro-regime-detector, market-news-analyst, scenario-analyzer, technical-analyst |
 | `backend-dev` | sonnet | Backend Developer | crypto-signal-validator, position-sizer, backtest-expert |
 | `frontend-dev` | sonnet | Frontend Developer | technical-analyst |
 | `devops` | sonnet | DevOps Engineer | (infra focused) |
-| `trader-expert` | opus | Trader Expert | 7 skills (TA, backtest, sizing, regime, pivot, validator, memory) |
-| `crypto-expert` | opus | Crypto Expert | macro-regime-detector, market-news-analyst, scenario-analyzer, technical-analyst |
 
 ### Usage
 ```bash
-# Create a team for a task
-"Create an agent team with pm, sa, backend-dev to implement Phase 7"
+# Run a full research round (orchestrator manages everything)
+claude --agent orchestrator "Run research round 11: find 10 new strategies, sweep, verify, deploy"
 
-# @mention specific agent
-@trader-expert "analyze trailing stop performance"
+# PM for non-research complex tasks
+claude --agent pm "Plan the gold bot deployment to OANDA"
 
-# Run whole session as an agent
-claude --agent trader-expert
+# Direct specialist access
+claude --agent trader-expert "analyze trailing stop performance"
+claude --agent strategy-scout "find 10 new strategy ideas from GitHub repos with >1K stars"
+claude --agent quant-researcher "analyze portfolio correlation and find gaps"
+claude --agent qa-verifier "verify round 10 backtest results for look-ahead bias"
 ```
 
 ## Skills (`.claude/skills/`)

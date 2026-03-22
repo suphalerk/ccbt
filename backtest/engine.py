@@ -15,15 +15,20 @@ from bot.strategy import (
     SignalType,
     check_adx_di_cross_conditions,
     check_alligator_conditions,
+    check_awesome_oscillator_conditions,
     check_bb_breakout_conditions,
     check_body_dominance_conditions,
     check_choppiness_ema_conditions,
     check_dual_supertrend_conditions,
+    check_dual_thrust_conditions,
+    check_dualthrust_adx_conditions,
     check_ema_alligator_conditions,
     check_ema_ichimoku_hybrid_conditions,
+    check_ema_ribbon_conditions,
     check_engulfing_conditions,
     check_entry_conditions,
     check_fast_crossover_conditions,
+    check_ichi_adx_conditions,
     check_ichi_supertrend_conditions,
     check_ichimoku_conditions,
     check_inside_bar_breakout_conditions,
@@ -31,15 +36,21 @@ from bot.strategy import (
     check_pin_bar_conditions,
     check_price_channel_vol_conditions,
     check_pullback_conditions,
+    check_range_bounce_conditions,
+    check_ribbon_ao_conditions,
+    check_ribbon_rsi_vol_conditions,
     check_roc_momentum_conditions,
     check_rsi_divergence_conditions,
     check_squeeze_release_conditions,
+    check_stoch_mtf_conditions,
     check_stoch_supertrend_conditions,
     check_supertrend_conditions,
     check_supertrend_volume_conditions,
     check_vol_expansion_conditions,
     check_volexp_supertrend_conditions,
     check_williams_r_adx_conditions,
+    check_zscore_meanrev_conditions,
+    check_zscore_stoch_conditions,
     compute_levels,
     compute_net_rr,
     compute_signal_quality_score,
@@ -607,6 +618,125 @@ class BacktestEngine:
                         ):
                             signal_source = "supertrend_volume"
 
+            # Dual Thrust Breakout: needs signal_row and the row before it for fresh breakout
+            # signal_row is at candle_idx-1; prev is at candle_idx-2
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("dual_thrust", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        dt_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_dual_thrust_conditions(
+                            signal_row, dt_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "dual_thrust"
+
+            # Awesome Oscillator: needs signal_row and the row before it for zero-cross
+            # signal_row is at candle_idx-1; prev is at candle_idx-2
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("awesome_oscillator", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        ao_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_awesome_oscillator_conditions(
+                            signal_row, ao_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "awesome_oscillator"
+
+            # Range Bounce: mean-reversion — NOT gated by trend_signals_gated (has own ranging guard)
+            # Uses signal_row only; no prev_row needed (rb columns are pre-computed at indicator time)
+            if signal_source is None:
+                if signals_config.get("range_bounce", {}).get("enabled", False):
+                    if check_range_bounce_conditions(
+                        signal_row, signal_row, self.config, signal_type
+                    ):
+                        signal_source = "range_bounce"
+
+            # Stochastic MTF: trend-following, gated in ranging regime
+            # Needs signal_row and the row before it for %K/%D crossover detection
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("stoch_mtf", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        stoch_mtf_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_stoch_mtf_conditions(
+                            signal_row, stoch_mtf_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "stoch_mtf"
+
+            # Z-Score Mean Reversion: mean-reversion — NOT gated by trend_signals_gated
+            # Uses signal_row only; zscore computed at indicator time
+            if signal_source is None:
+                if signals_config.get("zscore_meanrev", {}).get("enabled", False):
+                    if check_zscore_meanrev_conditions(
+                        signal_row, self.config, signal_type
+                    ):
+                        signal_source = "zscore_meanrev"
+
+            # EMA Ribbon: trend-following, gated in ranging regime
+            # Needs signal_row and the row before it for edge detection (first aligned bar)
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("ema_ribbon", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        ribbon_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_ema_ribbon_conditions(
+                            signal_row, ribbon_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "ema_ribbon"
+
+            # --- Combo signals ---
+
+            # EMA Ribbon + RSI + Volume: trend-following, gated in ranging regime
+            # Needs signal_row and the row before it for edge detection
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("ribbon_rsi_vol", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        ribbon_rsi_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_ribbon_rsi_vol_conditions(
+                            signal_row, ribbon_rsi_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "ribbon_rsi_vol"
+
+            # Dual Thrust + ADX: trend-following, gated in ranging regime
+            # Needs signal_row and the row before it for fresh breakout detection
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("dualthrust_adx", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        dt_adx_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_dualthrust_adx_conditions(
+                            signal_row, dt_adx_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "dualthrust_adx"
+
+            # Z-Score + Stochastic: mean-reversion — NOT gated by trend_signals_gated
+            # Needs signal_row and the row before it for stochastic cross detection
+            if signal_source is None:
+                if signals_config.get("zscore_stoch", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        zscore_stoch_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_zscore_stoch_conditions(
+                            signal_row, zscore_stoch_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "zscore_stoch"
+
+            # Ichimoku + ADX: trend-following, gated in ranging regime
+            # Needs signal_row and the row before it for TK crossover and ADX direction
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("ichi_adx", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        ichi_adx_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_ichi_adx_conditions(
+                            signal_row, ichi_adx_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "ichi_adx"
+
+            # EMA Ribbon + Awesome Oscillator: trend-following, gated in ranging regime
+            # Needs signal_row and the row before it for edge detection
+            if signal_source is None and not trend_signals_gated:
+                if signals_config.get("ribbon_ao", {}).get("enabled", False):
+                    if hasattr(self, "_df") and candle_idx >= 2:
+                        ribbon_ao_prev_row = self._df.iloc[candle_idx - 2]
+                        if check_ribbon_ao_conditions(
+                            signal_row, ribbon_ao_prev_row, self.config, signal_type
+                        ):
+                            signal_source = "ribbon_ao"
+
             if signal_source is None:
                 continue
 
@@ -657,10 +787,19 @@ class BacktestEngine:
                 levels_config = self.config
                 locked_trail_mult = 0.0  # 0.0 = not locked, use rolling per-candle regime
 
-            # Mean-reversion uses tighter SL/TP multipliers
-            if signal_source == "mean_reversion":
+            # Mean-reversion signals use tighter SL/TP multipliers
+            if signal_source in ("mean_reversion", "range_bounce", "zscore_meanrev", "zscore_stoch"):
                 sl_mult = self.config.get("mr_atr_sl_mult", 1.0)
                 tp_mult = self.config.get("mr_atr_tp_mult", 1.5)
+                if signal_source == "range_bounce":
+                    sl_mult = self.config.get("range_bounce_atr_sl_mult", self.config.get("mr_atr_sl_mult", 1.5))
+                    tp_mult = self.config.get("range_bounce_atr_tp_mult", self.config.get("mr_atr_tp_mult", 2.0))
+                elif signal_source == "zscore_meanrev":
+                    sl_mult = self.config.get("zscore_atr_sl_mult", self.config.get("mr_atr_sl_mult", 1.5))
+                    tp_mult = self.config.get("zscore_atr_tp_mult", self.config.get("mr_atr_tp_mult", 2.0))
+                elif signal_source == "zscore_stoch":
+                    sl_mult = self.config.get("zscore_stoch_atr_sl_mult", self.config.get("mr_atr_sl_mult", 1.5))
+                    tp_mult = self.config.get("zscore_stoch_atr_tp_mult", self.config.get("mr_atr_tp_mult", 2.0))
                 sl, tp = compute_levels(
                     entry_price, atr, signal_type,
                     {"atr_sl_mult": sl_mult, "atr_tp_mult": tp_mult},

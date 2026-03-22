@@ -1728,6 +1728,508 @@ def check_supertrend_volume_conditions(
     return False
 
 
+def check_ribbon_rsi_vol_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check EMA Ribbon + RSI + Volume combo entry conditions.
+
+    LONG:  EMA ribbon fully aligned bullish (ema8>13>21>34>55>89)
+           AND RSI(14) > 50
+           AND volume > 1.5 × volume_ma
+           AND close > EMA(50)
+           AND edge detect: previous row was NOT all conditions true.
+    SHORT: EMA ribbon fully aligned bearish (ema8<13<21<34<55<89)
+           AND RSI(14) < 50
+           AND volume > 1.5 × volume_ma
+           AND close < EMA(50)
+           AND edge detect.
+
+    Requires ema_ribbon_8/13/21/34/55/89, rsi, volume_ma, ema50 columns.
+
+    Args:
+        row: Current closed candle row with indicator columns.
+        prev_row: Previous candle row (for edge detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if all ribbon + RSI + volume conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("ribbon_rsi_vol", {}).get("enabled", False):
+        return False
+
+    required_cols = (
+        "ema_ribbon_8", "ema_ribbon_13", "ema_ribbon_21",
+        "ema_ribbon_34", "ema_ribbon_55", "ema_ribbon_89",
+        "rsi", "volume_ma", "atr",
+    )
+    for col in required_cols:
+        val = row.get(col)
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+        val_prev = prev_row.get(col)
+        if val_prev is None or (isinstance(val_prev, float) and pd.isna(val_prev)):
+            return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if float(row["atr"]) < atr_min:
+        return False
+
+    vol_mult = config.get("ribbon_rsi_vol_volume_mult", 1.5)
+    vol_ma = float(row["volume_ma"])
+    if vol_ma <= 0 or float(row.get("volume", 0)) < vol_ma * vol_mult:
+        return False
+
+    # EMA(50) trend filter
+    ema50 = row.get("ema_trend", row.get("ema_trend_1h", row.get("ema50")))
+    if ema50 is None or (isinstance(ema50, float) and pd.isna(ema50)):
+        return False
+
+    r8 = float(row["ema_ribbon_8"])
+    r13 = float(row["ema_ribbon_13"])
+    r21 = float(row["ema_ribbon_21"])
+    r34 = float(row["ema_ribbon_34"])
+    r55 = float(row["ema_ribbon_55"])
+    r89 = float(row["ema_ribbon_89"])
+
+    pr8 = float(prev_row["ema_ribbon_8"])
+    pr13 = float(prev_row["ema_ribbon_13"])
+    pr21 = float(prev_row["ema_ribbon_21"])
+    pr34 = float(prev_row["ema_ribbon_34"])
+    pr55 = float(prev_row["ema_ribbon_55"])
+    pr89 = float(prev_row["ema_ribbon_89"])
+
+    rsi = float(row["rsi"])
+    close = float(row["close"])
+    ema50_val = float(ema50)
+
+    if signal_type == SignalType.LONG:
+        ribbon_aligned = r8 > r13 > r21 > r34 > r55 > r89
+        if not ribbon_aligned:
+            return False
+        if rsi <= 50.0:
+            return False
+        if close <= ema50_val:
+            return False
+        # Edge detect: previous bar was NOT all conditions true
+        prev_ribbon_aligned = pr8 > pr13 > pr21 > pr34 > pr55 > pr89
+        prev_rsi = float(prev_row.get("rsi", 0))
+        prev_close = float(prev_row.get("close", 0))
+        prev_vol = float(prev_row.get("volume", 0))
+        prev_vol_ma = float(prev_row.get("volume_ma", 1))
+        prev_ema50 = prev_row.get("ema_trend", prev_row.get("ema_trend_1h", prev_row.get("ema50", 0)))
+        prev_ema50_val = float(prev_ema50) if prev_ema50 is not None and not pd.isna(prev_ema50) else 0.0
+        prev_all_true = (
+            prev_ribbon_aligned
+            and prev_rsi > 50.0
+            and prev_vol_ma > 0 and prev_vol >= prev_vol_ma * vol_mult
+            and prev_close > prev_ema50_val
+        )
+        if prev_all_true:
+            return False  # Already triggered; wait for a new edge
+        return True
+
+    elif signal_type == SignalType.SHORT:
+        ribbon_aligned = r8 < r13 < r21 < r34 < r55 < r89
+        if not ribbon_aligned:
+            return False
+        if rsi >= 50.0:
+            return False
+        if close >= ema50_val:
+            return False
+        # Edge detect
+        prev_ribbon_aligned = pr8 < pr13 < pr21 < pr34 < pr55 < pr89
+        prev_rsi = float(prev_row.get("rsi", 100))
+        prev_close = float(prev_row.get("close", 0))
+        prev_vol = float(prev_row.get("volume", 0))
+        prev_vol_ma = float(prev_row.get("volume_ma", 1))
+        prev_ema50 = prev_row.get("ema_trend", prev_row.get("ema_trend_1h", prev_row.get("ema50", 0)))
+        prev_ema50_val = float(prev_ema50) if prev_ema50 is not None and not pd.isna(prev_ema50) else 0.0
+        prev_all_true = (
+            prev_ribbon_aligned
+            and prev_rsi < 50.0
+            and prev_vol_ma > 0 and prev_vol >= prev_vol_ma * vol_mult
+            and prev_close < prev_ema50_val
+        )
+        if prev_all_true:
+            return False
+        return True
+
+    return False
+
+
+def check_dualthrust_adx_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Dual Thrust + ADX combo entry conditions.
+
+    LONG:  close > dt_upper (breakout above)
+           AND prev_close <= prev_dt_upper (fresh breakout, not continuation)
+           AND ADX > 25 (trending)
+           AND DI+ > DI- (bullish direction)
+           AND close > EMA(50).
+    SHORT: close < dt_lower
+           AND prev_close >= prev_dt_lower
+           AND ADX > 25
+           AND DI- > DI+
+           AND close < EMA(50).
+
+    Requires dt_upper, dt_lower, adx, di_plus, di_minus, ema50 columns.
+
+    Args:
+        row: Current closed candle row with indicator columns.
+        prev_row: Previous candle row (for fresh breakout detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if all Dual Thrust + ADX conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("dualthrust_adx", {}).get("enabled", False):
+        return False
+
+    required = ("dt_upper", "dt_lower", "adx", "di_plus", "di_minus", "atr")
+    for col in required:
+        val = row.get(col)
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+    # prev_row needs dt_upper and dt_lower for fresh-breakout check
+    for col in ("dt_upper", "dt_lower"):
+        val = prev_row.get(col)
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if float(row["atr"]) < atr_min:
+        return False
+
+    adx_threshold = config.get("dualthrust_adx_threshold", 25.0)
+    if float(row["adx"]) <= adx_threshold:
+        return False
+
+    ema50 = row.get("ema_trend", row.get("ema_trend_1h", row.get("ema50")))
+    if ema50 is None or (isinstance(ema50, float) and pd.isna(ema50)):
+        return False
+
+    close = float(row["close"])
+    dt_upper = float(row["dt_upper"])
+    dt_lower = float(row["dt_lower"])
+    prev_close = float(prev_row.get("close", close))
+    prev_dt_upper = float(prev_row["dt_upper"])
+    prev_dt_lower = float(prev_row["dt_lower"])
+    di_plus = float(row["di_plus"])
+    di_minus = float(row["di_minus"])
+
+    if signal_type == SignalType.LONG:
+        if close <= dt_upper:
+            return False
+        if prev_close > prev_dt_upper:
+            return False  # Not a fresh breakout
+        if di_plus <= di_minus:
+            return False
+        if close <= float(ema50):
+            return False
+        return True
+
+    elif signal_type == SignalType.SHORT:
+        if close >= dt_lower:
+            return False
+        if prev_close < prev_dt_lower:
+            return False  # Not a fresh breakout
+        if di_minus <= di_plus:
+            return False
+        if close >= float(ema50):
+            return False
+        return True
+
+    return False
+
+
+def check_zscore_stoch_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Z-Score + Stochastic mean-reversion combo entry conditions.
+
+    LONG:  zscore < -2.0 (extreme below mean)
+           AND (stoch_k < 20 OR stoch_k crosses above stoch_d)
+           AND close > EMA(50) (structural uptrend only).
+    SHORT: zscore > +2.0 (extreme above mean)
+           AND (stoch_k > 80 OR stoch_k crosses below stoch_d)
+           AND close < EMA(50).
+
+    NOTE: This is mean reversion — place OUTSIDE trend_signals_gated in engine.
+
+    Requires zscore, stoch_k, stoch_d, ema50 columns.
+
+    Args:
+        row: Current closed candle row with indicator columns.
+        prev_row: Previous candle row (for stochastic cross detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if all Z-Score + Stochastic conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("zscore_stoch", {}).get("enabled", False):
+        return False
+
+    required = ("zscore", "stoch_k", "stoch_d", "atr")
+    for col in required:
+        val = row.get(col)
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+    for col in ("stoch_k", "stoch_d"):
+        val = prev_row.get(col)
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if float(row["atr"]) < atr_min:
+        return False
+
+    ema50 = row.get("ema_trend", row.get("ema_trend_1h", row.get("ema50")))
+    if ema50 is None or (isinstance(ema50, float) and pd.isna(ema50)):
+        return False
+
+    zscore_threshold = config.get("zscore_stoch_threshold", 2.0)
+    oversold_level = config.get("zscore_stoch_oversold", 20.0)
+    overbought_level = config.get("zscore_stoch_overbought", 80.0)
+
+    zscore = float(row["zscore"])
+    k = float(row["stoch_k"])
+    d = float(row["stoch_d"])
+    prev_k = float(prev_row["stoch_k"])
+    prev_d = float(prev_row["stoch_d"])
+    close = float(row["close"])
+    ema50_val = float(ema50)
+
+    if signal_type == SignalType.LONG:
+        if zscore >= -zscore_threshold:
+            return False
+        stoch_oversold = k < oversold_level
+        stoch_cross_up = k > d and prev_k <= prev_d
+        if not (stoch_oversold or stoch_cross_up):
+            return False
+        # Structural uptrend: close must be above EMA(50)
+        if close <= ema50_val:
+            return False
+        return True
+
+    elif signal_type == SignalType.SHORT:
+        if zscore <= zscore_threshold:
+            return False
+        stoch_overbought = k > overbought_level
+        stoch_cross_down = k < d and prev_k >= prev_d
+        if not (stoch_overbought or stoch_cross_down):
+            return False
+        if close >= ema50_val:
+            return False
+        return True
+
+    return False
+
+
+def check_ichi_adx_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Ichimoku + ADX combo entry conditions.
+
+    LONG:  Tenkan crosses above Kijun (TK cross bullish)
+           AND close > cloud_top (above the cloud)
+           AND ADX > 25 (trending)
+           AND ADX rising (adx > prev_adx).
+    SHORT: Tenkan crosses below Kijun
+           AND close < cloud_bottom
+           AND ADX > 25
+           AND ADX rising.
+
+    Requires tenkan, kijun, cloud_top, cloud_bottom, adx columns.
+
+    Args:
+        row: Current closed candle row with Ichimoku + ADX columns.
+        prev_row: Previous candle row (for TK crossover and ADX direction).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if all Ichimoku + ADX conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("ichi_adx", {}).get("enabled", False):
+        return False
+
+    required = ("tenkan", "kijun", "cloud_top", "cloud_bottom", "adx", "atr")
+    for col in required:
+        val = row.get(col)
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+    for col in ("tenkan", "kijun", "adx"):
+        val = prev_row.get(col)
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if float(row["atr"]) < atr_min:
+        return False
+
+    adx_threshold = config.get("ichi_adx_threshold", 25.0)
+    adx = float(row["adx"])
+    prev_adx = float(prev_row["adx"])
+
+    if adx <= adx_threshold:
+        return False
+    if adx <= prev_adx:
+        return False  # ADX must be rising
+
+    tenkan = float(row["tenkan"])
+    kijun = float(row["kijun"])
+    prev_tenkan = float(prev_row["tenkan"])
+    prev_kijun = float(prev_row["kijun"])
+    cloud_top = float(row["cloud_top"])
+    cloud_bottom = float(row["cloud_bottom"])
+    close = float(row["close"])
+
+    if signal_type == SignalType.LONG:
+        # Tenkan crosses above Kijun
+        tk_cross_up = tenkan > kijun and prev_tenkan <= prev_kijun
+        if not tk_cross_up:
+            return False
+        if close <= cloud_top:
+            return False
+        return True
+
+    elif signal_type == SignalType.SHORT:
+        # Tenkan crosses below Kijun
+        tk_cross_down = tenkan < kijun and prev_tenkan >= prev_kijun
+        if not tk_cross_down:
+            return False
+        if close >= cloud_bottom:
+            return False
+        return True
+
+    return False
+
+
+def check_ribbon_ao_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check EMA Ribbon + Awesome Oscillator combo entry conditions.
+
+    LONG:  EMA ribbon fully aligned bullish (ema8>13>21>34>55>89)
+           AND AO > 0 (Awesome Oscillator positive)
+           AND close > EMA(50)
+           AND edge detect: previous bar was NOT both conditions true.
+    SHORT: EMA ribbon fully aligned bearish (ema8<13<21<34<55<89)
+           AND AO < 0
+           AND close < EMA(50)
+           AND edge detect.
+
+    Requires ema_ribbon_8/13/21/34/55/89, ao, ema50 columns.
+
+    Args:
+        row: Current closed candle row with ribbon + AO columns.
+        prev_row: Previous candle row (for edge detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if all EMA Ribbon + AO conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("ribbon_ao", {}).get("enabled", False):
+        return False
+
+    required_cols = (
+        "ema_ribbon_8", "ema_ribbon_13", "ema_ribbon_21",
+        "ema_ribbon_34", "ema_ribbon_55", "ema_ribbon_89",
+        "ao", "atr",
+    )
+    for col in required_cols:
+        val = row.get(col)
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+    for col in ("ema_ribbon_8", "ema_ribbon_13", "ema_ribbon_21",
+                "ema_ribbon_34", "ema_ribbon_55", "ema_ribbon_89", "ao"):
+        val = prev_row.get(col)
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if float(row["atr"]) < atr_min:
+        return False
+
+    ema50 = row.get("ema_trend", row.get("ema_trend_1h", row.get("ema50")))
+    if ema50 is None or (isinstance(ema50, float) and pd.isna(ema50)):
+        return False
+
+    r8 = float(row["ema_ribbon_8"])
+    r13 = float(row["ema_ribbon_13"])
+    r21 = float(row["ema_ribbon_21"])
+    r34 = float(row["ema_ribbon_34"])
+    r55 = float(row["ema_ribbon_55"])
+    r89 = float(row["ema_ribbon_89"])
+
+    pr8 = float(prev_row["ema_ribbon_8"])
+    pr13 = float(prev_row["ema_ribbon_13"])
+    pr21 = float(prev_row["ema_ribbon_21"])
+    pr34 = float(prev_row["ema_ribbon_34"])
+    pr55 = float(prev_row["ema_ribbon_55"])
+    pr89 = float(prev_row["ema_ribbon_89"])
+
+    ao = float(row["ao"])
+    prev_ao = float(prev_row["ao"])
+    close = float(row["close"])
+    prev_close = float(prev_row.get("close", close))
+    ema50_val = float(ema50)
+    prev_ema50 = prev_row.get("ema_trend", prev_row.get("ema_trend_1h", prev_row.get("ema50", 0)))
+    prev_ema50_val = float(prev_ema50) if prev_ema50 is not None and not pd.isna(prev_ema50) else 0.0
+
+    if signal_type == SignalType.LONG:
+        ribbon_aligned = r8 > r13 > r21 > r34 > r55 > r89
+        if not ribbon_aligned:
+            return False
+        if ao <= 0.0:
+            return False
+        if close <= ema50_val:
+            return False
+        # Edge detect: previous bar was NOT both conditions true
+        prev_ribbon_aligned = pr8 > pr13 > pr21 > pr34 > pr55 > pr89
+        prev_both_true = prev_ribbon_aligned and prev_ao > 0.0 and prev_close > prev_ema50_val
+        if prev_both_true:
+            return False
+        return True
+
+    elif signal_type == SignalType.SHORT:
+        ribbon_aligned = r8 < r13 < r21 < r34 < r55 < r89
+        if not ribbon_aligned:
+            return False
+        if ao >= 0.0:
+            return False
+        if close >= ema50_val:
+            return False
+        # Edge detect
+        prev_ribbon_aligned = pr8 < pr13 < pr21 < pr34 < pr55 < pr89
+        prev_both_true = prev_ribbon_aligned and prev_ao < 0.0 and prev_close < prev_ema50_val
+        if prev_both_true:
+            return False
+        return True
+
+    return False
+
+
 def compute_levels(
     entry_price: float, atr: float, signal_type: SignalType, config: dict
 ) -> tuple[float, float]:
@@ -2249,3 +2751,407 @@ def compute_trailing_stop(
     else:
         new_sl = current_price + trail_distance
         return min(new_sl, current_sl)  # Only move down
+
+
+def check_dual_thrust_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Dual Thrust Breakout entry conditions.
+
+    LONG:  close > dt_upper (prev close <= prev dt_upper) AND close > ema50 trend filter.
+    SHORT: close < dt_lower (prev close >= prev dt_lower) AND close < ema50 trend filter.
+
+    Dual Thrust is a breakout strategy: price breaks through a band built from the
+    prior close ± k * N-bar rolling range (high-low).  The EMA(50) trend filter
+    prevents counter-trend breakouts.
+
+    Requires dt_upper, dt_lower, ema50 (or ema_trend) columns added by add_indicators().
+
+    Args:
+        row: Current candle row with dt_upper, dt_lower columns.
+        prev_row: Previous candle row (for fresh breakout detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if Dual Thrust breakout conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("dual_thrust", {}).get("enabled", False):
+        return False
+
+    dt_upper = row.get("dt_upper")
+    dt_lower = row.get("dt_lower")
+    prev_dt_upper = prev_row.get("dt_upper")
+    prev_dt_lower = prev_row.get("dt_lower")
+    close = row.get("close")
+    prev_close = prev_row.get("close")
+
+    for val in (dt_upper, dt_lower, prev_dt_upper, prev_dt_lower, close, prev_close):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(row.get("atr")) or row["atr"] < atr_min:
+        return False
+
+    # EMA(50) trend filter
+    ema50 = row.get("ema_trend", row.get("ema_trend_1h", row.get("ema50")))
+    if ema50 is None or (isinstance(ema50, float) and pd.isna(ema50)):
+        return False
+
+    if signal_type == SignalType.LONG:
+        # Fresh breakout above upper band
+        if not (float(close) > float(dt_upper) and float(prev_close) <= float(prev_dt_upper)):
+            return False
+        # Trend filter: price above EMA(50)
+        if float(close) <= float(ema50):
+            return False
+        return True
+
+    elif signal_type == SignalType.SHORT:
+        # Fresh breakout below lower band
+        if not (float(close) < float(dt_lower) and float(prev_close) >= float(prev_dt_lower)):
+            return False
+        # Trend filter: price below EMA(50)
+        if float(close) >= float(ema50):
+            return False
+        return True
+
+    return False
+
+
+def check_awesome_oscillator_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Awesome Oscillator zero-cross entry conditions.
+
+    LONG:  AO crosses above 0 (prev_ao <= 0, current ao > 0) AND close > EMA(50).
+    SHORT: AO crosses below 0 (prev_ao >= 0, current ao < 0) AND close < EMA(50).
+
+    The Awesome Oscillator (AO = SMA5_midpoint - SMA34_midpoint) zero-cross
+    signals a momentum shift.  The EMA(50) filter confirms the macro trend.
+
+    Requires ao, ema50 (or ema_trend) columns added by add_indicators().
+
+    Args:
+        row: Current candle row with ao, ema50 columns.
+        prev_row: Previous candle row (for zero-cross detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if Awesome Oscillator conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("awesome_oscillator", {}).get("enabled", False):
+        return False
+
+    ao = row.get("ao")
+    prev_ao = prev_row.get("ao")
+    close = row.get("close")
+
+    for val in (ao, prev_ao, close):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(row.get("atr")) or row["atr"] < atr_min:
+        return False
+
+    # EMA(50) trend filter
+    ema50 = row.get("ema_trend", row.get("ema_trend_1h", row.get("ema50")))
+    if ema50 is None or (isinstance(ema50, float) and pd.isna(ema50)):
+        return False
+
+    if signal_type == SignalType.LONG:
+        ao_cross_up = float(ao) > 0.0 and float(prev_ao) <= 0.0
+        if not ao_cross_up:
+            return False
+        if float(close) <= float(ema50):
+            return False
+        return True
+
+    elif signal_type == SignalType.SHORT:
+        ao_cross_down = float(ao) < 0.0 and float(prev_ao) >= 0.0
+        if not ao_cross_down:
+            return False
+        if float(close) >= float(ema50):
+            return False
+        return True
+
+    return False
+
+
+def check_range_bounce_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Range Bounce mean-reversion entry conditions.
+
+    LONG:  rb_is_ranging AND close > rb_support (inside range)
+           AND close < rb_support * (1 + proximity_pct) (near support)
+           AND RSI < rsi_lo.
+    SHORT: rb_is_ranging AND close < rb_resistance (inside range)
+           AND close > rb_resistance * (1 - proximity_pct) (near resistance)
+           AND RSI > rsi_hi.
+
+    Range Bounce is a MEAN-REVERSION strategy — it intentionally fires in
+    ranging markets and should NOT be gated by trend_signals_gated.  The
+    rb_is_ranging flag provides its own ranging market filter.
+
+    Requires rb_support, rb_resistance, rb_is_ranging columns added by add_indicators().
+
+    Args:
+        row: Current candle row with range bounce indicator columns.
+        prev_row: Previous candle row (unused, kept for consistent interface).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if Range Bounce conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("range_bounce", {}).get("enabled", False):
+        return False
+
+    rb_support = row.get("rb_support")
+    rb_resistance = row.get("rb_resistance")
+    rb_is_ranging = row.get("rb_is_ranging")
+    close = row.get("close")
+    rsi = row.get("rsi")
+
+    for val in (rb_support, rb_resistance, close, rsi):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    # Must be in a ranging market (narrow range relative to recent history)
+    if not rb_is_ranging:
+        return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(row.get("atr")) or row["atr"] < atr_min:
+        return False
+
+    proximity_pct = config.get("range_bounce_proximity_pct", 0.01)
+    rsi_lo = config.get("range_bounce_rsi_lo", 35)
+    rsi_hi = config.get("range_bounce_rsi_hi", 65)
+
+    if signal_type == SignalType.LONG:
+        # Price near support (within proximity_pct above support) and RSI oversold
+        near_support = float(close) < float(rb_support) * (1.0 + proximity_pct)
+        above_support = float(close) > float(rb_support)
+        rsi_oversold = float(rsi) < rsi_lo
+        return near_support and above_support and rsi_oversold
+
+    elif signal_type == SignalType.SHORT:
+        # Price near resistance (within proximity_pct below resistance) and RSI overbought
+        near_resistance = float(close) > float(rb_resistance) * (1.0 - proximity_pct)
+        below_resistance = float(close) < float(rb_resistance)
+        rsi_overbought = float(rsi) > rsi_hi
+        return near_resistance and below_resistance and rsi_overbought
+
+
+def check_stoch_mtf_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Stochastic Multi-Timeframe entry conditions.
+
+    Uses stochastic oscillator for entry timing with EMA(50) as higher-timeframe
+    direction filter (proxy for multi-timeframe bias when only one TF is available).
+
+    LONG:  Stochastic %K crosses above %D in oversold zone (K < oversold threshold)
+           AND EMA(50) direction is bullish (close > EMA50).
+    SHORT: Stochastic %K crosses below %D in overbought zone (K > overbought threshold)
+           AND EMA(50) direction is bearish (close < EMA50).
+
+    Requires stoch_k, stoch_d columns and ema50 / ema_trend direction filter.
+
+    Args:
+        row: Current candle row with stochastic and ema50 columns.
+        prev_row: Previous candle row (for %K/%D crossover detection).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if Stochastic MTF conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("stoch_mtf", {}).get("enabled", False):
+        return False
+
+    k = row.get("stoch_k")
+    d = row.get("stoch_d")
+    prev_k = prev_row.get("stoch_k")
+    prev_d = prev_row.get("stoch_d")
+
+    for val in (k, d, prev_k, prev_d):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(row.get("atr")) or row["atr"] < atr_min:
+        return False
+
+    oversold = config.get("stoch_oversold", 20.0)
+    overbought = config.get("stoch_overbought", 80.0)
+
+    # EMA(50) direction filter — higher-timeframe bias
+    ema50 = row.get("ema_trend", row.get("ema_trend_1h", row.get("ema50")))
+    if ema50 is None or (isinstance(ema50, float) and pd.isna(ema50)):
+        return False
+
+    close = row.get("close", 0)
+
+    if signal_type == SignalType.LONG:
+        k_cross_up = float(k) > float(d) and float(prev_k) <= float(prev_d)
+        in_oversold = float(k) < oversold
+        htf_bullish = float(close) > float(ema50)
+        return k_cross_up and in_oversold and htf_bullish
+
+    elif signal_type == SignalType.SHORT:
+        k_cross_down = float(k) < float(d) and float(prev_k) >= float(prev_d)
+        in_overbought = float(k) > overbought
+        htf_bearish = float(close) < float(ema50)
+        return k_cross_down and in_overbought and htf_bearish
+
+    return False
+
+
+def check_zscore_meanrev_conditions(
+    row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check Z-Score Mean Reversion entry conditions.
+
+    Enters mean-reversion trades when price is statistically extreme relative
+    to its recent mean, filtered by EMA(50) to ensure structural alignment.
+
+    LONG:  Z-Score < -zscore_threshold (price significantly below mean)
+           AND close > EMA(50) (price is in a structural uptrend — oversold dip).
+    SHORT: Z-Score > +zscore_threshold (price significantly above mean)
+           AND close < EMA(50) (price is in a structural downtrend — overbought rally).
+
+    This is mean-reversion logic and must be placed OUTSIDE trend_signals_gated
+    checks in the engine (like range_bounce and mean_reversion).
+
+    Requires zscore column and ema50 / ema_trend direction filter.
+
+    Args:
+        row: Current candle row with zscore and ema50 columns.
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if Z-Score mean-reversion conditions are satisfied.
+    """
+    if not config.get("signals", {}).get("zscore_meanrev", {}).get("enabled", False):
+        return False
+
+    zscore = row.get("zscore")
+    if zscore is None or (isinstance(zscore, float) and pd.isna(zscore)):
+        return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(row.get("atr")) or row["atr"] < atr_min:
+        return False
+
+    threshold = config.get("zscore_threshold", 2.0)
+
+    # EMA(50) structural trend filter
+    ema50 = row.get("ema_trend", row.get("ema_trend_1h", row.get("ema50")))
+    if ema50 is None or (isinstance(ema50, float) and pd.isna(ema50)):
+        return False
+
+    close = row.get("close", 0)
+
+    if signal_type == SignalType.LONG:
+        # Oversold in an uptrend — expect mean reversion upward
+        return float(zscore) < -threshold and float(close) > float(ema50)
+
+    elif signal_type == SignalType.SHORT:
+        # Overbought in a downtrend — expect mean reversion downward
+        return float(zscore) > threshold and float(close) < float(ema50)
+
+    return False
+
+
+def check_ema_ribbon_conditions(
+    row: pd.Series,
+    prev_row: pd.Series,
+    config: dict,
+    signal_type: SignalType,
+) -> bool:
+    """Check EMA Ribbon full alignment entry conditions.
+
+    Six EMAs (8, 13, 21, 34, 55, 89) must be fully aligned (trend-following).
+    Signal fires on the FIRST candle where full alignment is achieved (edge detect).
+
+    LONG:  ema8 > ema13 > ema21 > ema34 > ema55 > ema89
+           AND on the previous candle full alignment was NOT present.
+    SHORT: ema8 < ema13 < ema21 < ema34 < ema55 < ema89
+           AND on the previous candle full alignment was NOT present.
+
+    Requires ema_ribbon_8/13/21/34/55/89 columns (added by add_indicators
+    when ema_ribbon signal is enabled).
+
+    Args:
+        row: Current candle row with EMA ribbon columns.
+        prev_row: Previous candle row (for edge-detection — first aligned bar).
+        config: Bot configuration.
+        signal_type: LONG or SHORT.
+
+    Returns:
+        True if EMA ribbon fully aligns on this candle for the first time.
+    """
+    if not config.get("signals", {}).get("ema_ribbon", {}).get("enabled", False):
+        return False
+
+    periods = (8, 13, 21, 34, 55, 89)
+    cols = [f"ema_ribbon_{p}" for p in periods]
+
+    # All columns must be present and non-NaN in both rows
+    for col in cols:
+        v = row.get(col)
+        pv = prev_row.get(col)
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return False
+        if pv is None or (isinstance(pv, float) and pd.isna(pv)):
+            return False
+
+    atr_min = config.get("atr_min", 0.0)
+    if pd.isna(row.get("atr")) or row["atr"] < atr_min:
+        return False
+
+    emas = [float(row[c]) for c in cols]
+    prev_emas = [float(prev_row[c]) for c in cols]
+
+    if signal_type == SignalType.LONG:
+        # Current: fully bullish aligned
+        aligned_now = all(emas[i] > emas[i + 1] for i in range(len(emas) - 1))
+        if not aligned_now:
+            return False
+        # Previous: NOT fully aligned (edge detect — first bar of alignment)
+        prev_aligned = all(prev_emas[i] > prev_emas[i + 1] for i in range(len(prev_emas) - 1))
+        return not prev_aligned
+
+    elif signal_type == SignalType.SHORT:
+        # Current: fully bearish aligned
+        aligned_now = all(emas[i] < emas[i + 1] for i in range(len(emas) - 1))
+        if not aligned_now:
+            return False
+        # Previous: NOT fully aligned (edge detect)
+        prev_aligned = all(prev_emas[i] < prev_emas[i + 1] for i in range(len(prev_emas) - 1))
+        return not prev_aligned
+
+    return False
+
+    return False
