@@ -83,22 +83,21 @@ services:
   # Strategy 3: EMA 15m mass expansion (1 bot, 1% risk)
   # ===========================================================================
 
-  # ARC EMA 15m  (PF 1.59, WR 47%, 32 tr/yr, Sharpe 1.06, DD 4.1%)
-  bot-arc-ema:
+  # ARC Dual Thrust 1H  (PF 2.50, WR 53%, 18 tr/yr — upgraded from EMA 15m PF 1.89)
+  bot-arc-dualthrust:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: tradingbot-arc-ema
+    container_name: tradingbot-arc-dualthrust
     restart: on-failure:5
     env_file:
       - .env
     environment:
-      - CONFIG_FILE=config_arcusdt_ema.json
+      - CONFIG_FILE=config_arcusdt_dualthrust.json
       - BOT_DATA_DIR=/app/data
-      - YOLO_MODE=1
     volumes:
       - ./data:/app/data
-      - ./config_arcusdt_ema.json:/app/config_arcusdt_ema.json:ro
+      - ./config_arcusdt_dualthrust.json:/app/config_arcusdt_dualthrust.json:ro
     deploy:
       resources:
         limits:
@@ -117,21 +116,21 @@ services:
   # Strategy 2: Ichimoku Cloud 1H (8 bots)
   # ===========================================================================
 
-  # AVAX Ichi 1H  (PF 2.49, WR 45%, 11 tr/yr, Sharpe 1.28, DD 3.6%)
-  bot-avax-ichi:
+  # AVAX Dual Thrust 1H  (PF 3.23, WR 55%, 31 tr/yr — upgraded from Ichi 1H PF 1.95)
+  bot-avax-dualthrust:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: tradingbot-avax-ichi
+    container_name: tradingbot-avax-dualthrust
     restart: on-failure:5
     env_file:
       - .env
     environment:
-      - CONFIG_FILE=config_avax_ichi.json
+      - CONFIG_FILE=config_avaxusdt_dualthrust.json
       - BOT_DATA_DIR=/app/data
     volumes:
       - ./data:/app/data
-      - ./config_avax_ichi.json:/app/config_avax_ichi.json:ro
+      - ./config_avaxusdt_dualthrust.json:/app/config_avaxusdt_dualthrust.json:ro
     deploy:
       resources:
         limits:
@@ -1447,9 +1446,38 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  # OP EMA Ribbon 1H  (PF 1.95, WR 42%, 24 tr/yr, DD 2.5% — new R12)
+  bot-op-emaribbon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-op-emaribbon
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - CONFIG_FILE=config_opusdt_emaribbon.json
+      - BOT_DATA_DIR=/app/data
+    volumes:
+      - ./data:/app/data
+      - ./config_opusdt_emaribbon.json:/app/config_opusdt_emaribbon.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # ===========================================================================
   # Dashboard Service
-  # Runs Streamlit web UI for monitoring all 47 bots
+  # Runs Streamlit web UI for monitoring all bots
   # ===========================================================================
   dashboard:
     build:
