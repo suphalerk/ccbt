@@ -35,7 +35,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy application code
 COPY bot/ ./bot/
 COPY dashboard/ ./dashboard/
-COPY main.py ./
+COPY main.py main_multi.py ./
 COPY config*.json ./
 
 # Create data directory for SQLite database and logs

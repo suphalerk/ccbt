@@ -321,15 +321,21 @@ class TradingEngine:
         config: Bot configuration dict.
         shutdown_event: asyncio.Event set by signal handlers to trigger
             graceful shutdown.
+        shared_exchange: Optional pre-built ccxt exchange instance (already
+            has load_markets() called).  Passed through to BybitClient to
+            skip the expensive per-bot exchange initialisation in multi-bot
+            mode.  See bot.shared_exchange_pool.get_shared_exchange().
     """
 
     def __init__(
         self,
         config: dict,
         shutdown_event: asyncio.Event,
+        shared_exchange=None,
     ) -> None:
         self._config = config
         self._shutdown_event = shutdown_event
+        self._shared_exchange = shared_exchange
 
         # Components (constructed in run() after initial balance fetch)
         self._client: Optional[BybitClient] = None
@@ -362,7 +368,7 @@ class TradingEngine:
         config = self._config
 
         # --- Build components ---
-        self._client = BybitClient(config)
+        self._client = BybitClient(config, shared_exchange=self._shared_exchange)
         self._balance = self._client.get_balance()
         self._risk_mgr = RiskManager(config, self._balance)
         self._journal = TradeJournal()

@@ -70,32 +70,50 @@ class BybitClient:
     # Binance futures testnet base URL
     _BINANCE_TESTNET_BASE = "https://testnet.binancefuture.com"
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict, shared_exchange=None) -> None:
         """Initialize the exchange client.
 
         Args:
             config: Bot configuration dictionary. Reads "exchange" key
                     ("bybit" or "binance", defaults to "bybit") and
                     "use_testnet" key.
+            shared_exchange: Optional pre-built ccxt exchange instance with
+                markets already loaded.  When provided, the client skips
+                _init_bybit/_init_binance and load_markets(), saving ~60 MB
+                and several seconds per bot in multi-bot mode.
+                Use bot.shared_exchange_pool.get_shared_exchange() to obtain
+                a suitable instance.
         """
         self.config = config
         self._last_request_time = 0.0
         self._exchange_name = config.get("exchange", "bybit").lower()
 
-        exchange_params = {
-            "apiKey": os.getenv("API_KEY", ""),
-            "secret": os.getenv("API_SECRET", ""),
-            "enableRateLimit": True,
-        }
-
-        use_testnet = config.get("use_testnet", True)
-
-        if self._exchange_name == "binance":
-            self._init_binance(exchange_params, use_testnet)
+        if shared_exchange is not None:
+            # Fast path: reuse caller-supplied exchange (already has markets loaded).
+            self.exchange = shared_exchange
+            logger.info(
+                "exchange_init_shared",
+                extra={
+                    "exchange": self._exchange_name,
+                    "testnet": config.get("use_testnet", True),
+                },
+            )
         else:
-            self._init_bybit(exchange_params, use_testnet)
+            exchange_params = {
+                "apiKey": os.getenv("API_KEY", ""),
+                "secret": os.getenv("API_SECRET", ""),
+                "enableRateLimit": True,
+            }
 
-        self.exchange.load_markets()
+            use_testnet = config.get("use_testnet", True)
+
+            if self._exchange_name == "binance":
+                self._init_binance(exchange_params, use_testnet)
+            else:
+                self._init_bybit(exchange_params, use_testnet)
+
+            self.exchange.load_markets()
+
         self._normalize_symbol()
 
     def _normalize_symbol(self) -> None:

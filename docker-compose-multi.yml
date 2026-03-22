@@ -1,0 +1,667 @@
+# =============================================================================
+# docker-compose-multi.yml — Grouped multi-bot containers
+# Uses main_multi.py: one process per group, shared ccxt exchange object
+#
+# Memory comparison:
+#   Old (individual): 174 containers × 512MB = 89088MB
+#   New (grouped):    16 containers, ~6610MB total
+#
+# Usage:
+#   docker compose -f docker-compose-multi.yml up -d
+# =============================================================================
+
+services:
+
+  # Dashboard
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-dashboard
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8501:8501"
+    command: streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0
+    volumes:
+      - ./data:/app/data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # alligator group (4 bots)
+  bot-group-alligator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-alligator
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - BOT_DATA_DIR=/app/data
+    command: python main_multi.py --configs /app/config_lightusdt_alligator.json /app/config_linkusdt_alligator4h.json /app/config_qntusdt_alligator4h.json /app/config_suiusdt_alligator4h.json
+    volumes:
+      - ./data:/app/data
+      - ./config_lightusdt_alligator.json:/app/config_lightusdt_alligator.json:ro
+      - ./config_linkusdt_alligator4h.json:/app/config_linkusdt_alligator4h.json:ro
+      - ./config_qntusdt_alligator4h.json:/app/config_qntusdt_alligator4h.json:ro
+      - ./config_suiusdt_alligator4h.json:/app/config_suiusdt_alligator4h.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 310M
+          cpus: "0.3"
+        reservations:
+          memory: 64M
+          cpus: "0.05"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # awesome group (18 bots)
+  bot-group-awesome:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-awesome
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - BOT_DATA_DIR=/app/data
+    command: python main_multi.py --configs /app/config_adausdt_awesome.json /app/config_aliceusdt_awesome.json /app/config_axsusdt_awesome.json /app/config_bchusdt_awesome.json /app/config_cfxusdt_awesome.json /app/config_dashusdt_awesome.json /app/config_dotusdt_awesome.json /app/config_enjusdt_awesome.json /app/config_filusdt_awesome.json /app/config_galausdt_awesome.json /app/config_ondousdt_awesome.json /app/config_penguusdt_awesome.json /app/config_pixelusdt_awesome.json /app/config_sandusdt_awesome.json /app/config_tonusdt_awesome.json /app/config_virtualusdt_awesome.json /app/config_xaiusdt_awesome.json /app/config_zenusdt_awesome.json
+    volumes:
+      - ./data:/app/data
+      - ./config_adausdt_awesome.json:/app/config_adausdt_awesome.json:ro
+      - ./config_aliceusdt_awesome.json:/app/config_aliceusdt_awesome.json:ro
+      - ./config_axsusdt_awesome.json:/app/config_axsusdt_awesome.json:ro
+      - ./config_bchusdt_awesome.json:/app/config_bchusdt_awesome.json:ro
+      - ./config_cfxusdt_awesome.json:/app/config_cfxusdt_awesome.json:ro
+      - ./config_dashusdt_awesome.json:/app/config_dashusdt_awesome.json:ro
+      - ./config_dotusdt_awesome.json:/app/config_dotusdt_awesome.json:ro
+      - ./config_enjusdt_awesome.json:/app/config_enjusdt_awesome.json:ro
+      - ./config_filusdt_awesome.json:/app/config_filusdt_awesome.json:ro
+      - ./config_galausdt_awesome.json:/app/config_galausdt_awesome.json:ro
+      - ./config_ondousdt_awesome.json:/app/config_ondousdt_awesome.json:ro
+      - ./config_penguusdt_awesome.json:/app/config_penguusdt_awesome.json:ro
+      - ./config_pixelusdt_awesome.json:/app/config_pixelusdt_awesome.json:ro
+      - ./config_sandusdt_awesome.json:/app/config_sandusdt_awesome.json:ro
+      - ./config_tonusdt_awesome.json:/app/config_tonusdt_awesome.json:ro
+      - ./config_virtualusdt_awesome.json:/app/config_virtualusdt_awesome.json:ro
+      - ./config_xaiusdt_awesome.json:/app/config_xaiusdt_awesome.json:ro
+      - ./config_zenusdt_awesome.json:/app/config_zenusdt_awesome.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 520M
+          cpus: "1.0"
+        reservations:
+          memory: 64M
+          cpus: "0.05"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # dualst group (6 bots)
+  bot-group-dualst:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-dualst
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - BOT_DATA_DIR=/app/data
+    command: python main_multi.py --configs /app/config_aktusdt_dualst4h.json /app/config_enjusdt_dualst4h.json /app/config_humausdt_dualst.json /app/config_lynusdt_dualst.json /app/config_xplusdt_dualst4h.json /app/config_xrpusdt_dualst4h.json
+    volumes:
+      - ./data:/app/data
+      - ./config_aktusdt_dualst4h.json:/app/config_aktusdt_dualst4h.json:ro
+      - ./config_enjusdt_dualst4h.json:/app/config_enjusdt_dualst4h.json:ro
+      - ./config_humausdt_dualst.json:/app/config_humausdt_dualst.json:ro
+      - ./config_lynusdt_dualst.json:/app/config_lynusdt_dualst.json:ro
+      - ./config_xplusdt_dualst4h.json:/app/config_xplusdt_dualst4h.json:ro
+      - ./config_xrpusdt_dualst4h.json:/app/config_xrpusdt_dualst4h.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 340M
+          cpus: "0.5"
+        reservations:
+          memory: 64M
+          cpus: "0.05"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # dualthrust-a group (17 bots)
+  bot-group-dualthrust-a:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-dualthrust-a
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - BOT_DATA_DIR=/app/data
+    command: python main_multi.py --configs /app/config_1000bonkusdt_dualthrust.json /app/config_ankrusdt_dualthrust.json /app/config_atomusdt_dualthrust.json /app/config_dotusdt_dualthrust.json /app/config_fartcoinusdt_dualthrust.json /app/config_filusdt_dualthrust.json /app/config_phausdt_dualthrust.json /app/config_pixelusdt_dualthrust.json /app/config_qntusdt_dualthrust.json /app/config_sandusdt_dualthrust.json /app/config_suiusdt_dualthrust.json /app/config_tiausdt_dualthrust.json /app/config_virtualusdt_dualthrust.json /app/config_vvvusdt_dualthrust.json /app/config_waxpusdt_dualthrust.json /app/config_xrpusdt_dualthrust.json /app/config_zrousdt_dualthrust.json
+    volumes:
+      - ./data:/app/data
+      - ./config_1000bonkusdt_dualthrust.json:/app/config_1000bonkusdt_dualthrust.json:ro
+      - ./config_ankrusdt_dualthrust.json:/app/config_ankrusdt_dualthrust.json:ro
+      - ./config_atomusdt_dualthrust.json:/app/config_atomusdt_dualthrust.json:ro
+      - ./config_dotusdt_dualthrust.json:/app/config_dotusdt_dualthrust.json:ro
+      - ./config_fartcoinusdt_dualthrust.json:/app/config_fartcoinusdt_dualthrust.json:ro
+      - ./config_filusdt_dualthrust.json:/app/config_filusdt_dualthrust.json:ro
+      - ./config_phausdt_dualthrust.json:/app/config_phausdt_dualthrust.json:ro
+      - ./config_pixelusdt_dualthrust.json:/app/config_pixelusdt_dualthrust.json:ro
+      - ./config_qntusdt_dualthrust.json:/app/config_qntusdt_dualthrust.json:ro
+      - ./config_sandusdt_dualthrust.json:/app/config_sandusdt_dualthrust.json:ro
+      - ./config_suiusdt_dualthrust.json:/app/config_suiusdt_dualthrust.json:ro
+      - ./config_tiausdt_dualthrust.json:/app/config_tiausdt_dualthrust.json:ro
+      - ./config_virtualusdt_dualthrust.json:/app/config_virtualusdt_dualthrust.json:ro
+      - ./config_vvvusdt_dualthrust.json:/app/config_vvvusdt_dualthrust.json:ro
+      - ./config_waxpusdt_dualthrust.json:/app/config_waxpusdt_dualthrust.json:ro
+      - ./config_xrpusdt_dualthrust.json:/app/config_xrpusdt_dualthrust.json:ro
+      - ./config_zrousdt_dualthrust.json:/app/config_zrousdt_dualthrust.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 505M
+          cpus: "1.0"
+        reservations:
+          memory: 64M
+          cpus: "0.05"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # dualthrust-b group (17 bots)
+  bot-group-dualthrust-b:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-dualthrust-b
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - BOT_DATA_DIR=/app/data
+    command: python main_multi.py --configs /app/config_aaveusdt_dualthrust.json /app/config_aliceusdt_dualthrust.json /app/config_aptusdt_dualthrust.json /app/config_arcusdt_dualthrust.json /app/config_avaxusdt_dualthrust.json /app/config_axsusdt_dualthrust.json /app/config_degousdt_dualthrust.json /app/config_enjusdt_dualthrust.json /app/config_galausdt_dualthrust.json /app/config_icpusdt_dualthrust.json /app/config_ipusdt_dualthrust.json /app/config_opusdt_dualthrust.json /app/config_penguusdt_dualthrust.json /app/config_pippinusdt_dualthrust.json /app/config_uniusdt_dualthrust.json /app/config_wusdt_dualthrust.json /app/config_zecusdt_dualthrust.json
+    volumes:
+      - ./data:/app/data
+      - ./config_aaveusdt_dualthrust.json:/app/config_aaveusdt_dualthrust.json:ro
+      - ./config_aliceusdt_dualthrust.json:/app/config_aliceusdt_dualthrust.json:ro
+      - ./config_aptusdt_dualthrust.json:/app/config_aptusdt_dualthrust.json:ro
+      - ./config_arcusdt_dualthrust.json:/app/config_arcusdt_dualthrust.json:ro
+      - ./config_avaxusdt_dualthrust.json:/app/config_avaxusdt_dualthrust.json:ro
+      - ./config_axsusdt_dualthrust.json:/app/config_axsusdt_dualthrust.json:ro
+      - ./config_degousdt_dualthrust.json:/app/config_degousdt_dualthrust.json:ro
+      - ./config_enjusdt_dualthrust.json:/app/config_enjusdt_dualthrust.json:ro
+      - ./config_galausdt_dualthrust.json:/app/config_galausdt_dualthrust.json:ro
+      - ./config_icpusdt_dualthrust.json:/app/config_icpusdt_dualthrust.json:ro
+      - ./config_ipusdt_dualthrust.json:/app/config_ipusdt_dualthrust.json:ro
+      - ./config_opusdt_dualthrust.json:/app/config_opusdt_dualthrust.json:ro
+      - ./config_penguusdt_dualthrust.json:/app/config_penguusdt_dualthrust.json:ro
+      - ./config_pippinusdt_dualthrust.json:/app/config_pippinusdt_dualthrust.json:ro
+      - ./config_uniusdt_dualthrust.json:/app/config_uniusdt_dualthrust.json:ro
+      - ./config_wusdt_dualthrust.json:/app/config_wusdt_dualthrust.json:ro
+      - ./config_zecusdt_dualthrust.json:/app/config_zecusdt_dualthrust.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 505M
+          cpus: "1.0"
+        reservations:
+          memory: 64M
+          cpus: "0.05"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ema group (5 bots)
+  bot-group-ema:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-ema
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - BOT_DATA_DIR=/app/data
+      - YOLO_MODE=1
+    command: python main_multi.py --configs /app/config_aliceusdt_ema1h.json /app/config_arb.json /app/config_arcusdt_ema.json /app/config_doge.json /app/config_wif.json
+    volumes:
+      - ./data:/app/data
+      - ./config_aliceusdt_ema1h.json:/app/config_aliceusdt_ema1h.json:ro
+      - ./config_arb.json:/app/config_arb.json:ro
+      - ./config_arcusdt_ema.json:/app/config_arcusdt_ema.json:ro
+      - ./config_doge.json:/app/config_doge.json:ro
+      - ./config_wif.json:/app/config_wif.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 325M
+          cpus: "0.4"
+        reservations:
+          memory: 64M
+          cpus: "0.05"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # emaribbon group (14 bots)
+  bot-group-emaribbon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-emaribbon
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - BOT_DATA_DIR=/app/data
+    command: python main_multi.py --configs /app/config_1000shibusdt_emaribbon.json /app/config_axsusdt_emaribbon.json /app/config_berausdt_emaribbon.json /app/config_cfxusdt_emaribbon.json /app/config_dotusdt_ribbonao.json /app/config_icpusdt_emaribbon.json /app/config_injusdt_emaribbon.json /app/config_kasusdt_emaribbon.json /app/config_opusdt_emaribbon.json /app/config_penguusdt_emaribbon.json /app/config_pippinusdt_emaribbon.json /app/config_pixelusdt_ribbonao.json /app/config_suiusdt_ribbonao.json /app/config_trumpusdt_emaribbon.json
+    volumes:
+      - ./data:/app/data
+      - ./config_1000shibusdt_emaribbon.json:/app/config_1000shibusdt_emaribbon.json:ro
+      - ./config_axsusdt_emaribbon.json:/app/config_axsusdt_emaribbon.json:ro
+      - ./config_berausdt_emaribbon.json:/app/config_berausdt_emaribbon.json:ro
+      - ./config_cfxusdt_emaribbon.json:/app/config_cfxusdt_emaribbon.json:ro
+      - ./config_dotusdt_ribbonao.json:/app/config_dotusdt_ribbonao.json:ro
+      - ./config_icpusdt_emaribbon.json:/app/config_icpusdt_emaribbon.json:ro
+      - ./config_injusdt_emaribbon.json:/app/config_injusdt_emaribbon.json:ro
+      - ./config_kasusdt_emaribbon.json:/app/config_kasusdt_emaribbon.json:ro
+      - ./config_opusdt_emaribbon.json:/app/config_opusdt_emaribbon.json:ro
+      - ./config_penguusdt_emaribbon.json:/app/config_penguusdt_emaribbon.json:ro
+      - ./config_pippinusdt_emaribbon.json:/app/config_pippinusdt_emaribbon.json:ro
+      - ./config_pixelusdt_ribbonao.json:/app/config_pixelusdt_ribbonao.json:ro
+      - ./config_suiusdt_ribbonao.json:/app/config_suiusdt_ribbonao.json:ro
+      - ./config_trumpusdt_emaribbon.json:/app/config_trumpusdt_emaribbon.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 460M
+          cpus: "1.0"
+        reservations:
+          memory: 64M
+          cpus: "0.05"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ichi-1h group (16 bots)
+  bot-group-ichi-1h:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-ichi-1h
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - BOT_DATA_DIR=/app/data
+    command: python main_multi.py --configs /app/config_1000shibusdt_ichi.json /app/config_animeusdt_ichi.json /app/config_arcusdt_ichi.json /app/config_athusdt_ichi.json /app/config_avax_ichi.json /app/config_berausdt_ichi.json /app/config_gunusdt_ichi.json /app/config_injusdt_ichi.json /app/config_ipusdt_ichi.json /app/config_near_ichi.json /app/config_polusdt_ichi.json /app/config_sol_ichi.json /app/config_trumpusdt_ichi.json /app/config_trxusdt_ichi.json /app/config_xlmusdt_ichi.json /app/config_zetausdt_ichi.json
+    volumes:
+      - ./data:/app/data
+      - ./config_1000shibusdt_ichi.json:/app/config_1000shibusdt_ichi.json:ro
+      - ./config_animeusdt_ichi.json:/app/config_animeusdt_ichi.json:ro
+      - ./config_arcusdt_ichi.json:/app/config_arcusdt_ichi.json:ro
+      - ./config_athusdt_ichi.json:/app/config_athusdt_ichi.json:ro
+      - ./config_avax_ichi.json:/app/config_avax_ichi.json:ro
+      - ./config_berausdt_ichi.json:/app/config_berausdt_ichi.json:ro
+      - ./config_gunusdt_ichi.json:/app/config_gunusdt_ichi.json:ro
+      - ./config_injusdt_ichi.json:/app/config_injusdt_ichi.json:ro
+      - ./config_ipusdt_ichi.json:/app/config_ipusdt_ichi.json:ro
+      - ./config_near_ichi.json:/app/config_near_ichi.json:ro
+      - ./config_polusdt_ichi.json:/app/config_polusdt_ichi.json:ro
+      - ./config_sol_ichi.json:/app/config_sol_ichi.json:ro
+      - ./config_trumpusdt_ichi.json:/app/config_trumpusdt_ichi.json:ro
+      - ./config_trxusdt_ichi.json:/app/config_trxusdt_ichi.json:ro
+      - ./config_xlmusdt_ichi.json:/app/config_xlmusdt_ichi.json:ro
+      - ./config_zetausdt_ichi.json:/app/config_zetausdt_ichi.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 490M
+          cpus: "1.0"
+        reservations:
+          memory: 64M
+          cpus: "0.05"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ichi-4h group (14 bots)
+  bot-group-ichi-4h:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-ichi-4h
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - BOT_DATA_DIR=/app/data
+    command: python main_multi.py --configs /app/config_1000shibusdt_ichi4h.json /app/config_aptusdt_emaichi4h.json /app/config_arbusdt_ichi4h.json /app/config_axsusdt_ichi4h.json /app/config_hbarusdt_ichi4h.json /app/config_husdt_ichi4h.json /app/config_ltcusdt_ichist4h.json /app/config_ondousdt_ichi4h.json /app/config_renderusdt_ichi4h.json /app/config_signusdt_ichi4h.json /app/config_taousdt_ichi4h.json /app/config_tiausdt_ichi4h.json /app/config_tonusdt_ichi4h.json /app/config_xmrusdt_ichi4h.json
+    volumes:
+      - ./data:/app/data
+      - ./config_1000shibusdt_ichi4h.json:/app/config_1000shibusdt_ichi4h.json:ro
+      - ./config_aptusdt_emaichi4h.json:/app/config_aptusdt_emaichi4h.json:ro
+      - ./config_arbusdt_ichi4h.json:/app/config_arbusdt_ichi4h.json:ro
+      - ./config_axsusdt_ichi4h.json:/app/config_axsusdt_ichi4h.json:ro
+      - ./config_hbarusdt_ichi4h.json:/app/config_hbarusdt_ichi4h.json:ro
+      - ./config_husdt_ichi4h.json:/app/config_husdt_ichi4h.json:ro
+      - ./config_ltcusdt_ichist4h.json:/app/config_ltcusdt_ichist4h.json:ro
+      - ./config_ondousdt_ichi4h.json:/app/config_ondousdt_ichi4h.json:ro
+      - ./config_renderusdt_ichi4h.json:/app/config_renderusdt_ichi4h.json:ro
+      - ./config_signusdt_ichi4h.json:/app/config_signusdt_ichi4h.json:ro
+      - ./config_taousdt_ichi4h.json:/app/config_taousdt_ichi4h.json:ro
+      - ./config_tiausdt_ichi4h.json:/app/config_tiausdt_ichi4h.json:ro
+      - ./config_tonusdt_ichi4h.json:/app/config_tonusdt_ichi4h.json:ro
+      - ./config_xmrusdt_ichi4h.json:/app/config_xmrusdt_ichi4h.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 460M
+          cpus: "1.0"
+        reservations:
+          memory: 64M
+          cpus: "0.05"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ichi-4h-trail group (7 bots)
+  bot-group-ichi-4h-trail:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-ichi-4h-trail
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - BOT_DATA_DIR=/app/data
+    command: python main_multi.py --configs /app/config_algousdt_ichi4htrail.json /app/config_fetusdt_ichi4htrail.json /app/config_polusdt_ichi4htrail.json /app/config_polyxusdt_ichi4htrail.json /app/config_saharausdt_ichi4htrail.json /app/config_trxusdt_ichi4htrail.json /app/config_xlmusdt_ichi4htrail.json
+    volumes:
+      - ./data:/app/data
+      - ./config_algousdt_ichi4htrail.json:/app/config_algousdt_ichi4htrail.json:ro
+      - ./config_fetusdt_ichi4htrail.json:/app/config_fetusdt_ichi4htrail.json:ro
+      - ./config_polusdt_ichi4htrail.json:/app/config_polusdt_ichi4htrail.json:ro
+      - ./config_polyxusdt_ichi4htrail.json:/app/config_polyxusdt_ichi4htrail.json:ro
+      - ./config_saharausdt_ichi4htrail.json:/app/config_saharausdt_ichi4htrail.json:ro
+      - ./config_trxusdt_ichi4htrail.json:/app/config_trxusdt_ichi4htrail.json:ro
+      - ./config_xlmusdt_ichi4htrail.json:/app/config_xlmusdt_ichi4htrail.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 355M
+          cpus: "0.6"
+        reservations:
+          memory: 64M
+          cpus: "0.05"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ichiadx group (5 bots)
+  bot-group-ichiadx:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-ichiadx
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - BOT_DATA_DIR=/app/data
+    command: python main_multi.py --configs /app/config_aptusdt_ichiadx.json /app/config_enjusdt_ichiadx.json /app/config_ltcusdt_ichiadx.json /app/config_sandusdt_ichiadx.json /app/config_xmrusdt_ichiadx.json
+    volumes:
+      - ./data:/app/data
+      - ./config_aptusdt_ichiadx.json:/app/config_aptusdt_ichiadx.json:ro
+      - ./config_enjusdt_ichiadx.json:/app/config_enjusdt_ichiadx.json:ro
+      - ./config_ltcusdt_ichiadx.json:/app/config_ltcusdt_ichiadx.json:ro
+      - ./config_sandusdt_ichiadx.json:/app/config_sandusdt_ichiadx.json:ro
+      - ./config_xmrusdt_ichiadx.json:/app/config_xmrusdt_ichiadx.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 325M
+          cpus: "0.4"
+        reservations:
+          memory: 64M
+          cpus: "0.05"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # rangebounce group (19 bots)
+  bot-group-rangebounce:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-rangebounce
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - BOT_DATA_DIR=/app/data
+    command: python main_multi.py --configs /app/config_aaveusdt_rangebounce.json /app/config_aptusdt_rangebounce.json /app/config_axsusdt_rangebounce.json /app/config_cfxusdt_rangebounce.json /app/config_crvusdt_rangebounce.json /app/config_dotusdt_rangebounce.json /app/config_enjusdt_rangebounce.json /app/config_filusdt_rangebounce.json /app/config_icpusdt_rangebounce.json /app/config_kasusdt_rangebounce.json /app/config_ondousdt_rangebounce.json /app/config_penguusdt_rangebounce.json /app/config_sandusdt_rangebounce.json /app/config_suiusdt_rangebounce.json /app/config_tiausdt_rangebounce.json /app/config_tonusdt_rangebounce.json /app/config_vvvusdt_rangebounce.json /app/config_wusdt_rangebounce.json /app/config_xaiusdt_rangebounce.json
+    volumes:
+      - ./data:/app/data
+      - ./config_aaveusdt_rangebounce.json:/app/config_aaveusdt_rangebounce.json:ro
+      - ./config_aptusdt_rangebounce.json:/app/config_aptusdt_rangebounce.json:ro
+      - ./config_axsusdt_rangebounce.json:/app/config_axsusdt_rangebounce.json:ro
+      - ./config_cfxusdt_rangebounce.json:/app/config_cfxusdt_rangebounce.json:ro
+      - ./config_crvusdt_rangebounce.json:/app/config_crvusdt_rangebounce.json:ro
+      - ./config_dotusdt_rangebounce.json:/app/config_dotusdt_rangebounce.json:ro
+      - ./config_enjusdt_rangebounce.json:/app/config_enjusdt_rangebounce.json:ro
+      - ./config_filusdt_rangebounce.json:/app/config_filusdt_rangebounce.json:ro
+      - ./config_icpusdt_rangebounce.json:/app/config_icpusdt_rangebounce.json:ro
+      - ./config_kasusdt_rangebounce.json:/app/config_kasusdt_rangebounce.json:ro
+      - ./config_ondousdt_rangebounce.json:/app/config_ondousdt_rangebounce.json:ro
+      - ./config_penguusdt_rangebounce.json:/app/config_penguusdt_rangebounce.json:ro
+      - ./config_sandusdt_rangebounce.json:/app/config_sandusdt_rangebounce.json:ro
+      - ./config_suiusdt_rangebounce.json:/app/config_suiusdt_rangebounce.json:ro
+      - ./config_tiausdt_rangebounce.json:/app/config_tiausdt_rangebounce.json:ro
+      - ./config_tonusdt_rangebounce.json:/app/config_tonusdt_rangebounce.json:ro
+      - ./config_vvvusdt_rangebounce.json:/app/config_vvvusdt_rangebounce.json:ro
+      - ./config_wusdt_rangebounce.json:/app/config_wusdt_rangebounce.json:ro
+      - ./config_xaiusdt_rangebounce.json:/app/config_xaiusdt_rangebounce.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 535M
+          cpus: "1.0"
+        reservations:
+          memory: 64M
+          cpus: "0.05"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # stochmtf group (8 bots)
+  bot-group-stochmtf:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-stochmtf
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - BOT_DATA_DIR=/app/data
+    command: python main_multi.py --configs /app/config_adausdt_stochmtf.json /app/config_arbusdt_stochmtf.json /app/config_atomusdt_stochmtf.json /app/config_axsusdt_stochmtf.json /app/config_cfxusdt_stochmtf.json /app/config_enausdt_stochmtf.json /app/config_injusdt_stochmtf.json /app/config_trumpusdt_stochmtf.json
+    volumes:
+      - ./data:/app/data
+      - ./config_adausdt_stochmtf.json:/app/config_adausdt_stochmtf.json:ro
+      - ./config_arbusdt_stochmtf.json:/app/config_arbusdt_stochmtf.json:ro
+      - ./config_atomusdt_stochmtf.json:/app/config_atomusdt_stochmtf.json:ro
+      - ./config_axsusdt_stochmtf.json:/app/config_axsusdt_stochmtf.json:ro
+      - ./config_cfxusdt_stochmtf.json:/app/config_cfxusdt_stochmtf.json:ro
+      - ./config_enausdt_stochmtf.json:/app/config_enausdt_stochmtf.json:ro
+      - ./config_injusdt_stochmtf.json:/app/config_injusdt_stochmtf.json:ro
+      - ./config_trumpusdt_stochmtf.json:/app/config_trumpusdt_stochmtf.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 370M
+          cpus: "0.6"
+        reservations:
+          memory: 64M
+          cpus: "0.05"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # supertrend group (3 bots)
+  bot-group-supertrend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-supertrend
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - BOT_DATA_DIR=/app/data
+    command: python main_multi.py --configs /app/config_mstrusdt_supertrend.json /app/config_saharausdt_supertrend.json /app/config_xagusdt_supertrend.json
+    volumes:
+      - ./data:/app/data
+      - ./config_mstrusdt_supertrend.json:/app/config_mstrusdt_supertrend.json:ro
+      - ./config_saharausdt_supertrend.json:/app/config_saharausdt_supertrend.json:ro
+      - ./config_xagusdt_supertrend.json:/app/config_xagusdt_supertrend.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 295M
+          cpus: "0.2"
+        reservations:
+          memory: 64M
+          cpus: "0.05"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # volexp group (2 bots)
+  bot-group-volexp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-volexp
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - BOT_DATA_DIR=/app/data
+    command: python main_multi.py --configs /app/config_1000pepeusdt_volexp.json /app/config_wldusdt_volexp.json
+    volumes:
+      - ./data:/app/data
+      - ./config_1000pepeusdt_volexp.json:/app/config_1000pepeusdt_volexp.json:ro
+      - ./config_wldusdt_volexp.json:/app/config_wldusdt_volexp.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 280M
+          cpus: "0.2"
+        reservations:
+          memory: 64M
+          cpus: "0.05"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # zscore group (19 bots)
+  bot-group-zscore:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tradingbot-zscore
+    restart: on-failure:5
+    env_file:
+      - .env
+    environment:
+      - BOT_DATA_DIR=/app/data
+    command: python main_multi.py --configs /app/config_1000bonkusdt_zscore.json /app/config_1000shibusdt_zscore.json /app/config_aaveusdt_zscore.json /app/config_adausdt_zscore.json /app/config_aktusdt_zscore.json /app/config_animeusdt_zscore.json /app/config_banusdt_zscore.json /app/config_bnbusdt_zscore.json /app/config_dashusdt_zscore.json /app/config_ethfiusdt_zscore.json /app/config_injusdt_zscore.json /app/config_ondousdt_zscore.json /app/config_penguusdt_zscore.json /app/config_pixelusdt_zscore.json /app/config_polusdt_zscore.json /app/config_polyxusdt_zscore.json /app/config_taousdt_zscore.json /app/config_trumpusdt_zscore.json /app/config_xauusd_zscoresto.json
+    volumes:
+      - ./data:/app/data
+      - ./config_1000bonkusdt_zscore.json:/app/config_1000bonkusdt_zscore.json:ro
+      - ./config_1000shibusdt_zscore.json:/app/config_1000shibusdt_zscore.json:ro
+      - ./config_aaveusdt_zscore.json:/app/config_aaveusdt_zscore.json:ro
+      - ./config_adausdt_zscore.json:/app/config_adausdt_zscore.json:ro
+      - ./config_aktusdt_zscore.json:/app/config_aktusdt_zscore.json:ro
+      - ./config_animeusdt_zscore.json:/app/config_animeusdt_zscore.json:ro
+      - ./config_banusdt_zscore.json:/app/config_banusdt_zscore.json:ro
+      - ./config_bnbusdt_zscore.json:/app/config_bnbusdt_zscore.json:ro
+      - ./config_dashusdt_zscore.json:/app/config_dashusdt_zscore.json:ro
+      - ./config_ethfiusdt_zscore.json:/app/config_ethfiusdt_zscore.json:ro
+      - ./config_injusdt_zscore.json:/app/config_injusdt_zscore.json:ro
+      - ./config_ondousdt_zscore.json:/app/config_ondousdt_zscore.json:ro
+      - ./config_penguusdt_zscore.json:/app/config_penguusdt_zscore.json:ro
+      - ./config_pixelusdt_zscore.json:/app/config_pixelusdt_zscore.json:ro
+      - ./config_polusdt_zscore.json:/app/config_polusdt_zscore.json:ro
+      - ./config_polyxusdt_zscore.json:/app/config_polyxusdt_zscore.json:ro
+      - ./config_taousdt_zscore.json:/app/config_taousdt_zscore.json:ro
+      - ./config_trumpusdt_zscore.json:/app/config_trumpusdt_zscore.json:ro
+      - ./config_xauusd_zscoresto.json:/app/config_xauusd_zscoresto.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 535M
+          cpus: "1.0"
+        reservations:
+          memory: 64M
+          cpus: "0.05"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Total containers: 17 (vs 175 individual)
+# Estimated total memory: ~7122MB (vs 89600MB individual)

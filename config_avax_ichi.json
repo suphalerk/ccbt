@@ -1,5 +1,5 @@
 {
-  "_comment": "AVAX Ichimoku 1H \u2014 verified PF 1.93, Sharpe 1.05, DD 7.4%, 13 trades/yr (2yr backtest)",
+  "_comment": "AVAX Ichimoku 1H — verified PF 1.95, Sharpe 1.05, DD 5%, 13 trades/yr",
   "strategy_name": "Ichi 1H",
   "exchange": "binance",
   "symbol": "AVAXUSDT",
@@ -68,33 +68,41 @@
     "log_overrides": true
   },
   "signals": {
-    "ema_crossover": {
-      "enabled": false
-    },
-    "ema_fast_crossover": {
-      "enabled": false
-    },
-    "ema_pullback": {
-      "enabled": false
-    },
-    "rsi_divergence": {
-      "enabled": false
-    },
-    "bb_breakout": {
-      "enabled": false
-    },
-    "mean_reversion": {
-      "enabled": false
-    },
-    "body_dominance": {
-      "enabled": false
-    },
-    "squeeze_release": {
-      "enabled": false
-    },
-    "ichimoku_cloud": {
-      "enabled": true
-    }
+    "ema_crossover": {"enabled": false},
+    "ema_fast_crossover": {"enabled": false},
+    "ema_pullback": {"enabled": false},
+    "rsi_divergence": {"enabled": false},
+    "bb_breakout": {"enabled": false},
+    "mean_reversion": {"enabled": false},
+    "body_dominance": {"enabled": false},
+    "squeeze_release": {"enabled": false},
+    "ichimoku_cloud": {"enabled": true},
+    "supertrend": {"enabled": false},
+    "vol_expansion": {"enabled": false},
+    "dual_supertrend": {"enabled": false},
+    "alligator": {"enabled": false},
+    "ema_ichimoku_hybrid": {"enabled": false},
+    "ichi_supertrend": {"enabled": false},
+    "volexp_supertrend": {"enabled": false},
+    "adx_di_cross": {"enabled": false},
+    "choppiness_ema": {"enabled": false},
+    "williams_r_adx": {"enabled": false},
+    "roc_momentum": {"enabled": false},
+    "stoch_supertrend": {"enabled": false},
+    "price_channel_vol": {"enabled": false},
+    "ema_alligator": {"enabled": false},
+    "supertrend_volume": {"enabled": false},
+    "stoch_mtf": {"enabled": false},
+    "zscore_meanrev": {"enabled": false},
+    "ema_ribbon": {"enabled": false},
+    "dual_thrust": {"enabled": false},
+    "awesome_oscillator": {"enabled": false},
+    "range_bounce": {"enabled": false},
+    "ribbon_rsi_vol": {"enabled": false},
+    "dualthrust_adx": {"enabled": false},
+    "zscore_stoch": {"enabled": false},
+    "ichi_adx": {"enabled": false},
+    "ribbon_ao": {"enabled": false}
   },
   "body_dominance_min_body": 0.65,
   "body_dominance_min_mom": 0.02,
@@ -114,18 +122,10 @@
   "bb_volume_mult": 1.2,
   "swing_lookback": 5,
   "divergence_lookback": 20,
-  "adaptive_sizing": {
-    "enabled": false
-  },
-  "pyramiding": {
-    "enabled": false
-  },
-  "mtd_accelerator": {
-    "enabled": false
-  },
-  "signal_scorer": {
-    "enabled": false
-  },
+  "adaptive_sizing": {"enabled": false},
+  "pyramiding": {"enabled": false},
+  "mtd_accelerator": {"enabled": false},
+  "signal_scorer": {"enabled": false},
   "ai_layer": {
     "enabled": false,
     "mode": "advisor",
