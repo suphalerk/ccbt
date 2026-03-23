@@ -1,0 +1,24 @@
+{
+  "_name": "real-01",
+  "_description": "First mainnet profile — researched optimal settings from 17 configurations",
+  "_backtest": "$200 → $5,345 (+2,572%) | DD 29.7% | 2,396 trades | 1 year",
+  "_realistic_estimate": "+1,000%/yr after slippage/fees/correlation discount",
+  "_created": "2026-03-24",
+
+  "use_testnet": false,
+  "exchange": "binance",
+
+  "risk_per_trade": 0.009,
+  "leverage": 25,
+  "max_positions": 10,
+  "max_daily_loss": 0.09,
+  "max_consecutive_losses": 5,
+
+  "_notes": {
+    "why_10_concurrent": "5=skip 65% trades (too conservative), 15=DD 40%+ (too risky), 10=sweet spot captures 65% trades DD ~30%",
+    "why_0.9_risk": "Fine-tuned from 0.3-1.0% range, best risk-adjusted return",
+    "why_25x_leverage": "Backtested optimal, auto-reduces if exchange rejects",
+    "starting_capital": "$200 minimum, $500+ recommended",
+    "realistic_discount": "30-50% from backtest to live (slippage, correlation, funding fees, min order sizes)"
+  }
+}

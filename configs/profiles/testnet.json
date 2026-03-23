@@ -1,0 +1,13 @@
+{
+  "_name": "testnet",
+  "_description": "Current testnet settings — for testing and development",
+
+  "use_testnet": true,
+  "exchange": "binance",
+
+  "risk_per_trade": 0.01,
+  "leverage": 25,
+  "max_positions": 2,
+  "max_daily_loss": 0.3,
+  "max_consecutive_losses": 5
+}

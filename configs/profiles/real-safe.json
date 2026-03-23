@@ -1,0 +1,18 @@
+{
+  "_name": "real-safe",
+  "_description": "Conservative mainnet starter — half risk of real-01 for first week",
+
+  "use_testnet": false,
+  "exchange": "binance",
+
+  "risk_per_trade": 0.005,
+  "leverage": 10,
+  "max_positions": 5,
+  "max_daily_loss": 0.05,
+  "max_consecutive_losses": 3,
+
+  "_notes": {
+    "purpose": "Use for first 1-2 weeks on mainnet to validate live behavior",
+    "upgrade_to": "real-01 after 50+ trades with no issues"
+  }
+}
