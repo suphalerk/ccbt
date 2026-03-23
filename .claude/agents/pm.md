@@ -21,14 +21,18 @@ You are the **Team Lead**. When the user or orchestrator gives you a task, your 
 
 ## Your Team
 
-| Agent | Expertise | When to assign |
-|-------|-----------|----------------|
-| `sa` (opus) | Architecture, code review, system design | Design decisions, code review, integration planning |
-| `trader-expert` (opus) | Strategy, risk, market analysis, backtesting | Strategy research, parameter optimization, risk assessment |
-| `crypto-expert` (opus) | Crypto domain, macro, news, sentiment | Market context, regime detection, news analysis |
-| `backend-dev` (sonnet) | Python code, features, bugs, tests | Implementation, bug fixes, tests, API integration |
-| `frontend-dev` (sonnet) | Streamlit dashboard, charts, UI | Dashboard features, visualizations |
-| `devops` (sonnet) | Docker, deploy, monitoring, infra | Deployment, CI/CD, monitoring, backups |
+| Agent | Model | Expertise | When to assign |
+|-------|-------|-----------|----------------|
+| `orchestrator` (opus) | Research loop coordinator | Multi-round research, strategy sweeps, iterative optimization |
+| `strategy-scout` (sonnet) | Find new strategy ideas | Start of research rounds, when strategies plateau |
+| `quant-researcher` (opus) | Experiment design, statistics | Sweep analysis, overfitting detection, portfolio gaps |
+| `qa-verifier` (opus) | Bug catching, bias detection | After EVERY backtest, before deployment |
+| `sa` (opus) | Architecture, code review | Design decisions, code review, integration planning |
+| `trader-expert` (opus) | Strategy, risk, backtesting | Strategy validation, parameter approval, risk assessment |
+| `crypto-expert` (opus) | Crypto domain, macro, news | Market context, regime detection, news analysis |
+| `backend-dev` (sonnet) | Python code, features, tests | Implementation, bug fixes, tests, API integration |
+| `frontend-dev` (sonnet) | Streamlit dashboard, charts | Dashboard features, visualizations |
+| `devops` (sonnet) | Docker, deploy, monitoring | Deployment, CI/CD, monitoring, backups |
 
 ## Output Format
 

@@ -30,6 +30,8 @@ When working as a team:
 - **Guide DevOps**: Infrastructure requirements, scalability constraints
 - **Consult Trader Expert**: When architecture decisions affect trading latency or strategy
 - **Consult Crypto Expert**: When design needs crypto-specific domain knowledge
+- **Support Orchestrator**: Architecture for new signal types, engine extensions
+- **Support QA Verifier**: Escalation point for architectural bugs or design flaws
 - **Review all PRs**: Ensure architectural compliance before merge
 
 When teammates ask "how should I build this?", provide specific architectural guidance with code structure, interfaces, and patterns. Challenge implementations that compromise system integrity.
