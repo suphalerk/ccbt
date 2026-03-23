@@ -23,7 +23,9 @@ bot/
 ├── ai_analyst.py        → Claude AI advisor (nuanced adjustments, not binary gate)
 ├── context_builder.py   → Market context assembly for AI prompts
 ├── news_fetcher.py      → RSS/CryptoPanic news integration
-└── logger.py            → SQLite trade journal + AI calibration tracker
+├── telegram.py          → Lightweight Telegram alert sender (stdlib only)
+├── telegram_commands.py → Interactive Telegram commands (/status /pnl /panic etc.)
+└── logger.py            → SQLite trade journal + AI calibration tracker + bot_health table
 dashboard/
 ├── app.py               → Streamlit web UI (multi-bot portfolio + single-bot drill-down)
 ├── components.py        → Plotly chart components (per-bot PnL bar, portfolio table)
@@ -126,8 +128,47 @@ Each bot reads a mode file (`data/mode_{symbol}.json`) every loop iteration. The
 | `TP_ONLY` | No new entries; move SL to break-even, let TP close positions |
 | `PANIC` | No new entries; close all open positions immediately at market |
 
-- Controlled via dashboard buttons or by writing `data/mode_{SYMBOL_CLEAN}.json` directly
+- Controlled via dashboard buttons, Telegram commands, or `data/mode_{SYMBOL_CLEAN}.json` files
 - Implemented in `bot/mode.py`; read by `bot/engine.py` each tick
+
+## Telegram Integration
+
+### Alerts (bot/telegram.py)
+Automatic notifications sent to Telegram on critical events:
+
+| Event | Emoji | When |
+|-------|-------|------|
+| CCBT Started | 🟢 | Process start (1 summary, not per-bot) |
+| Trade opened | 📈 | Entry/SL/TP/size details |
+| Trade closed (profit) | ✅ | PnL $, %, duration, close reason |
+| Trade closed (loss) | ❌ | PnL $, %, duration, close reason |
+| PANIC mode | 🚨 | Emergency close all |
+| SL verify failed | ⚠️ | Emergency close |
+| Bot halted | 🛑 | API error threshold exceeded |
+| CCBT Stopped | 🔴 | Process stop (1 summary) |
+
+### Commands (bot/telegram_commands.py)
+Interactive commands via Telegram chat — send to the bot:
+
+| Command | Description |
+|---------|-------------|
+| `/status` | Running bots count, uptime, RAM |
+| `/balance` | Current USDT balance |
+| `/pnl` | Today + total PnL, win rate |
+| `/positions` | Open positions with entry/side/size |
+| `/bots` | All bots listed by status |
+| `/mode` | Mode distribution across bots |
+| `/panic` | Set ALL bots to PANIC |
+| `/stop` | Set ALL bots to GRACEFUL_STOP |
+| `/resume` | Set ALL bots back to NORMAL |
+| `/help` | List all commands |
+
+### Setup
+```bash
+# .env
+TELEGRAM_BOT_TOKEN=<bot token from @BotFather>
+TELEGRAM_CHAT_ID=<your chat ID>
+```
 
 ## Trading Strategy (Champion v2 — verified, no look-ahead bias)
 - **Signal**: EMA(9)/EMA(21) crossover + EMA(5/13) fast crossover on 15m + EMA(50) trend filter on 1h
