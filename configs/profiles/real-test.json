@@ -1,0 +1,36 @@
+{
+  "_name": "real-test",
+  "_description": "Mainnet testing — smallest possible real money deployment ($45)",
+  "_backtest": "$45 → $106 (+135%) | DD 22.6% | 105 trades | 1 year",
+  "_realistic_estimate": "+40-70%/yr ($45 → $63-77)",
+  "_created": "2026-03-23",
+
+  "use_testnet": false,
+  "exchange": "binance",
+
+  "risk_per_trade": 0.03,
+  "leverage": 10,
+  "max_positions": 2,
+  "max_daily_loss": 0.10,
+  "max_consecutive_losses": 5,
+
+  "bots": [
+    {"config": "config_hbarusdt_ichi4h.json", "strategy": "ribbon_ao 1H", "pf": 1.83, "trades_month": 10},
+    {"config": "config_arbusdt_ichi4h.json", "strategy": "dualthrust_adx 1H", "pf": 3.49, "trades_month": 2},
+    {"config": "config_1000pepeusdt_volexp.json", "strategy": "dualthrust_adx 1H", "pf": 1.84, "trades_month": 2},
+    {"config": "config_ipusdt_ichi.json", "strategy": "ribbon_rsi_vol 4H", "pf": 1.22, "trades_month": 3.5},
+    {"config": "config_wldusdt_volexp.json", "strategy": "dualthrust_adx 1H", "pf": 6.90, "trades_month": 1.7}
+  ],
+
+  "scale_up": {
+    "$100": {"risk": 0.02, "leverage": 15, "concurrent": 3, "bots": 10},
+    "$300": {"risk": 0.01, "leverage": 20, "concurrent": 5, "bots": 20},
+    "$500+": {"risk": 0.009, "leverage": 25, "concurrent": 10, "bots": "all"}
+  },
+
+  "_safety": {
+    "max_daily_loss": "10% ($4.50 at $45)",
+    "if_dd_over_20pct": "pause 1 day and review",
+    "monitor": "dashboard daily + Telegram alerts"
+  }
+}
