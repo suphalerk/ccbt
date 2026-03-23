@@ -518,8 +518,13 @@ def run_shared_wallet(verified: List[dict], initial_balance: float = INITIAL_BAL
                 engine_bal += t.pnl
                 engine_bal = max(engine_bal, 100)
 
-                entry_time = pd.Timestamp(t.entry_time) if t.entry_time else None
+                entry_time = pd.Timestamp(t.entry_time)
                 exit_time = pd.Timestamp(t.exit_time) if t.exit_time else None
+                # Normalize timezone — remove tz to avoid compare errors
+                if entry_time is not None and entry_time.tzinfo is not None:
+                    entry_time = entry_time.tz_localize(None)
+                if exit_time is not None and exit_time.tzinfo is not None:
+                    exit_time = exit_time.tz_localize(None)
 
                 if entry_time and exit_time:
                     all_trades.append({

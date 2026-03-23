@@ -677,11 +677,31 @@ Signal: EMA Ribbon alignment + Awesome Oscillator momentum direction agreement. 
 | **DOGE** | EMA 15m | 1.11 | All strategies PF < 1.2 |
 | **SOL** | Ichi 1H | 1.17 | All strategies PF < 1.2 |
 
-**Portfolio total: 167 bots across 27 strategy types**
-**$200 shared wallet → $2,036 (+918%) AUDITED backtest (R-multiple fixed, max 5 concurrent, 1yr)**
-**1,449 trades | DD 10.3% | 11/13 months profitable**
-**Deployed: single process via main_multi.py, ~340 MB RAM total**
-**6 weak-bot upgrades: PENGU/POL→Ichi4H Trail, AVAX/KAS→EMA Ribbon 4H, ALICE→AO 4H, DASH→Ichi4H**
+**Portfolio total: 136 active bots across 30 strategy types**
+**Deployed: 174 bots in 17 Docker containers (multi-bot mode, ~4GB RAM)**
+
+### Main Setting (Target: Realistic 1000%/yr)
+```
+Max concurrent positions: 10
+Risk per trade:           0.9%
+Starting capital:         $200+ (recommend $500+ for min order sizes)
+Leverage:                 25x
+
+Backtest result: $200 → $5,345 (+2,572%) | DD 29.7% | 2,396 trades
+Realistic estimate: +1,000%/yr | DD ~40-50%
+```
+
+### All Tested Configurations
+| Profile | Concurrent | Risk | Backtest | DD | Realistic est. |
+|---------|-----------|------|----------|-----|---------------|
+| Ultra-safe | 5 | 0.3% | +91% | 6.9% | ~30-50%/yr |
+| Conservative | 5 | 0.5% | +190% | 11.3% | ~60-100%/yr |
+| Moderate | 5 | 1.0% | +705% | 21.4% | ~200-350%/yr |
+| Safe+more | 10 | 0.5% | +541% | 17.7% | ~160-270%/yr |
+| **→ MAIN** | **10** | **0.9%** | **+2,572%** | **29.7%** | **~1,000%/yr** |
+| More positions | 10 | 1.0% | +3,689% | 32.4% | ~1,100-1,800%/yr |
+| Balanced | 15 | 0.5% | +963% | 22.4% | ~290-480%/yr |
+| Aggressive | 15 | 1.0% | +10,069% | 40.0% | ~3,000-5,000%/yr |
 
 ```bash
 # Run all 167 bots (single process, ~340 MB RAM)
@@ -719,7 +739,7 @@ shared_balance += dollar_pnl
 ### Common Bugs to Avoid
 - **Double compounding**: NEVER do `pnl_frac = pnl / initial_balance` then `balance * pnl_frac` — this inflates 30-100% because engine compounds internally
 - **R-multiple risk mismatch**: When computing R-multiple, use ACTUAL engine risk (`config['risk_per_trade']`), not fixed 1%. BTC uses 5% risk → PnL 5x larger → if you divide by 1% you get R 5x too high. Fix: `r = pnl / (engine_bal × actual_risk)`, shared wallet always applies 1%
-- **No concurrent limit**: Must cap simultaneous open positions (max 5) — 61 bots on $200 can't all trade at once
+- **No concurrent limit**: Must cap simultaneous open positions — Main setting: max 10. At max 5, you skip 65% of trades
 - **Loose filters**: Require data >= 12 months AND trades >= 10 per bot — otherwise statistically meaningless
 
 ### Validation Filters

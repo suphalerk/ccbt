@@ -1,0 +1,22 @@
+[
+  {"signal": "dualthrust_adx", "tf": "1h", "sl": 1.5, "tp": 3.0, "trail": 2.5, "_idea": "Donchian+ADX calm breakout 1H"},
+  {"signal": "dualthrust_adx", "tf": "4h", "sl": 2.0, "tp": 4.0, "trail": 3.0, "_idea": "Donchian+ADX calm breakout 4H"},
+  {"signal": "dualthrust_adx", "tf": "1h", "sl": 2.0, "tp": 5.0, "trail": 3.0, "_idea": "Donchian+ADX wide TP"},
+  {"signal": "dualthrust_adx", "tf": "4h", "sl": 2.5, "tp": 5.0, "trail": 4.0, "_idea": "Donchian+ADX 4H wide"},
+  {"signal": "ribbon_rsi_vol", "tf": "1h", "sl": 1.5, "tp": 3.0, "trail": 2.0, "_idea": "Ribbon+RSI+Vol tight"},
+  {"signal": "ribbon_rsi_vol", "tf": "4h", "sl": 2.0, "tp": 4.0, "trail": 3.0, "_idea": "Ribbon+RSI+Vol 4H"},
+  {"signal": "ribbon_ao", "tf": "1h", "sl": 1.5, "tp": 3.0, "trail": 2.0, "_idea": "HMA-style ribbon+AO tight"},
+  {"signal": "ribbon_ao", "tf": "4h", "sl": 2.0, "tp": 4.0, "trail": 3.0, "_idea": "HMA-style ribbon+AO 4H"},
+  {"signal": "ribbon_ao", "tf": "4h", "sl": 2.5, "tp": 5.0, "trail": 4.0, "_idea": "Ribbon+AO wide runner"},
+  {"signal": "ichi_adx", "tf": "1h", "sl": 1.5, "tp": 3.0, "trail": 2.5, "_idea": "Ichi+ADX tight 1H"},
+  {"signal": "ichi_adx", "tf": "4h", "sl": 2.0, "tp": 5.0, "trail": 3.0, "_idea": "Ichi+ADX wide 4H"},
+  {"signal": "ichi_adx", "tf": "4h", "sl": 3.0, "tp": 0, "trail": 4.0, "_idea": "Ichi+ADX trail-only 4H"},
+  {"signal": "zscore_stoch", "tf": "1h", "sl": 1.0, "tp": 2.0, "trail": 1.5, "_idea": "ZScore+Stoch tight MR"},
+  {"signal": "zscore_stoch", "tf": "1h", "sl": 1.5, "tp": 3.0, "trail": 2.0, "_idea": "ZScore+Stoch wider MR"},
+  {"signal": "choppiness_ema", "tf": "1h", "sl": 1.5, "tp": 3.0, "trail": 2.0, "_idea": "Squeeze→EMA cross 1H"},
+  {"signal": "choppiness_ema", "tf": "4h", "sl": 2.0, "tp": 4.0, "trail": 3.0, "_idea": "Squeeze→EMA cross 4H"},
+  {"signal": "supertrend_volume", "tf": "4h", "sl": 2.0, "tp": 4.0, "trail": 3.0, "_idea": "OTT-style ST+Vol 4H"},
+  {"signal": "supertrend_volume", "tf": "4h", "sl": 2.5, "tp": 5.0, "trail": 4.0, "_idea": "OTT-style wide"},
+  {"signal": "stoch_supertrend", "tf": "4h", "sl": 2.0, "tp": 4.0, "trail": 3.0, "_idea": "Squeeze momentum timing"},
+  {"signal": "stoch_supertrend", "tf": "1h", "sl": 1.5, "tp": 3.0, "trail": 2.5, "_idea": "Squeeze momentum 1H"}
+]
