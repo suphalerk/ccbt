@@ -798,17 +798,32 @@ shared_balance += dollar_pnl
 
 ## Environment Variables
 ```
-API_KEY, API_SECRET          — Bybit/Binance API credentials
+# Testnet API keys (used when use_testnet=true)
+API_KEY                      — Binance/Bybit testnet API key
+API_SECRET                   — Binance/Bybit testnet API secret
+
+# Mainnet API keys (used when use_testnet=false)
+MAINNET_API_KEY              — Binance mainnet API key (required for live trading)
+MAINNET_SECRET_KEY           — Binance mainnet API secret (required for live trading)
+
+# Services
 ANTHROPIC_API_KEY            — Claude AI access
 CRYPTOPANIC_TOKEN            — News API (optional)
-TELEGRAM_BOT_TOKEN/CHAT_ID  — Monitoring alerts (optional)
+TELEGRAM_BOT_TOKEN           — Telegram bot token (alerts + commands)
+TELEGRAM_CHAT_ID             — Telegram chat ID to send/receive
+
+# Runtime
 CONFIG_FILE                  — Config file path (default: config.json)
 YOLO_MODE                    — Set to "1" to enable YOLO validation limits
+BOT_DATA_DIR                 — Data directory (default: ./data in Docker, . locally)
 ```
+
+**Key selection is automatic**: `use_testnet: true` → testnet keys, `use_testnet: false` → mainnet keys. Bot raises `ValueError` if mainnet keys are missing.
 
 ## Database Schema (trades.db)
 - `trades` — Full trade lifecycle (open → close with PnL, AI decision, close reason)
 - `ai_calibration` — AI decision outcomes for accuracy tracking
+- `bot_health` — Per-bot live status (position, errors, loop count, mode, PnL)
 
 ## Deployment
 - **167 bots in a single process** via `main_multi.py` (shared ccxt exchange pool)
