@@ -121,6 +121,65 @@ PARAM_GRID = [
 ]
 
 # ============================================================================
+# IDEATION SOURCES — ranked by historical success rate
+# ============================================================================
+#
+# Source 1: GitHub open-source bots (BEST — Round 10 ALL 5 passed)
+#   - Search: github.com "trading strategy" python crypto stars:>100
+#   - Top repos: je-suis-tm/quant-trading, FMZQuant, OctoBot, NostalgiaForInfinity
+#   - Extract: indicator logic, entry/exit rules, parameter defaults
+#   - Why works: battle-tested by real traders, community-validated
+#
+# Source 2: TradingView/FMZQuant collections (GOOD — Round 11)
+#   - Search: TradingView community scripts, FMZQuant strategy names
+#   - Focus: strategies with >1000 likes or >100 stars
+#   - Extract: Pine Script logic → translate to Python
+#
+# Source 3: Indicator combinations (GOOD — Round 12)
+#   - Take 2-3 indicators that work individually
+#   - Combine with AND logic (both must agree)
+#   - Best combo pattern: [trend indicator] + [ADX confirmation]
+#   - DualThrust+ADX was dominant (13/23 passes)
+#
+# Source 4: Parameter optimization (MODERATE — Weak bot sweep)
+#   - Use strategy that works on OTHER coins
+#   - Test 10 SL/TP/Trail parameter sets
+#   - Test both 1H and 4H timeframes
+#   - Best for fixing losing bots, not finding new edge
+#
+# Source 5: Academic papers (LOW — tested but marginal)
+#   - Machine learning predictions add complexity but not edge
+#   - Kalman filter ≈ EMA performance
+#   - Statistical arbitrage (pairs) doesn't work reliably on crypto
+#
+# Source 6: Custom indicator ideas (LOWEST — Round 7-9)
+#   - Novel indicators without community validation
+#   - High failure rate (~70% fail engine verification)
+#   - Only worth trying after exhausting sources 1-4
+#
+# WHAT NEVER WORKS (don't retry):
+#   - 15m/5m scalping (fees > edge, PF 0.3-0.5)
+#   - Candlestick patterns (pin bar, engulfing, inside bar — PF < 1.0)
+#   - Mean reversion without range detection (BB bounce, RSI extreme)
+#   - Multi-confluence 4-5 indicators (too selective, fewer trades)
+#   - BTC 5m anything (oracle max PF 1.10)
+#   - MACD standalone (PF 0.71)
+#   - EMA pullback (structurally unprofitable)
+
+# All combo patterns that historically produce winners
+COMBO_PATTERNS = [
+    # [base_signal] + [confirmation] — from Round 12 mega100
+    # Format: (signal, extra_condition_description)
+    ("dual_thrust", "ADX > 25"),        # 13 passes — dominant
+    ("ichimoku_cloud", "ADX > 25"),     # 5 passes
+    ("ema_ribbon", "RSI > 50 + Vol"),   # best avg PF 1.44
+    ("ema_ribbon", "AO > 0"),           # 18 winners
+    ("awesome_oscillator", "EMA trend"), # 28 winners in sweep
+    ("supertrend", "Volume > 2x"),      # 5 winners
+    ("range_bounce", "RSI + Stoch"),    # works with proper range detection
+]
+
+# ============================================================================
 # Config Builder
 # ============================================================================
 
@@ -308,6 +367,77 @@ def sweep_strategies(coins: List[str], strategies: List[dict],
 
     results.sort(key=lambda x: -x["pf"])
     return results
+
+
+# ============================================================================
+# Step 0: IDEATE — Generate strategy ideas automatically
+# ============================================================================
+
+def ideate_strategies(mode: str = "all") -> List[dict]:
+    """Generate strategy ideas based on what historically works.
+
+    Modes:
+        "all"       — all implemented strategies × both timeframes
+        "combos"    — combo signals (2 indicators AND)
+        "params"    — top strategies × parameter grid
+        "new_coins" — existing strategies on coins not yet tested
+
+    Returns list of strategy dicts ready for sweep.
+    """
+    strategies = []
+
+    if mode in ("all", "combos"):
+        # All single signals × 1H + 4H
+        trend_signals = [
+            "dual_thrust", "ichimoku_cloud", "awesome_oscillator",
+            "ema_ribbon", "supertrend", "dual_supertrend", "alligator",
+            "ema_ichimoku_hybrid", "ichi_supertrend",
+            "adx_di_cross", "choppiness_ema", "roc_momentum",
+            "stoch_mtf", "ema_alligator", "supertrend_volume",
+            "price_channel_vol", "williams_r_adx",
+        ]
+        mr_signals = ["zscore_meanrev", "range_bounce", "zscore_stoch"]
+        combo_signals = ["dualthrust_adx", "ichi_adx", "ribbon_rsi_vol", "ribbon_ao"]
+
+        for signal in trend_signals:
+            strategies.append({"signal": signal, "tf": "1h", "sl": 2.0, "tp": 4.0, "trail": 3.0})
+            strategies.append({"signal": signal, "tf": "4h", "sl": 2.0, "tp": 4.0, "trail": 3.0})
+
+        for signal in mr_signals:
+            strategies.append({"signal": signal, "tf": "1h", "sl": 1.5, "tp": 2.0, "trail": 2.0})
+
+        for signal in combo_signals:
+            strategies.append({"signal": signal, "tf": "1h", "sl": 2.0, "tp": 4.0, "trail": 3.0})
+            strategies.append({"signal": signal, "tf": "4h", "sl": 2.0, "tp": 4.0, "trail": 3.0})
+
+    elif mode == "params":
+        # Top strategies × parameter grid (for optimization)
+        strategies = TOP_STRATEGIES  # will be combined with PARAM_GRID in sweep
+
+    elif mode == "new_coins":
+        strategies = TOP_STRATEGIES
+
+    else:
+        strategies = TOP_STRATEGIES
+
+    print(f"  Ideation mode '{mode}': {len(strategies)} strategy variants generated")
+    return strategies
+
+
+def ideate_from_file(filepath: str) -> List[dict]:
+    """Load custom strategy ideas from JSON file.
+
+    Expected format:
+    [
+        {"signal": "dual_thrust", "tf": "1h", "sl": 2.0, "tp": 4.0, "trail": 3.0},
+        {"signal": "ichimoku_cloud", "tf": "4h", "sl": 3.0, "tp": 0, "trail": 4.0},
+        ...
+    ]
+    """
+    with open(filepath) as f:
+        strategies = json.load(f)
+    print(f"  Loaded {len(strategies)} strategies from {filepath}")
+    return strategies
 
 
 # ============================================================================
@@ -531,8 +661,12 @@ def generate_configs(verified: List[dict]):
 # MAIN PIPELINE
 # ============================================================================
 
-def run_full_pipeline(strategies=None, param_grid=None, coins=None):
-    """Run the complete research pipeline end-to-end."""
+def run_full_pipeline(strategies=None, param_grid=None, coins=None,
+                      ideate_mode: str = "all"):
+    """Run the complete research pipeline end-to-end.
+
+    Flow: IDEATE → SWEEP → VERIFY → AUDIT → BACKTEST → REPORT
+    """
     start_time = time.time()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -540,17 +674,18 @@ def run_full_pipeline(strategies=None, param_grid=None, coins=None):
     print(f"AUTO PIPELINE — {timestamp}")
     print("=" * 70)
 
-    # Step 0: Discover coins
+    # Step 0a: Discover coins
     if coins is None:
-        print("\n[Step 0] Discovering coins with >= 12 months data...")
+        print("\n[Step 0a] Discovering coins with >= 12 months data...")
         coin_prefixes = discover_coins()
         print(f"  Found {len(coin_prefixes)} coins")
     else:
         coin_prefixes = coins
 
-    # Step 1: Sweep
+    # Step 0b: Ideate strategies
     if strategies is None:
-        strategies = TOP_STRATEGIES
+        print(f"\n[Step 0b] IDEATE — generating strategy ideas (mode: {ideate_mode})")
+        strategies = ideate_strategies(ideate_mode)
 
     print(f"\n[Step 1] SWEEP — {len(strategies)} strategies × {len(coin_prefixes)} coins")
     sweep_results = sweep_strategies(coin_prefixes, strategies, param_grid)
@@ -670,12 +805,46 @@ def run_improve_weak():
 # ============================================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="Automated Research Pipeline")
+    parser = argparse.ArgumentParser(
+        description="Automated Research Pipeline — IDEATE → SWEEP → VERIFY → AUDIT → BACKTEST",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Full pipeline with all strategies (most thorough)
+  python3 research/auto_pipeline.py --full
+
+  # Full pipeline with parameter optimization
+  python3 research/auto_pipeline.py --full --ideate params
+
+  # Full pipeline with combo strategies only
+  python3 research/auto_pipeline.py --full --ideate combos
+
+  # Custom strategies from JSON file
+  python3 research/auto_pipeline.py --full --strategies my_ideas.json
+
+  # Optimize weak/losing bots
+  python3 research/auto_pipeline.py --improve-weak
+
+  # Test specific coins only
+  python3 research/auto_pipeline.py --full --coins btcusdt,ethusdt,avaxusdt
+
+  # Deploy verified winners
+  python3 research/auto_pipeline.py --deploy --input data/pipeline_xxx.json
+
+Ideation modes:
+  all     — all 30+ signals × 1H + 4H (comprehensive, slow)
+  combos  — combo signals only (dualthrust_adx, ichi_adx, etc.)
+  params  — top 11 strategies × 10 param sets (optimization)
+        """,
+    )
     parser.add_argument("--full", action="store_true", help="Run full pipeline")
+    parser.add_argument("--ideate", type=str, default="all",
+                        choices=["all", "combos", "params", "new_coins"],
+                        help="Ideation mode (default: all)")
     parser.add_argument("--sweep-only", action="store_true", help="Sweep only")
     parser.add_argument("--improve-weak", action="store_true", help="Optimize weak bots")
     parser.add_argument("--deploy", action="store_true", help="Generate configs for verified")
-    parser.add_argument("--input", type=str, help="Input JSON for verify-only")
+    parser.add_argument("--input", type=str, help="Input JSON for verify-only or deploy")
     parser.add_argument("--strategies", type=str, help="Custom strategies JSON file")
     parser.add_argument("--coins", type=str, help="Comma-separated coin prefixes")
     parser.add_argument("--min-pf", type=float, default=1.2, help="Min PF threshold")
@@ -686,12 +855,18 @@ def main():
         run_improve_weak()
     elif args.full or not any([args.sweep_only, args.deploy, args.input]):
         coins = args.coins.split(",") if args.coins else None
-        run_full_pipeline(coins=coins)
+        if args.strategies:
+            strategies = ideate_from_file(args.strategies)
+            run_full_pipeline(strategies=strategies, coins=coins, ideate_mode=args.ideate)
+        else:
+            param_grid = PARAM_GRID if args.ideate == "params" else None
+            run_full_pipeline(coins=coins, ideate_mode=args.ideate, param_grid=param_grid)
     elif args.deploy and args.input:
         with open(args.input) as f:
             data = json.load(f)
         verified = data.get("audited_bots", [])
         generate_configs(verified)
+        print(f"Configs generated. Run: docker compose -f docker-compose-multi.yml up -d --build")
     else:
         parser.print_help()
 
