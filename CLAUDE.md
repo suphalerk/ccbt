@@ -8,10 +8,14 @@ Automated trading bot for BTC perpetual futures (Binance/Bybit via ccxt) and Gol
 ## Architecture
 
 ```
-main.py                  → Main async trading loop — BTC (entry point)
+main.py                  → Main async trading loop — BTC (entry point, legacy single-bot)
+main_multi.py            → Multi-bot single-process runner (shared exchange, 167 bots, ~340 MB RAM)
 main_gold.py             → Gold XAU/USD trading loop — OANDA forex
 bot/
 ├── exchange.py          → Bybit/Binance ccxt wrapper (rate limiting, retries)
+├── async_exchange.py    → Async ccxt wrapper used by multi-bot runner
+├── shared_exchange_pool.py → Shared ccxt exchange instance pool (load_markets() once)
+├── mode.py              → Per-bot mode control (NORMAL/GRACEFUL_STOP/TP_ONLY/PANIC)
 ├── forex_exchange.py    → OANDA forex wrapper (XAU/USD, same interface as exchange.py)
 ├── strategy.py          → Signal generation (EMA crossover + RSI + ATR + trend filter)
 ├── data.py              → Technical indicators (EMA, RSI, ATR, volume MA, regime detection)
@@ -44,7 +48,9 @@ research/
 ├── sweep_new_strategies_2.py → Strategies 11-20 sweep (EMA+Ichi, VolExp+ST, etc.)
 └── sweep_weak_bots.py   → 6-strategy sweep for underperforming bots
 scripts/
-├── generate_configs.py  → Auto-generate config + docker-compose from verified winners
+├── generate_configs.py       → Auto-generate config + docker-compose from verified winners
+├── generate_all_configs.py   → Batch config generator for all strategy types
+├── start_all_bots.sh         → Start all 167 bots in a single process via main_multi.py
 └── download_funding_rates.py → Funding rate downloader
 tests/                   → pytest unit/integration tests
 .claude/
@@ -80,11 +86,20 @@ config files:
 ## Key Commands
 
 ```bash
-# Run bot (testnet by default, safe config)
-python main.py
+# Run all 167 bots (single process, ~340 MB RAM)
+bash scripts/start_all_bots.sh
 
-# Run bot with YOLO config (testnet only)
-YOLO_MODE=1 python main.py --config config_yolo.json
+# Stop all bots
+bash scripts/start_all_bots.sh stop
+
+# Run a named group
+python main_multi.py --group ichimoku-1h
+
+# Run specific configs
+python main_multi.py --configs config_avax_ichi.json config_near_ichi.json
+
+# Run by glob pattern
+python main_multi.py --pattern "config_*ichi*.json"
 
 # Run dashboard
 streamlit run dashboard/app.py
@@ -92,15 +107,27 @@ streamlit run dashboard/app.py
 # Run tests
 pytest tests/ -v
 
-# Docker deployment (safe)
-docker compose up -d --build
-
-# Docker deployment (YOLO, testnet only)
-CONFIG_FILE=config_yolo.json YOLO_MODE=1 docker compose up -d --build
+# Run single bot (legacy)
+python main.py --config config.json
+YOLO_MODE=1 python main.py --config config_yolo.json
 
 # VPS setup (Ubuntu 22.04)
 sudo bash deploy/setup.sh dashboard.yourdomain.com
 ```
+
+## Bot Mode Control
+
+Each bot reads a mode file (`data/mode_{symbol}.json`) every loop iteration. The dashboard writes these files; bots react without a restart.
+
+| Mode | Behavior |
+|------|----------|
+| `NORMAL` | Full trading — entries and exits as configured |
+| `GRACEFUL_STOP` | No new entries; close positions at TP or SL as they hit |
+| `TP_ONLY` | No new entries; move SL to break-even, let TP close positions |
+| `PANIC` | No new entries; close all open positions immediately at market |
+
+- Controlled via dashboard buttons or by writing `data/mode_{SYMBOL_CLEAN}.json` directly
+- Implemented in `bot/mode.py`; read by `bot/engine.py` each tick
 
 ## Trading Strategy (Champion v2 — verified, no look-ahead bias)
 - **Signal**: EMA(9)/EMA(21) crossover + EMA(5/13) fast crossover on 15m + EMA(50) trend filter on 1h
@@ -163,6 +190,14 @@ Three strategies validated on 2.4yr XAU/USD 1H data (simple simulator):
 11. **Alligator 4H** — Bill Williams 3 smoothed MAs (Jaw=13, Teeth=8, Lips=5). Lips crosses Teeth in Jaw direction. Works on LIGHT, LINK, SUI, QNT.
 12. **EMA+Ichimoku 4H** — EMA(9/21) crossover for timing + Ichimoku cloud as direction filter. Works on VVV, ADA, APT, ZEC.
 13. **Ichi+Supertrend 4H** — Ichimoku cloud for direction + Supertrend flip for entry. Works on PIPPIN, XAI, LTC, W.
+14. **Dual Thrust** — Range breakout using previous-day high/low range × multiplier. Mean between high/low as dynamic support/resistance. Works on GALA, PHA, ZEC, DOT, FIL.
+15. **Range Bounce** — RSI reversal within Bollinger Band range when Bollinger %B < 0.2 (oversold) or > 0.8 (overbought). Mean reversion only when range is confirmed. Works on AXS, FIL.
+16. **Awesome Oscillator** — Bill Williams AO zero-cross + Ichimoku cloud direction filter on 4H. Works on VVV, SAND, ALICE.
+17. **Z-Score Mean Reversion** — Statistical z-score of price vs rolling mean + EMA(50) trend filter to avoid counter-trend entries. Works on AKT, CRV, VVV.
+18. **Stoch MTF (Multi-Timeframe Stochastic)** — Stochastic crossover on signal timeframe confirmed by higher timeframe Stochastic direction. Works on AXS.
+19. **EMA Ribbon** — Fan of 6 EMAs (8/13/21/34/55/89) must all align in same direction. Entry when fastest crosses slowest. Works on IP, OP, AVAX, KAS, BERA.
+20. **Ichi+ADX** — Ichimoku Tenkan/Kijun cross with ADX > 20 trend strength filter. Fewer but higher-conviction trades.
+21. **Ribbon+AO** — EMA Ribbon alignment confirmed by Awesome Oscillator momentum direction.
 
 ### Key Differences per Strategy
 | | EMA 15m | Ichimoku 1H | Ichimoku 4H | 4H Trail | Supertrend 1H | Vol Expansion 1H |
@@ -565,100 +600,60 @@ Signal: ROC(10) zero-cross + EMA(50) trend. SL 2.0 ATR, TP 4.0 ATR.
 | **DASH** | Supertrend+Vol | 4H | 1.56 | 25% | 4 |
 | **DOT** | Supertrend+Vol | 4H | 1.51 | 33% | 6 |
 
+### Strategy 20: Dual Thrust (34 bots, 1% risk each, R10+R12)
+Signal: Previous-day high/low range × multiplier sets breakout levels above/below open. Entry on breakout. SL 2.0 ATR, TP 4.0 ATR.
+Top verified coins: GALA (PF 7.84), PHA (PF 4.39), ZEC (PF 3.41), DOT (PF 7.77), AVAX (PF 3.23), ARC (PF 2.50)
+
+### Strategy 21: Range Bounce (19 bots, 1% risk each, R10)
+Signal: Bollinger Band %B < 0.2 (oversold) or > 0.8 (overbought) + RSI reversal + range detection filter (CI > 50). SL 2.0 ATR, TP 3.0 ATR.
+Top verified coins: AXS (PF 13.46, 92% WR), FIL (PF 3.25)
+
+### Strategy 22: Awesome Oscillator (18 bots, 1% risk each, R10)
+Signal: AO zero-cross + Ichimoku cloud direction filter on 4H. SL 2.0 ATR, TP 4.0 ATR.
+Top verified coins: VVV (PF 2.81), SAND (PF 2.88), ALICE (PF 1.97)
+
+### Strategy 23: Z-Score Mean Reversion (19 bots, 1% risk each, R11)
+Signal: Statistical z-score of price vs rolling 20-period mean crosses ±1.5σ threshold + EMA(50) filter prevents counter-trend trades. SL 2.0 ATR, TP 3.0 ATR.
+Top verified coins: AKT (PF 2.94), CRV (PF 5.82), VVV (PF 6.17), PENGU (PF 6.01), POL (PF 3.57)
+
+### Strategy 24: Stoch MTF (8 bots, 1% risk each, R11)
+Signal: Stochastic crossover on signal timeframe confirmed by same direction on higher timeframe. SL 2.0 ATR, TP 4.0 ATR.
+Top verified coins: AXS (PF 5.86)
+
+### Strategy 25: EMA Ribbon (11 bots, 1% risk each, R11+R12)
+Signal: Fan of 6 EMAs (8/13/21/34/55/89) must all align in same direction; entry when fast EMA crosses slow EMA. SL 2.0 ATR, TP 4.0 ATR.
+Top verified coins: IP (PF 2.45), OP (PF 1.95), AVAX (PF 2.10), KAS (PF 1.95), BERA (PF 2.06)
+
+### Strategy 26: Ichi+ADX (5 bots, 1% risk each, R12)
+Signal: Ichimoku Tenkan/Kijun cross with ADX > 20 confirmation for trend strength. SL 2.0 ATR, TP 4.0 ATR.
+
+### Strategy 27: Ribbon+AO (3 bots, 1% risk each, R12)
+Signal: EMA Ribbon alignment + Awesome Oscillator momentum direction agreement. SL 2.0 ATR, TP 4.0 ATR.
+
 ### Retired (no edge found in 1yr backtest)
 | Coin | Was | Best PF | Reason |
 |------|-----|---------|--------|
 | **DOGE** | EMA 15m | 1.11 | All strategies PF < 1.2 |
 | **SOL** | Ichi 1H | 1.17 | All strategies PF < 1.2 |
 
-**Portfolio total: 125 active bots across 30 strategy types**
+**Portfolio total: 167 bots across 27 strategy types**
 **$200 shared wallet → $2,036 (+918%) AUDITED backtest (R-multiple fixed, max 5 concurrent, 1yr)**
 **1,449 trades | DD 10.3% | 11/13 months profitable**
-**Deployed: 174 bots in 17 Docker containers (multi-bot mode, ~4GB RAM)**
+**Deployed: single process via main_multi.py, ~340 MB RAM total**
 **6 weak-bot upgrades: PENGU/POL→Ichi4H Trail, AVAX/KAS→EMA Ribbon 4H, ALICE→AO 4H, DASH→Ichi4H**
 
 ```bash
-# Run all 47 bots
+# Run all 167 bots (single process, ~340 MB RAM)
+bash scripts/start_all_bots.sh
 
-# === EMA Crossover 15m (2 bots) ===
-YOLO_MODE=1 python main.py --config config.json &          # BTC (5% risk)
-YOLO_MODE=1 python main.py --config config_wif.json &      # WIF (3% risk)
+# Or run by group
+python main_multi.py --group ichimoku-1h
+python main_multi.py --group ichimoku-4h
+python main_multi.py --group dualthrust
+python main_multi.py --group ema-ribbon
 
-# === EMA 15m mass expansion (1 bot) ===
-YOLO_MODE=1 python main.py --config config_arcusdt_ema.json & # ARC EMA (PF 1.59)
-
-# === Ichimoku Cloud 1H (8 bots) ===
-python main.py --config config_avax_ichi.json &             # AVAX (PF 2.49)
-python main.py --config config_polusdt_ichi.json &          # POL (PF 6.79)
-python main.py --config config_gunusdt_ichi.json &          # GUN (PF 4.00)
-python main.py --config config_berausdt_ichi.json &         # BERA (PF 2.92)
-python main.py --config config_athusdt_ichi.json &          # ATH (PF 2.51)
-python main.py --config config_injusdt_ichi.json &          # INJ (PF 2.28)
-python main.py --config config_trumpusdt_ichi.json &        # TRUMP (PF 1.66)
-python main.py --config config_animeusdt_ichi.json &        # ANIME (PF 1.51)
-
-# === Ichimoku Cloud 1H — new coins (2 bots) ===
-python main.py --config config_ipusdt_ichi.json &           # IP (PF 1.84)
-
-# === 4H Ichimoku Fixed TP (4 bots) ===
-python main.py --config config_1000shibusdt_ichi4h.json &   # 1000SHIB 4H (PF 18.43)
-python main.py --config config_taousdt_ichi4h.json &        # TAO 4H (PF 6.13)
-python main.py --config config_renderusdt_ichi4h.json &     # RENDER 4H (PF 4.71)
-python main.py --config config_arbusdt_ichi4h.json &        # ARB 4H (PF 4.38)
-
-# === Ichimoku Cloud 4H — new coins (5 bots) ===
-python main.py --config config_signusdt_ichi4h.json &       # SIGN (PF 2.43)
-python main.py --config config_tiausdt_ichi4h.json &        # TIA (PF 2.08)
-python main.py --config config_ondousdt_ichi4h.json &       # ONDO (PF 1.77)
-python main.py --config config_husdt_ichi4h.json &          # H (PF 1.51)
-python main.py --config config_axsusdt_ichi4h.json &        # AXS (PF 1.31)
-
-# === 4H Ichimoku Trailing (6 bots) ===
-python main.py --config config_algousdt_ichi4htrail.json &  # ALGO 4HT (PF 7.21)
-python main.py --config config_trxusdt_ichi4htrail.json &   # TRX 4HT (PF 5.53)
-python main.py --config config_polyxusdt_ichi4htrail.json & # POLYX 4HT (PF 5.13)
-python main.py --config config_fetusdt_ichi4htrail.json &   # FET 4HT (PF 3.03)
-python main.py --config config_xlmusdt_ichi4htrail.json &   # XLM 4HT (PF 2.88)
-python main.py --config config_saharausdt_ichi4htrail.json & # SAHARA 4HT (PF 2.44)
-
-# === Supertrend 1H (2 bots) ===
-python main.py --config config_mstrusdt_supertrend.json &   # MSTR (PF 2.66)
-python main.py --config config_xagusdt_supertrend.json &    # XAG (PF 2.09)
-
-# === Vol Expansion Breakout 1H (2 bots) ===
-python main.py --config config_1000pepeusdt_volexp.json &   # 1000PEPE (PF 7.23)
-python main.py --config config_wldusdt_volexp.json &        # WLD (PF 3.45)
-
-# === EMA+Ichimoku Hybrid 4H (3 bots, upgraded) ===
-python main.py --config config_aptusdt_emaichi4h.json &     # APT (PF 8.17)
-python main.py --config config_near_ichi.json &             # NEAR (PF 4.06, upgraded)
-python main.py --config config_zetausdt_ichi.json &         # ZETA (PF 3.96, upgraded)
-
-# === Ichi+Supertrend Hybrid 4H (1 bot) ===
-python main.py --config config_ltcusdt_ichist4h.json &      # LTC (PF 6.90)
-
-# === Alligator 1H (1 bot) ===
-python main.py --config config_lightusdt_alligator.json &   # LIGHT (PF 5.16)
-
-# === Alligator 4H (5 bots, 2 upgraded) ===
-python main.py --config config_hbarusdt_ichi4h.json &       # HBAR (PF 4.23, upgraded)
-python main.py --config config_qntusdt_alligator4h.json &   # QNT (PF 3.49)
-python main.py --config config_arcusdt_ichi.json &          # ARC (PF 3.15, upgraded)
-python main.py --config config_linkusdt_alligator4h.json &  # LINK (PF 1.66)
-python main.py --config config_suiusdt_alligator4h.json &   # SUI (PF 1.58)
-
-# === Dual Supertrend 1H (2 bots) ===
-python main.py --config config_lynusdt_dualst.json &        # LYN (PF 3.11)
-python main.py --config config_humausdt_dualst.json &       # HUMA (PF 1.49)
-
-# === Dual Supertrend 4H (4 bots) ===
-python main.py --config config_enjusdt_dualst4h.json &      # ENJ (PF 2.35)
-python main.py --config config_xplusdt_dualst4h.json &      # XPL (PF 1.90)
-python main.py --config config_xrpusdt_dualst4h.json &      # XRP (PF 1.59)
-python main.py --config config_aktusdt_dualst4h.json &      # AKT (PF 1.56)
-
-# Docker deployment (all bots)
-docker compose up -d --build
+# Dashboard (local)
+streamlit run dashboard/app.py
 ```
 
 ## Portfolio Backtest Methodology (Corrected)
@@ -755,12 +750,14 @@ YOLO_MODE                    — Set to "1" to enable YOLO validation limits
 - `ai_calibration` — AI decision outcomes for accuracy tracking
 
 ## Deployment
-- **51 Docker containers** (48 bots + dashboard + monitoring) running on Binance testnet
-- **Last deployed**: March 2026 — 3 upgrades (AVAX Dual Thrust, ARC Dual Thrust, OP EMA Ribbon)
-- Docker containers (bot + dashboard) with shared volume
-- Nginx reverse proxy (HTTPS, basic auth, rate limiting)
-- Systemd timers for monitoring (5min) and backup (daily)
-- fail2ban + UFW firewall
+- **167 bots in a single process** via `main_multi.py` (shared ccxt exchange pool)
+- **RAM**: ~340 MB total (vs ~25 GB if running 167 separate Docker containers)
+- **Start/stop**: `bash scripts/start_all_bots.sh` / `bash scripts/start_all_bots.sh stop`
+- **Dashboard**: Streamlit local on port 8501 (`streamlit run dashboard/app.py`)
+- **Per-bot mode control**: mode files in `data/mode_{symbol}.json` (read each loop tick)
+- **Exchange**: Binance testnet (set `use_testnet: false` in configs to go live)
+- Docker deployment still supported for VPS: `docker compose up -d --build`
+- Nginx reverse proxy (HTTPS, basic auth, rate limiting) for VPS dashboard
 - Monthly cost: ~$7-17 (Hetzner VPS + Claude API)
 
 ## Agent Team
