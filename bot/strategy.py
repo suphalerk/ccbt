@@ -2557,11 +2557,13 @@ def generate_signal(
         if signals_config.get("dualthrust_adx", {}).get("enabled", False):
             new_signals.append(("dualthrust_adx", check_dualthrust_adx_conditions))
 
+        # Functions that take (row, config, signal_type) — no prev_row
+        _no_prev_row = {"zscore_meanrev"}
+
         for source, check_fn in new_signals:
             for signal_type in (SignalType.LONG, SignalType.SHORT):
-                # volexp_supertrend uses prev_row as both row and prev_row (like vol_expansion)
-                if source == "volexp_supertrend":
-                    if not check_fn(row, prev_row, config, signal_type):
+                if source in _no_prev_row:
+                    if not check_fn(row, config, signal_type):
                         continue
                 else:
                     if not check_fn(row, prev_row, config, signal_type):
