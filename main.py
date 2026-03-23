@@ -107,8 +107,24 @@ async def trading_loop(config: dict) -> None:
     """
     global shutdown_event
     shutdown_event = asyncio.Event()  # Create inside the running loop
+
+    # Launch Telegram command handler as a background task (single-bot mode)
+    from bot.telegram_commands import run_telegram_handler
+    telegram_task = asyncio.create_task(
+        run_telegram_handler(shutdown_event),
+        name="telegram-handler",
+    )
+
     engine = TradingEngine(config=config, shutdown_event=shutdown_event)
-    await engine.run()
+    try:
+        await engine.run()
+    finally:
+        # Ensure handler task is cancelled when the engine exits
+        telegram_task.cancel()
+        try:
+            await telegram_task
+        except asyncio.CancelledError:
+            pass
 
 
 def main() -> None:

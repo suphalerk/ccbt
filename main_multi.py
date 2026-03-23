@@ -370,7 +370,15 @@ async def async_main(config_files: list[str]) -> None:
         for cfg in config_files
     ]
 
-    logger.info("all_bots_launched", extra={"count": len(tasks)})
+    # Launch Telegram command handler alongside bots
+    from bot.telegram_commands import run_telegram_handler
+    telegram_task = asyncio.create_task(
+        run_telegram_handler(shutdown_event),
+        name="telegram-handler",
+    )
+    tasks.append(telegram_task)
+
+    logger.info("all_bots_launched", extra={"count": len(tasks) - 1})
 
     # Wait for all bots to finish (they stop when shutdown_event is set)
     results = await asyncio.gather(*tasks, return_exceptions=True)
