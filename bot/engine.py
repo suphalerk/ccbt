@@ -22,6 +22,7 @@ from bot.mode import BotMode, read_bot_mode
 from bot.news_fetcher import NewsFetcher
 from bot.risk import RiskManager
 from bot.strategy import SignalType, compute_net_rr, compute_signal_quality_score, compute_trailing_stop, generate_signal
+from bot.telegram import send_alert
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +210,12 @@ def check_closed_positions(
                     "close_reason": close_reason,
                     "duration_s": duration,
                 },
+            )
+            pnl_emoji = "✅" if estimated_pnl > 0 else "❌"
+            send_alert(
+                f"{pnl_emoji} <b>{symbol}</b> {info['side'].upper()} closed ({close_reason})\n"
+                f"PnL: ${estimated_pnl:+,.2f} ({pnl_pct:+.1f}%)\n"
+                f"Duration: {duration//60}m"
             )
             closed.append(trade_id)
 
@@ -449,6 +456,12 @@ class TradingEngine:
                 "ai_mode": "advisor" if self._ai_enabled else "disabled",
             },
         )
+        send_alert(
+            f"🟢 <b>{config['symbol']}</b> bot started\n"
+            f"Balance: ${self._balance:,.2f}\n"
+            f"Leverage: {config['leverage']}x",
+            silent=True,
+        )
 
         # Restore any positions already open on exchange (e.g. after restart)
         self._restore_positions()
@@ -474,6 +487,7 @@ class TradingEngine:
                 # Handle PANIC mode — close everything immediately
                 if self._current_mode == BotMode.PANIC:
                     logger.critical("panic_mode_activated", extra={"symbol": config["symbol"]})
+                    send_alert(f"🚨 <b>{config['symbol']}</b> PANIC MODE — closing all positions!")
                     try:
                         self._client.cancel_all_orders()
                         self._client.close_all_positions()
@@ -657,10 +671,17 @@ class TradingEngine:
         """Reset risk manager on UTC date change."""
         today = datetime.now(tz=timezone.utc).date()
         if today != self._last_daily_reset:
+            yesterday_pnl = self._risk_mgr.state.daily_pnl
             self._balance = self._client.get_balance()
             self._risk_mgr.reset_daily(self._balance)
             self._last_daily_reset = today
             logger.info("daily_reset_triggered", extra={"date": str(today)})
+            send_alert(
+                f"📊 <b>Daily Reset</b> {self._config['symbol']}\n"
+                f"Balance: ${self._balance:,.2f}\n"
+                f"Yesterday PnL: ${yesterday_pnl:+,.2f}",
+                silent=True,
+            )
 
     # ------------------------------------------------------------------
     # Position monitoring
@@ -1266,6 +1287,7 @@ class TradingEngine:
                     "sl_verification_failed_closing_position",
                     extra={"order_id": order.order_id},
                 )
+                send_alert(f"⚠️ <b>{config['symbol']}</b> SL verify failed — emergency close!")
                 close_ok = False
                 try:
                     # Cancel algo orders first to prevent orphaned SL/TP
@@ -1446,6 +1468,12 @@ class TradingEngine:
                     "calibration_id": calibration_id,
                 },
             )
+            send_alert(
+                f"📈 <b>{config['symbol']}</b> {side.upper()} opened\n"
+                f"Entry: {actual_entry}\n"
+                f"SL: {adjusted_sl} | TP: {adjusted_tp}\n"
+                f"Size: ${adjusted_size:,.0f}"
+            )
         elif not already_open_side:
             logger.info("trade_rejected", extra={"reason": reason})
 
@@ -1549,6 +1577,9 @@ class TradingEngine:
         can_trade, reason = self._risk_mgr.can_trade(self._balance, 0)
         if not can_trade and "API error" in reason:
             logger.critical("bot_halted_api_errors", extra={"reason": reason})
+            send_alert(
+                f"🛑 <b>{self._config['symbol']}</b> HALTED — repeated API errors\n{reason}"
+            )
             try:
                 self._client.cancel_all_orders()
                 self._client.close_all_positions()
@@ -1623,6 +1654,7 @@ class TradingEngine:
         except Exception:
             pass
 
+        send_alert(f"🔴 <b>{config['symbol']}</b> bot stopped", silent=True)
         logger.info("bot_stopped")
 
         # Close persistent database connections
