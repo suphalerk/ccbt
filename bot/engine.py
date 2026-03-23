@@ -456,12 +456,8 @@ class TradingEngine:
                 "ai_mode": "advisor" if self._ai_enabled else "disabled",
             },
         )
-        send_alert(
-            f"🟢 <b>{config['symbol']}</b> bot started\n"
-            f"Balance: ${self._balance:,.2f}\n"
-            f"Leverage: {config['leverage']}x",
-            silent=True,
-        )
+        # Note: per-bot start alert removed to avoid 167 messages on startup.
+        # main_multi.py sends a single summary alert instead.
 
         # Restore any positions already open on exchange (e.g. after restart)
         self._restore_positions()
@@ -676,12 +672,8 @@ class TradingEngine:
             self._risk_mgr.reset_daily(self._balance)
             self._last_daily_reset = today
             logger.info("daily_reset_triggered", extra={"date": str(today)})
-            send_alert(
-                f"📊 <b>Daily Reset</b> {self._config['symbol']}\n"
-                f"Balance: ${self._balance:,.2f}\n"
-                f"Yesterday PnL: ${yesterday_pnl:+,.2f}",
-                silent=True,
-            )
+            # Note: per-bot daily alert removed to avoid 167 messages.
+            # Use /pnl command in Telegram for daily summary.
 
     # ------------------------------------------------------------------
     # Position monitoring
@@ -1654,7 +1646,8 @@ class TradingEngine:
         except Exception:
             pass
 
-        send_alert(f"🔴 <b>{config['symbol']}</b> bot stopped", silent=True)
+        # Note: per-bot stop alert removed to avoid spam.
+        # main_multi.py sends a single summary alert instead.
         logger.info("bot_stopped")
 
         # Close persistent database connections

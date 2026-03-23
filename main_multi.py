@@ -378,7 +378,18 @@ async def async_main(config_files: list[str]) -> None:
     )
     tasks.append(telegram_task)
 
-    logger.info("all_bots_launched", extra={"count": len(tasks) - 1})
+    bot_count = len(tasks) - 1  # Exclude telegram handler
+    logger.info("all_bots_launched", extra={"count": bot_count})
+
+    # Single summary alert instead of 167 individual start messages
+    from bot.telegram import send_alert
+    send_alert(
+        f"🟢 <b>CCBT Started</b>\n"
+        f"Bots: {bot_count}\n"
+        f"Exchange: {exchange_name}\n"
+        f"Mode: {'testnet' if use_testnet else 'LIVE'}",
+        silent=True,
+    )
 
     # Wait for all bots to finish (they stop when shutdown_event is set)
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -391,6 +402,8 @@ async def async_main(config_files: list[str]) -> None:
             )
 
     logger.info("multi_bot_runner_finished", extra={"bot_count": len(tasks)})
+
+    send_alert(f"🔴 <b>CCBT Stopped</b>\nBots: {bot_count}", silent=True)
 
 
 def main() -> None:
