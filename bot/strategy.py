@@ -2530,6 +2530,14 @@ def generate_signal(
             new_signals.append(("ichi_supertrend", check_ichi_supertrend_conditions))
         if signals_config.get("volexp_supertrend", {}).get("enabled", False):
             new_signals.append(("volexp_supertrend", check_volexp_supertrend_conditions))
+        if signals_config.get("vol_expansion", {}).get("enabled", False):
+            new_signals.append(("vol_expansion", check_vol_expansion_conditions))
+        if signals_config.get("dual_thrust", {}).get("enabled", False):
+            new_signals.append(("dual_thrust", check_dual_thrust_conditions))
+        if signals_config.get("stoch_mtf", {}).get("enabled", False):
+            new_signals.append(("stoch_mtf", check_stoch_mtf_conditions))
+        if signals_config.get("zscore_meanrev", {}).get("enabled", False):
+            new_signals.append(("zscore_meanrev", check_zscore_meanrev_conditions))
 
         for source, check_fn in new_signals:
             for signal_type in (SignalType.LONG, SignalType.SHORT):
