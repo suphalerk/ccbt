@@ -796,6 +796,43 @@ shared_balance += dollar_pnl
 - **Regime propagation**: `detect_regime()` must be computed per row in backtest (rolling); backtest stores regime in DataFrame for signal-level gating
 - **Leverage auto-reduction**: `set_leverage()` returns `int` (actual leverage set); halves on Binance -4028 rejection; `engine.py` captures actual value and updates config for risk manager
 
+### Adding a New Strategy — Checklist
+When adding a new signal type (e.g. `my_new_signal`), ALL of these must be done or live bots will silently produce zero signals:
+
+1. **`bot/data.py`**: Add indicator computation in `add_indicators()` gated by `config.get("signals", {}).get("my_new_signal", {}).get("enabled", False)`
+2. **`bot/strategy.py`**: Create `check_my_new_signal_conditions(row, prev_row, config, signal_type)` function
+   - If the function does NOT need `prev_row`, add the signal key to the `_no_prev_row` set in `generate_signal()` dispatch block
+3. **`bot/strategy.py` dispatch**: Add to `generate_signal()` `new_signals` list:
+   ```python
+   if signals_config.get("my_new_signal", {}).get("enabled", False):
+       new_signals.append(("my_new_signal", check_my_new_signal_conditions))
+   ```
+   **⚠️ THIS IS THE MOST COMMONLY MISSED STEP** — backtest engine has its own dispatch in `backtest/engine.py` so backtests pass but live bots never trade
+4. **`backtest/engine.py`**: Add dispatch in the backtest signal loop (for backtesting)
+5. **Config JSON**: Create config with `"signals": {"my_new_signal": {"enabled": true}}` and all required parameters
+6. **Test**: Run one bot with the new config and verify signal generation in logs:
+   ```bash
+   python main.py --config config_test_newsignal.json
+   # Look for: "signal_generated" with "source": "my_new_signal" in logs
+   ```
+
+### Binance Algo Orders — Rules
+- SL/TP are **algo conditional orders** (NOT regular orders) — they live in a separate order book
+- Query via `fapiPrivateGetOpenAlgoOrders` (NOT `fetch_open_orders`)
+- Cancel via `fapiPrivateDeleteAlgoOrder` with `algoId` (NOT `cancel_order` with `orderId`)
+- Response format is `{"orders": [...]}` dict (NOT raw list) — always handle both
+- After ANY position close (SL/TP trigger, manual close, panic, shutdown): **must call `cancel_all_orders()`** to clean up orphaned algo orders
+- SL/TP size must use `filled_size` (actual fill) not requested size
+- SL placement failure must prevent TP placement (never have TP without SL)
+- Emergency SL must use `_retry` wrapper (network flicker could leave position unprotected)
+
+### API Key Safety
+- **NEVER** put API keys in code, config files, or chat messages
+- Testnet keys: `API_KEY` / `API_SECRET` in `.env`
+- Mainnet keys: `MAINNET_API_KEY` / `MAINNET_SECRET_KEY` in `.env`
+- Key selection is automatic based on `use_testnet` in config
+- If mainnet keys are missing when `use_testnet=false`, bot raises `ValueError` immediately
+
 ## Environment Variables
 ```
 # Testnet API keys (used when use_testnet=true)
