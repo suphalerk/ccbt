@@ -2538,6 +2538,24 @@ def generate_signal(
             new_signals.append(("stoch_mtf", check_stoch_mtf_conditions))
         if signals_config.get("zscore_meanrev", {}).get("enabled", False):
             new_signals.append(("zscore_meanrev", check_zscore_meanrev_conditions))
+        if signals_config.get("awesome_oscillator", {}).get("enabled", False):
+            new_signals.append(("awesome_oscillator", check_awesome_oscillator_conditions))
+        if signals_config.get("range_bounce", {}).get("enabled", False):
+            new_signals.append(("range_bounce", check_range_bounce_conditions))
+        if signals_config.get("ema_ribbon", {}).get("enabled", False):
+            new_signals.append(("ema_ribbon", check_ema_ribbon_conditions))
+        if signals_config.get("ichi_adx", {}).get("enabled", False):
+            new_signals.append(("ichi_adx", check_ichi_adx_conditions))
+        if signals_config.get("ribbon_ao", {}).get("enabled", False):
+            new_signals.append(("ribbon_ao", check_ribbon_ao_conditions))
+        if signals_config.get("zscore_stoch", {}).get("enabled", False):
+            new_signals.append(("zscore_stoch", check_zscore_stoch_conditions))
+        if signals_config.get("stoch_supertrend", {}).get("enabled", False):
+            new_signals.append(("stoch_supertrend", check_stoch_supertrend_conditions))
+        if signals_config.get("supertrend_volume", {}).get("enabled", False):
+            new_signals.append(("supertrend_volume", check_supertrend_volume_conditions))
+        if signals_config.get("dualthrust_adx", {}).get("enabled", False):
+            new_signals.append(("dualthrust_adx", check_dualthrust_adx_conditions))
 
         for source, check_fn in new_signals:
             for signal_type in (SignalType.LONG, SignalType.SHORT):
