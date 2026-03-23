@@ -59,9 +59,17 @@ def get_shared_exchange(exchange_name: str, use_testnet: bool) -> object:
         if key in _pool:
             return _pool[key]
 
+        # Use separate API keys for testnet vs mainnet
+        if use_testnet:
+            api_key = os.getenv("API_KEY", "")
+            api_secret = os.getenv("API_SECRET", "")
+        else:
+            api_key = os.getenv("MAINNET_API_KEY", "")
+            api_secret = os.getenv("MAINNET_SECRET_KEY", "")
+
         exchange_params = {
-            "apiKey": os.getenv("API_KEY", ""),
-            "secret": os.getenv("API_SECRET", ""),
+            "apiKey": api_key,
+            "secret": api_secret,
             "enableRateLimit": True,
         }
 

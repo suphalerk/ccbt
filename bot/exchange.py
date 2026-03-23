@@ -99,13 +99,25 @@ class BybitClient:
                 },
             )
         else:
+            use_testnet = config.get("use_testnet", True)
+
+            # Use separate API keys for testnet vs mainnet
+            if use_testnet:
+                api_key = os.getenv("API_KEY", "")
+                api_secret = os.getenv("API_SECRET", "")
+            else:
+                api_key = os.getenv("MAINNET_API_KEY", "")
+                api_secret = os.getenv("MAINNET_SECRET_KEY", "")
+                if not api_key or not api_secret:
+                    raise ValueError(
+                        "MAINNET_API_KEY and MAINNET_SECRET_KEY must be set in .env for live trading"
+                    )
+
             exchange_params = {
-                "apiKey": os.getenv("API_KEY", ""),
-                "secret": os.getenv("API_SECRET", ""),
+                "apiKey": api_key,
+                "secret": api_secret,
                 "enableRateLimit": True,
             }
-
-            use_testnet = config.get("use_testnet", True)
 
             if self._exchange_name == "binance":
                 self._init_binance(exchange_params, use_testnet)
