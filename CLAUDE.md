@@ -716,11 +716,22 @@ real-full → $1K+, 96 bots, 0.9%, 25x, max 10 concurrent
 | **real-grow** | $500+ | 0.9% | 15x | 50 | 10 | 50+ trades, DD < 20% |
 | **real-full** | $1K+ | 0.9% | 25x | 96 | 10 | 100+ trades, DD < 25% |
 
-### Backtest Results per Profile (96 audited bots)
-| Profile | Backtest Return | DD | Trades | Realistic est. |
-|---------|----------------|-----|--------|---------------|
-| real-test ($45, 5 bots) | +135% | 22.6% | 105 | +40-70%/yr |
-| Main setting (10 conc, 0.9%) | +2,099% | 23.9% | 2,200 | ~840%/yr |
+### Backtest Results per Profile
+| Profile | Capital | Backtest Return | DD | Trades | Realistic est. |
+|---------|---------|----------------|-----|--------|---------------|
+| **real-test** V2 | $45 | +348% | 17.4% | 208 | +100-175%/yr |
+| real-safe | $200 | +617% | 9.7% | 631 | +185-310%/yr |
+| real-grow | $500 | +3,339% | 20.5% | 1,643 | +1,000-1,670%/yr |
+| **real-full** (Main) | $1,000 | +2,099% | 23.9% | 2,200 | ~840%/yr |
+
+### real-test V2 Bots (5 bots — mainnet first deployment)
+| Bot | Strategy | TF | PF | WR% | $/trade |
+|-----|----------|----|-----|------|---------|
+| DASH | Ichimoku Cloud | 4H | 7.01 | 71% | $14 |
+| BTC | EMA Crossover | 15m | 1.38 | 38% | $10 |
+| XAUUSD | Ribbon+AO | 4H | 2.97 | 59% | $10 |
+| AVAX | EMA Ribbon | 4H | 3.00 | 50% | $8 |
+| 1000SHIB | EMA Ribbon | 1H | 1.21 | 39% | $5 |
 
 ```bash
 # Testnet: multi-bot mode (17 containers, ~4GB RAM)
