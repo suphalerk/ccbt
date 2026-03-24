@@ -225,19 +225,19 @@ class TestCmdPositions:
         result = tc._cmd_positions()
         assert "No open positions" in result
 
-    def test_shows_open_from_bot_health(self, data_dir, db_path):
+    def test_shows_open_from_trades(self, data_dir, db_path):
         conn = sqlite3.connect(str(db_path))
         conn.execute(
-            "INSERT INTO bot_health (symbol, mode, status, position_side, "
-            "position_size, position_entry, unrealized_pnl, updated_at) "
+            "INSERT INTO trades (timestamp, symbol, side, entry_price, size, "
+            "stop_loss, take_profit, status) "
             "VALUES (?,?,?,?,?,?,?,?)",
-            ("BTCUSDT", "normal", "running", "buy", 0.001, 65000.0, 5.25, "2026-03-23"),
+            ("2026-03-23 10:00:00", "BTCUSDT", "buy", 65000.0, 0.001, 64000.0, 67000.0, "open"),
         )
         conn.commit()
         conn.close()
         result = tc._cmd_positions()
-        assert "BTCUSDT" in result
-        assert "65000.00" in result
+        assert "BTC" in result
+        assert "BUY" in result
 
 
 class TestCmdBots:

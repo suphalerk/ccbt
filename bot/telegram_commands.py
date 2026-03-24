@@ -214,8 +214,19 @@ def _write_all_modes(mode: BotMode) -> int:
 
 
 def _get_db_path() -> str:
+    """Find trades.db — check BOT_DATA_DIR first, then common locations."""
     data_dir = os.getenv("BOT_DATA_DIR", "")
-    return str(Path(data_dir) / "trades.db") if data_dir else "trades.db"
+    if data_dir:
+        p = Path(data_dir) / "trades.db"
+        if p.exists():
+            return str(p)
+    # Fallback: check project root (nohup mode writes here)
+    if Path("trades.db").exists():
+        return "trades.db"
+    # Fallback: check ./data/
+    if Path("data/trades.db").exists():
+        return "data/trades.db"
+    return "trades.db"
 
 
 def _query_db(sql: str, params: tuple = ()) -> list[tuple]:
@@ -275,58 +286,66 @@ def _cmd_status() -> str:
     mins = rem // 60
     uptime_str = f"{hours}h {mins}m"
 
-    # Last trade time
+    # Open positions
+    open_rows = _query_db("SELECT COUNT(*) FROM trades WHERE status='open'")
+    open_count = open_rows[0][0] if open_rows else 0
+
+    # Last trade time (use Bangkok time in DB)
     rows = _query_db(
         "SELECT timestamp FROM trades WHERE status='closed' ORDER BY id DESC LIMIT 1"
     )
     if rows:
         try:
-            last_ts = datetime.fromisoformat(rows[0][0].replace("Z", "+00:00"))
-            age_s = int((datetime.now(timezone.utc) - last_ts).total_seconds())
-            age_h, age_rem = divmod(age_s, 3600)
+            # Timestamps are Bangkok time "2026-03-24 05:30:00"
+            from datetime import timedelta
+            _tz_bkk = timezone(timedelta(hours=7))
+            last_ts = datetime.strptime(rows[0][0][:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz_bkk)
+            age_s = int((datetime.now(_tz_bkk) - last_ts).total_seconds())
+            age_h, age_rem = divmod(max(0, age_s), 3600)
             age_m = age_rem // 60
             last_trade = f"{age_h}h {age_m}m ago" if age_h else f"{age_m}m ago"
         except Exception:
-            last_trade = "unknown"
+            last_trade = rows[0][0][:19]
     else:
         last_trade = "no trades yet"
 
     return (
-        "<b>CCBT Bot Status</b>\n"
+        "<b>📊 CCBT Bot Status</b>\n"
         "━━━━━━━━━━━━━━━\n"
         f"Running: {len(running)}/{total} bots\n"
+        f"Open positions: {open_count}\n"
         f"Uptime: {uptime_str}\n"
         f"Last trade: {last_trade}"
     )
 
 
 def _cmd_balance() -> str:
-    """Build /balance reply."""
-    # Pull from bot_health — the engine writes unrealized_pnl there.
-    # Actual equity is only available on the exchange client; we show a note.
-    rows = _query_db(
-        "SELECT SUM(unrealized_pnl), MAX(updated_at) FROM bot_health"
+    """Build /balance reply — reads from trades DB."""
+    # Calculate balance from closed trades PnL
+    total_pnl_rows = _query_db(
+        "SELECT COALESCE(SUM(pnl), 0) FROM trades WHERE status='closed'"
     )
-    if rows and rows[0][0] is not None:
-        unrealized = rows[0][0]
-        updated = rows[0][1] or "?"
-        return (
-            "<b>Balance</b>\n"
-            "━━━━━━━━━━━━━━━\n"
-            f"Unrealized PnL: <b>{unrealized:+.2f} USDT</b>\n"
-            f"<i>DB snapshot at {updated}</i>\n"
-            "<i>For exact equity, check the dashboard.</i>"
-        )
+    open_count_rows = _query_db(
+        "SELECT COUNT(*) FROM trades WHERE status='open'"
+    )
+
+    total_pnl = total_pnl_rows[0][0] if total_pnl_rows else 0.0
+    open_count = open_count_rows[0][0] if open_count_rows else 0
+
     return (
-        "<b>Balance</b>\n"
+        "<b>💰 Balance</b>\n"
         "━━━━━━━━━━━━━━━\n"
-        "<i>No data yet — bots may not have run a full cycle.</i>"
+        f"Realized PnL: <b>{total_pnl:+,.2f} USDT</b>\n"
+        f"Open positions: {open_count}\n"
+        "<i>Note: testnet prices may be unrealistic</i>"
     )
 
 
 def _cmd_pnl() -> str:
     """Build /pnl reply."""
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    from datetime import timedelta
+    _tz_bkk = timezone(timedelta(hours=7))
+    today = datetime.now(_tz_bkk).strftime("%Y-%m-%d")
 
     today_rows = _query_db(
         "SELECT COALESCE(SUM(pnl),0), COUNT(*) FROM trades "
@@ -362,39 +381,30 @@ def _cmd_pnl() -> str:
 
 
 def _cmd_positions() -> str:
-    """Build /positions reply."""
+    """Build /positions reply from trades table (status='open')."""
     rows = _query_db(
-        "SELECT symbol, side, size, entry_price, unrealized_pnl "
-        "FROM trades WHERE status='open' ORDER BY timestamp"
+        "SELECT symbol, side, size, entry_price, stop_loss, take_profit "
+        "FROM trades WHERE status='open' ORDER BY timestamp DESC"
     )
 
-    # Also check bot_health for positions (more current via engine updates)
-    health_rows = _query_db(
-        "SELECT symbol, position_side, position_size, position_entry, unrealized_pnl "
-        "FROM bot_health WHERE position_side IS NOT NULL AND position_size > 0"
-    )
-
-    if not rows and not health_rows:
+    if not rows:
         return (
             "<b>Open Positions</b>\n"
             "━━━━━━━━━━━━━━━\n"
             "No open positions."
         )
 
-    lines = ["<b>Open Positions</b>", "━━━━━━━━━━━━━━━"]
+    lines = ["<b>📊 Open Positions</b>", "━━━━━━━━━━━━━━━"]
 
-    # Prefer bot_health data (fresher)
-    source = health_rows if health_rows else rows
-    for row in source:
-        sym, side, size, entry, upnl = row
+    for sym, side, size, entry, sl, tp in rows:
         side_str = side.upper() if side else "?"
         icon = "🟢" if side_str in ("BUY", "LONG") else "🔴"
-        upnl_str = f" ({upnl:+.2f})" if upnl is not None else ""
-        lines.append(f"{icon} {sym} {side_str} {size:.6g} @ {entry:.2f}{upnl_str}")
+        # Short symbol for compact display
+        short_sym = sym.replace("/USDT:USDT", "").replace("USDT", "")
+        lines.append(f"{icon} <b>{short_sym}</b> {side_str} @ {entry}")
 
-    total = len(source)
     lines.append("━━━━━━━━━━━━━━━")
-    lines.append(f"Total: {total} position{'s' if total != 1 else ''}")
+    lines.append(f"Total: {len(rows)} position{'s' if len(rows) != 1 else ''}")
     return "\n".join(lines)
 
 
