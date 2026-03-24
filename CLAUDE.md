@@ -695,29 +695,38 @@ Leverage:                 25x
 Active bots:              96 (walk-forward audited only)
 ```
 
-### All Tested Configurations
-| Profile | Concurrent | Risk | Backtest | DD | Realistic est. |
-|---------|-----------|------|----------|-----|---------------|
-| Ultra-safe | 5 | 0.3% | +91% | 6.9% | ~30-50%/yr |
-| Conservative | 5 | 0.5% | +190% | 11.3% | ~60-100%/yr |
-| Moderate | 5 | 1.0% | +705% | 21.4% | ~200-350%/yr |
-| Safe+more | 10 | 0.5% | +541% | 17.7% | ~160-270%/yr |
-| **→ MAIN** | **10** | **0.9%** | **+2,572%** | **29.7%** | **~1,000%/yr** |
-| More positions | 10 | 1.0% | +3,689% | 32.4% | ~1,100-1,800%/yr |
-| Balanced | 15 | 0.5% | +963% | 22.4% | ~290-480%/yr |
-| Aggressive | 15 | 1.0% | +10,069% | 40.0% | ~3,000-5,000%/yr |
+### Deployment Profiles (5 levels)
+```
+testnet   → fake, 96 bots, 1%, 25x, max 10 concurrent
+                  ↓ testnet OK 1 week
+real-test → $45, 5 bots, 3%, 10x, max 2 concurrent
+                  ↓ 30+ trades, WR > 35%
+real-safe → $200+, 10 bots, 1%, 10x, max 5 concurrent
+                  ↓ 50+ trades, DD < 20%
+real-grow → $500+, 50 bots, 0.9%, 15x, max 10 concurrent
+                  ↓ 100+ trades, DD < 25%
+real-full → $1K+, 96 bots, 0.9%, 25x, max 10 concurrent
+```
+
+| Profile | Capital | Risk | Leverage | Bots | MaxConc | Upgrade Condition |
+|---------|---------|------|----------|------|---------|-------------------|
+| **testnet** | fake | 1% | 25x | 96 | 10 | — |
+| **real-test** | $45 | 3% | 10x | 5 | 2 | testnet OK 1 week |
+| **real-safe** | $200+ | 1% | 10x | 10 | 5 | 30+ trades, WR > 35% |
+| **real-grow** | $500+ | 0.9% | 15x | 50 | 10 | 50+ trades, DD < 20% |
+| **real-full** | $1K+ | 0.9% | 25x | 96 | 10 | 100+ trades, DD < 25% |
+
+### Backtest Results per Profile (96 audited bots)
+| Profile | Backtest Return | DD | Trades | Realistic est. |
+|---------|----------------|-----|--------|---------------|
+| real-test ($45, 5 bots) | +135% | 22.6% | 105 | +40-70%/yr |
+| Main setting (10 conc, 0.9%) | +2,099% | 23.9% | 2,200 | ~840%/yr |
 
 ```bash
-# Run all 167 bots (single process, ~340 MB RAM)
-bash scripts/start_all_bots.sh
+# Testnet: multi-bot mode (17 containers, ~4GB RAM)
+docker compose -f docker-compose-multi.yml up -d
 
-# Or run by group
-python main_multi.py --group ichimoku-1h
-python main_multi.py --group ichimoku-4h
-python main_multi.py --group dualthrust
-python main_multi.py --group ema-ribbon
-
-# Dashboard (local)
+# Dashboard
 streamlit run dashboard/app.py
 ```
 
