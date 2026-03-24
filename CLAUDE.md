@@ -677,8 +677,14 @@ Signal: EMA Ribbon alignment + Awesome Oscillator momentum direction agreement. 
 | **DOGE** | EMA 15m | 1.11 | All strategies PF < 1.2 |
 | **SOL** | Ichi 1H | 1.17 | All strategies PF < 1.2 |
 
-**Portfolio total: 136 active bots across 30 strategy types**
+**Portfolio total: 96 audited bots across 30 strategy types (29 removed after walk-forward fail)**
 **Deployed: 174 bots in 17 Docker containers (multi-bot mode, ~4GB RAM)**
+
+### Walk-Forward Audit Status
+- **96 PASS** — IS/OOS ratio >= 60%, full PF >= 1.2, stable edge
+- **29 FAIL** — removed (full PF < 1.2 or OOS degraded > 40%)
+- Key failures: GALA/QNT/DEGO/W/ZEC dual_thrust, CFX all strategies, VVV/TIA range_bounce
+- Audit scripts: `research/audit_btc_wif.py`, `research/audit_43_bots.py`
 
 ### Main Setting (Target: Realistic 1000%/yr)
 ```
@@ -686,9 +692,7 @@ Max concurrent positions: 10
 Risk per trade:           0.9%
 Starting capital:         $200+ (recommend $500+ for min order sizes)
 Leverage:                 25x
-
-Backtest result: $200 → $5,345 (+2,572%) | DD 29.7% | 2,396 trades
-Realistic estimate: +1,000%/yr | DD ~40-50%
+Active bots:              96 (walk-forward audited only)
 ```
 
 ### All Tested Configurations
