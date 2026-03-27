@@ -65,6 +65,61 @@ from bot.engine import TradingEngine
 from bot.logger import setup_logging
 from bot.shared_exchange_pool import get_shared_exchange
 
+
+# ---------------------------------------------------------------------------
+# Global portfolio manager — enforces cross-bot position limits
+# ---------------------------------------------------------------------------
+
+class PortfolioManager:
+    """Shared position tracker for all bots in a single process.
+
+    Enforces two safety constraints across all bots:
+
+    1. Global position cap — total open positions across all bots never
+       exceeds ``max_positions``.
+    2. Duplicate-coin gate — at most one bot at a time may hold a position
+       in any given symbol.
+
+    All methods that mutate state are protected by an ``asyncio.Lock`` so
+    they are safe to call concurrently from many bot coroutines.
+    """
+
+    def __init__(self, max_positions: int = 10) -> None:
+        self.max_positions = max_positions
+        self._open_coins: set[str] = set()
+        self._open_count: int = 0
+        self._lock = asyncio.Lock()
+
+    @property
+    def open_count(self) -> int:
+        return self._open_count
+
+    async def can_open(self, symbol: str) -> bool:
+        """Return True if a new position may be opened for *symbol*.
+
+        Checks both the global position cap and the duplicate-coin gate.
+        Does NOT modify state — call :meth:`register_open` after the order
+        is successfully placed.
+        """
+        async with self._lock:
+            if self._open_count >= self.max_positions:
+                return False
+            if symbol in self._open_coins:
+                return False
+            return True
+
+    async def register_open(self, symbol: str) -> None:
+        """Record that a new position has been opened for *symbol*."""
+        async with self._lock:
+            self._open_coins.add(symbol)
+            self._open_count += 1
+
+    async def register_close(self, symbol: str) -> None:
+        """Record that a position for *symbol* has been closed."""
+        async with self._lock:
+            self._open_coins.discard(symbol)
+            self._open_count = max(0, self._open_count - 1)
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -229,6 +284,9 @@ async def run_bot(
     config_path: str,
     shared_exchange,
     shutdown_event: asyncio.Event,
+    portfolio_manager: Optional[PortfolioManager] = None,
+    risk_override: Optional[float] = None,
+    leverage_override: Optional[int] = None,
 ) -> None:
     """Run a single bot coroutine inside the shared event loop.
 
@@ -236,11 +294,22 @@ async def run_bot(
         config_path: Path to the bot's JSON config file.
         shared_exchange: Shared ccxt exchange instance (markets already loaded).
         shutdown_event: Global shutdown event — when set, all bots stop.
+        portfolio_manager: Optional shared position tracker for global limits.
+        risk_override: If set, overrides config's ``risk_per_trade`` for all
+            bots (e.g. 0.01 for 1%).  Takes precedence over the config value.
+        leverage_override: If set, overrides config's ``leverage`` for all
+            bots.  Takes precedence over the config value.
     """
     config = load_config(config_path)
     if config is None:
         logger.warning("bot_skipped_bad_config", extra={"config": config_path})
         return
+
+    # Apply global overrides (--risk / --leverage CLI args)
+    if risk_override is not None:
+        config["risk_per_trade"] = risk_override
+    if leverage_override is not None:
+        config["leverage"] = leverage_override
 
     symbol = config.get("symbol", "unknown")
     logger.info("bot_starting", extra={"config": config_path, "symbol": symbol})
@@ -250,6 +319,7 @@ async def run_bot(
             config=config,
             shutdown_event=shutdown_event,
             shared_exchange=shared_exchange,
+            portfolio_manager=portfolio_manager,
         )
         await engine.run()
     except Exception as e:
@@ -315,7 +385,12 @@ def handle_shutdown(signum, frame, shutdown_event: asyncio.Event) -> None:
         shutdown_event.set()
 
 
-async def async_main(config_files: list[str]) -> None:
+async def async_main(
+    config_files: list[str],
+    max_global_positions: int = 10,
+    risk_override: Optional[float] = None,
+    leverage_override: Optional[int] = None,
+) -> None:
     """Start one shared exchange pool, then run all bots concurrently."""
     if not config_files:
         logger.error("no_config_files_found")
@@ -350,6 +425,17 @@ async def async_main(config_files: list[str]) -> None:
     # Shared shutdown event — setting it stops all bots
     shutdown_event = asyncio.Event()
 
+    # Global portfolio manager — enforces cross-bot position limits
+    portfolio_manager = PortfolioManager(max_positions=max_global_positions)
+    logger.info(
+        "portfolio_manager_created",
+        extra={
+            "max_global_positions": max_global_positions,
+            "risk_override": risk_override,
+            "leverage_override": leverage_override,
+        },
+    )
+
     # Register signal handlers now that we have the event loop
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -364,7 +450,14 @@ async def async_main(config_files: list[str]) -> None:
     # Launch all bots as concurrent tasks
     tasks = [
         asyncio.create_task(
-            run_bot(cfg, shared_exchange, shutdown_event),
+            run_bot(
+                cfg,
+                shared_exchange,
+                shutdown_event,
+                portfolio_manager=portfolio_manager,
+                risk_override=risk_override,
+                leverage_override=leverage_override,
+            ),
             name=f"bot-{Path(cfg).stem}",
         )
         for cfg in config_files
@@ -383,11 +476,14 @@ async def async_main(config_files: list[str]) -> None:
 
     # Single summary alert instead of 167 individual start messages
     from bot.telegram import send_alert
+    risk_info = f"{risk_override * 100:.1f}%" if risk_override is not None else "per-config"
+    lev_info = f"{leverage_override}x" if leverage_override is not None else "per-config"
     send_alert(
         f"🟢 <b>CCBT Started</b>\n"
-        f"Bots: {bot_count}\n"
+        f"Bots: {bot_count} | Max positions: {max_global_positions}\n"
         f"Exchange: {exchange_name}\n"
-        f"Mode: {'testnet' if use_testnet else 'LIVE'}",
+        f"Mode: {'testnet' if use_testnet else 'LIVE'}\n"
+        f"Risk: {risk_info} | Leverage: {lev_info}",
         silent=True,
     )
 
@@ -442,6 +538,36 @@ def main() -> None:
         action="store_true",
         help="Print all available group names and their configs, then exit.",
     )
+    parser.add_argument(
+        "--max-positions",
+        type=int,
+        default=10,
+        metavar="N",
+        help=(
+            "Maximum total open positions across ALL bots (default: 10). "
+            "Prevents any single market move from hitting the full portfolio."
+        ),
+    )
+    parser.add_argument(
+        "--risk",
+        type=float,
+        default=None,
+        metavar="FRAC",
+        help=(
+            "Override risk_per_trade for ALL bots (e.g. 0.01 for 1%%). "
+            "When omitted, each bot uses its own config value."
+        ),
+    )
+    parser.add_argument(
+        "--leverage",
+        type=int,
+        default=None,
+        metavar="X",
+        help=(
+            "Override leverage for ALL bots (e.g. 25). "
+            "When omitted, each bot uses its own config value."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -463,7 +589,14 @@ def main() -> None:
     for p in config_files:
         logger.info("  config", extra={"path": p})
 
-    asyncio.run(async_main(config_files))
+    asyncio.run(
+        async_main(
+            config_files,
+            max_global_positions=args.max_positions,
+            risk_override=args.risk,
+            leverage_override=args.leverage,
+        )
+    )
 
 
 if __name__ == "__main__":

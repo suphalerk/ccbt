@@ -339,10 +339,12 @@ class TradingEngine:
         config: dict,
         shutdown_event: asyncio.Event,
         shared_exchange=None,
+        portfolio_manager=None,
     ) -> None:
         self._config = config
         self._shutdown_event = shutdown_event
         self._shared_exchange = shared_exchange
+        self._portfolio_manager = portfolio_manager  # Optional global position limit
 
         # Components (constructed in run() after initial balance fetch)
         self._client: Optional[BybitClient] = None
@@ -685,6 +687,7 @@ class TradingEngine:
         Args:
             positions: Current positions list from exchange.
         """
+        trades_before = set(self._tracked_trades.keys())
         self._tracked_trades = check_closed_positions(
             open_trade_ids=self._tracked_trades,
             current_positions=positions,
@@ -695,6 +698,12 @@ class TradingEngine:
             client=self._client,
             last_trade_close=self._last_trade_close,
         )
+        # Notify portfolio manager when positions are closed by exchange (SL/TP)
+        if self._portfolio_manager is not None:
+            trades_after = set(self._tracked_trades.keys())
+            closed_count = len(trades_before) - len(trades_after)
+            for _ in range(closed_count):
+                await self._portfolio_manager.register_close(self._config["symbol"])
 
     # ------------------------------------------------------------------
     # Trailing stops
@@ -1019,6 +1028,23 @@ class TradingEngine:
             )
 
         if not already_open_side and approved:
+            # Check global position limit and duplicate coin gate (multi-bot only)
+            if self._portfolio_manager is not None:
+                symbol_key = self._config["symbol"]
+                pm_allowed = await self._portfolio_manager.can_open(symbol_key)
+                if not pm_allowed:
+                    logger.info(
+                        "trade_skipped_portfolio_limit",
+                        extra={
+                            "symbol": symbol_key,
+                            "global_open": self._portfolio_manager.open_count,
+                            "max_global": self._portfolio_manager.max_positions,
+                        },
+                    )
+                    if await self._interruptible_sleep(60):
+                        return True
+                    return False
+
             # Validate leverage before placing order
             if not self._risk_mgr.check_leverage(position_size, self._balance):
                 logger.warning(
@@ -1438,6 +1464,10 @@ class TradingEngine:
                 "original_tp": trade_signal.take_profit,
             }
 
+            # Register with portfolio manager (global position tracking)
+            if self._portfolio_manager is not None:
+                await self._portfolio_manager.register_open(self._config["symbol"])
+
             self._ctx_builder.record_trade_time()
 
             logger.info(
@@ -1602,6 +1632,10 @@ class TradingEngine:
                     extra={"count": len(remaining_positions)},
                 )
                 self._client.close_all_positions()
+                # Notify portfolio manager of all positions being closed
+                if self._portfolio_manager is not None:
+                    for _ in self._tracked_trades:
+                        await self._portfolio_manager.register_close(self._config["symbol"])
                 # Record closures for tracked trades
                 for trade_id, info in self._tracked_trades.items():
                     try:
