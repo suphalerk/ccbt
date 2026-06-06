@@ -118,7 +118,7 @@ def get_closed_trades(
     conn = _get_connection(db_path)
     try:
         df = pd.read_sql_query(
-            f"SELECT * FROM trades WHERE status = 'closed'{filt} ORDER BY id ASC",
+            f"SELECT * FROM trades WHERE status = 'closed' AND COALESCE(close_reason, '') != 'orphan_reconcile'{filt} ORDER BY id ASC",
             conn,
             params=params,
         )
@@ -277,7 +277,7 @@ def get_daily_pnl(
                    COALESCE(SUM(pnl), 0) as daily_pnl,
                    COUNT(*) as trade_count
             FROM trades
-            WHERE status = 'closed'{filt}
+            WHERE status = 'closed' AND COALESCE(close_reason, '') != 'orphan_reconcile'{filt}
             GROUP BY DATE(timestamp)
             ORDER BY date ASC
             """,
@@ -307,7 +307,7 @@ def get_today_pnl(
             f"""
             SELECT COALESCE(SUM(pnl), 0) as total_pnl
             FROM trades
-            WHERE timestamp LIKE ? AND status = 'closed'{filt}
+            WHERE timestamp LIKE ? AND status = 'closed' AND COALESCE(close_reason, '') != 'orphan_reconcile'{filt}
             """,
             (f"{today}%",) + params,
         ).fetchone()
@@ -334,7 +334,7 @@ def get_today_trade_count(
             f"""
             SELECT COUNT(*) as cnt
             FROM trades
-            WHERE timestamp LIKE ? AND status = 'closed'{filt}
+            WHERE timestamp LIKE ? AND status = 'closed' AND COALESCE(close_reason, '') != 'orphan_reconcile'{filt}
             """,
             (f"{today}%",) + params,
         ).fetchone()
