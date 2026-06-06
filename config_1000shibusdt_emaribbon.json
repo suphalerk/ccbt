@@ -215,7 +215,7 @@
   "symbol": "1000SHIBUSDT",
   "timeframe_signal": "1h",
   "timeframe_trend": "1h",
-  "atr_sl_mult": 2.0,
+  "atr_sl_mult": 3.0,
   "atr_tp_mult": 4.0,
   "atr_trail_mult": 3.0,
   "atr_trail_mult_trending": 3.0,
