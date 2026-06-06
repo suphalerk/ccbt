@@ -462,7 +462,7 @@ class TradingEngine:
         # main_multi.py sends a single summary alert instead.
 
         # Restore any positions already open on exchange (e.g. after restart)
-        self._restore_positions()
+        await self._restore_positions()
 
         # --- Main loop ---
         while not self._shutdown_event.is_set():
@@ -595,11 +595,13 @@ class TradingEngine:
     # State restoration (startup)
     # ------------------------------------------------------------------
 
-    def _restore_positions(self) -> None:
+    async def _restore_positions(self) -> None:
         """Restore tracking for positions already open on exchange after restart.
 
         Only restores ONE trade per side to avoid double-counting PnL
         (Bybit merges same-direction positions into one net position).
+        Also registers restored positions with the PortfolioManager so
+        the global position cap and duplicate-coin gate stay accurate.
         """
         config = self._config
         try:
@@ -653,6 +655,9 @@ class TradingEngine:
                             "open_time": time.time(),
                         }
                         restored_sides.add(trade_side)
+                        # Register with portfolio manager so global limits are accurate
+                        if self._portfolio_manager is not None:
+                            await self._portfolio_manager.register_open(config["symbol"])
                         logger.info(
                             "restored_tracked_trade",
                             extra={"trade_id": trade_id, "side": db_trade["side"]},

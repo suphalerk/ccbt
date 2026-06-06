@@ -132,6 +132,7 @@ Bot runs fully autonomous — risk management is the primary safety layer:
 - **Pyramiding**: Only add to winning positions when trend aligned (EMA9 vs EMA21); SL must ratchet up (never lower) on pyramid adds; pyramid adds charge commission on the added size; levels 1-7 use explicit config keys (`add_N_atr_mult`, `add_N_size_pct`), levels 8+ use dynamic formula
 - **Regime propagation**: `detect_regime()` must be computed per row in backtest (rolling); backtest stores regime in DataFrame for signal-level gating
 - **Leverage auto-reduction**: `set_leverage()` returns `int` (actual leverage set); halves on Binance -4028 rejection; `engine.py` captures actual value and updates config for risk manager
+- **Position restore**: `engine._restore_positions()` (async) must `await portfolio_manager.register_open(symbol)` for every restored position — otherwise the global position cap and duplicate-coin gate undercount after a restart and the bot opens beyond `--max-positions` / re-opens the same coin
 - **Backtest correctness**: Portfolio backtests must use the R-multiple method — see [docs/backtest-methodology.md](docs/backtest-methodology.md) (past results were inflated 10x by a risk-mismatch bug)
 
 ### Adding a New Strategy — Checklist
