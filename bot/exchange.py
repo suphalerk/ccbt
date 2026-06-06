@@ -124,6 +124,14 @@ class BybitClient:
             else:
                 self._init_bybit(exchange_params, use_testnet)
 
+            # Route exchange traffic through a SOCKS proxy when configured.
+            # Gives a fixed egress IP for the Binance API whitelist (mainnet).
+            # Per-bot via config["socks_proxy"], or globally via CCBT_SOCKS_PROXY.
+            proxy = (self.config.get("socks_proxy") or os.getenv("CCBT_SOCKS_PROXY", "")).strip()
+            if proxy:
+                self.exchange.socksProxy = proxy
+                logger.info("exchange_proxy_enabled", extra={"socks_proxy": proxy})
+
             self.exchange.load_markets()
 
         self._normalize_symbol()

@@ -97,6 +97,14 @@ def get_shared_exchange(exchange_name: str, use_testnet: bool) -> object:
             if use_testnet:
                 exchange.set_sandbox_mode(True)
 
+        # Route all bots' exchange traffic through a SOCKS proxy when configured
+        # (fixed egress IP for the Binance API whitelist on mainnet). One env var
+        # covers every bot sharing this pooled exchange instance.
+        proxy = os.getenv("CCBT_SOCKS_PROXY", "").strip()
+        if proxy:
+            exchange.socksProxy = proxy
+            logger.info("shared_exchange_pool_proxy", extra={"socks_proxy": proxy})
+
         logger.info(
             "shared_exchange_pool_loading_markets",
             extra={"exchange": name, "testnet": use_testnet},

@@ -48,7 +48,7 @@ backtest/
 ├── engine.py            → Event-driven backtesting simulator (own signal dispatch — see strategy checklist)
 ├── data_loader.py       → Historical data loading
 └── metrics.py           → Performance metrics (Sharpe, drawdown, profit factor)
-deploy/                  → VPS setup.sh, monitoring.py, backup.sh, nginx.conf, oracle-wireguard/
+deploy/                  → VPS setup.sh, monitoring.py, backup.sh, nginx.conf, macos/ (launchd), do-proxy/ (SOCKS5 fixed-IP proxy)
 research/                → Sweep + verify + portfolio backtest scripts (see docs/research-pipeline.md)
 scripts/                 → generate_configs.py, start_all_bots.sh, download_funding_rates.py
 tests/                   → pytest unit/integration tests
@@ -212,6 +212,7 @@ BOT_DATA_DIR                 — Data directory (default: ./data in Docker, . lo
 - Docker deployment still supported for VPS: `docker compose up -d --build`
 - Nginx reverse proxy (HTTPS, basic auth, rate limiting) for VPS dashboard
 - Monthly cost: ~$7-17 (Hetzner VPS + Claude API)
+- **Fixed-IP proxy for Binance**: exchange traffic can route through a SOCKS5 tunnel to a DigitalOcean droplet so Binance sees a whitelistable egress IP. Enable with env `CCBT_SOCKS_PROXY=socks5h://127.0.0.1:1080` (read in `bot/exchange.py` + `bot/shared_exchange_pool.py`); `deploy/macos/start.sh` runs `deploy/do-proxy/check-proxy.sh` pre-flight and refuses to start on IP mismatch. Setup + ops: [deploy/do-proxy/README.md](deploy/do-proxy/README.md). Binance API is IPv4-only, so egress can't leak over IPv6.
 - Deployment profiles (testnet → real-test → real-safe → real-grow → real-full): [docs/portfolio.md](docs/portfolio.md)
 
 ## API Testing

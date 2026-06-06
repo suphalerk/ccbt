@@ -9,3 +9,4 @@ anthropic>=0.40.0
 streamlit>=1.30.0
 plotly>=5.18.0
 oandapyV20>=0.7.2
+PySocks>=1.7.1
