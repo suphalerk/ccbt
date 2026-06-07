@@ -12,15 +12,52 @@ Run: uvicorn api.main:app --reload --port 8502
 """
 from __future__ import annotations
 
+import asyncio
+import datetime
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import AsyncIterator, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routers import control, metrics, portfolio
 
 REPO = Path(__file__).resolve().parent.parent
+
+# ---------------------------------------------------------------------------
+# App lifespan — starts the change-detector background task
+# ---------------------------------------------------------------------------
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # type: ignore[type-arg]
+    """Start the ChangeDetector background task on startup; clean up on shutdown."""
+    from api.ws import create_detector, snapshot_registry, log_registry
+
+    data_dir = os.getenv("BOT_DATA_DIR", str(REPO / "data"))
+    db_path_env = os.getenv("BOT_DATA_DIR", "")
+    if db_path_env and Path(db_path_env, "trades.db").exists():
+        db_path = str(Path(db_path_env) / "trades.db")
+    else:
+        db_path = str(REPO / "trades.db")
+
+    log_path = str(REPO / "trading_bot.log")
+
+    detector = create_detector(db_path=db_path, data_dir=data_dir, log_path=log_path)
+    task = asyncio.create_task(detector.run_forever())
+
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        detector.close()
+
 
 app = FastAPI(
     title="CCBT Dashboard API",
@@ -29,6 +66,7 @@ app = FastAPI(
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/openapi.json",
+    lifespan=lifespan,
 )
 
 # ---------------------------------------------------------------------------
@@ -71,27 +109,91 @@ async def health() -> HealthResponse:
 
 
 # ---------------------------------------------------------------------------
-# WebSocket stubs (N2 fills these in; declared here so openapi.json has the
-# paths listed and frontend TS generation can proceed)
+# WebSocket: /ws — low-frequency portfolio + bots snapshot channel
 # ---------------------------------------------------------------------------
-from fastapi import WebSocket  # noqa: E402
-from fastapi.responses import JSONResponse  # noqa: E402
+
+from api.ws import snapshot_registry  # noqa: E402
 
 
 @app.websocket("/ws")
 async def ws_snapshots(websocket: WebSocket) -> None:
-    """Low-frequency snapshot channel (portfolio + bots, every ~3s). N2."""
+    """Low-frequency snapshot channel (portfolio + bots, every ~3s). N2.
+
+    Protocol:
+    - On connect: client is registered; ChangeDetector broadcasts an initial
+      snapshot within the next tick (≤ poll_interval seconds).
+    - On change: exactly one snapshot broadcast per tick (coalesced).
+    - Envelope: {type: 'snapshot'|'heartbeat', ts: ISO8601, data: {...}}
+    - Client auto-reconnects with backoff (N3 hook).
+    """
     await websocket.accept()
-    await websocket.send_json({"type": "heartbeat", "message": "N2 not yet implemented"})
-    await websocket.close()
+    snapshot_registry.add(websocket)
+
+    # Send an immediate initial snapshot so the UI doesn't wait for the first tick
+    from api.ws import _detector
+    if _detector is not None:
+        try:
+            snap = _detector._build_snapshot()
+            await websocket.send_json(snap)
+        except Exception:
+            pass
+    else:
+        # Fallback before detector is initialised (e.g. TestClient without lifespan)
+        ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        await websocket.send_json({"type": "snapshot", "ts": ts, "data": {}})
+
+    try:
+        # Keep the connection open; receive loop (handles pings and close frames)
+        while True:
+            data = await websocket.receive_text()
+            # Echo heartbeats; ignore other client messages
+            if data == "ping":
+                await websocket.send_json(
+                    {
+                        "type": "heartbeat",
+                        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        "data": {},
+                    }
+                )
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        snapshot_registry.remove(websocket)
+
+
+# ---------------------------------------------------------------------------
+# WebSocket: /ws/logs — high-frequency log-tail channel (N7)
+# ---------------------------------------------------------------------------
+
+from api.ws import log_registry as _log_registry  # noqa: E402
 
 
 @app.websocket("/ws/logs")
 async def ws_logs(websocket: WebSocket) -> None:
-    """High-frequency log tail channel. N7."""
+    """High-frequency log tail channel (separate from /ws — backpressure isolated). N7.
+
+    Slow log consumers cannot stall /ws snapshot delivery because each channel
+    uses its own ConnectionRegistry.  N7 wires up the actual log-tail producer.
+    """
     await websocket.accept()
-    await websocket.send_json({"type": "heartbeat", "message": "N7 not yet implemented"})
-    await websocket.close()
+    _log_registry.add(websocket)
+
+    ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    await websocket.send_json(
+        {
+            "type": "log",
+            "ts": ts,
+            "data": {"lines": [], "message": "Log streaming ready (N7 fills lines)"},
+        }
+    )
+
+    try:
+        while True:
+            await websocket.receive_text()
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        _log_registry.remove(websocket)
 
 
 # ---------------------------------------------------------------------------
