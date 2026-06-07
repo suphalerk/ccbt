@@ -166,7 +166,16 @@ async def list_bots(db: str = Depends(get_db_path)) -> BotListResponse:
     if not per_bot.empty:
         for _, row in per_bot.iterrows():
             symbol = str(row.get("symbol") or "")
-            h = health_map.get(symbol, {})
+            # h is a pandas Series when present, else None. NEVER use `if h` on a
+            # Series (ambiguous truth value) — gate on membership instead.
+            h = health_map.get(symbol)
+            has_h = h is not None
+
+            def _hstr(key: str) -> Optional[str]:
+                if not has_h:
+                    return None
+                val = h.get(key)
+                return (str(val) if val is not None else "") or None
 
             # win_rate from per_bot summary (stored as 0-100 pct column 'win_rate')
             wr = _safe_float(row.get("win_rate"), 0.0)
@@ -175,18 +184,18 @@ async def list_bots(db: str = Depends(get_db_path)) -> BotListResponse:
 
             bots.append(BotRow(
                 symbol=symbol,
-                strategy=str(h.get("strategy") or "") or None if h else None,
+                strategy=_hstr("strategy"),
                 timeframe=None,  # not in per_bot summary
-                status=str(h.get("status") or "") or None if h else None,
-                position_side=str(h.get("position_side") or "") or None if h else None,
-                position_size=_safe_float(h.get("position_size") if h else None),
+                status=_hstr("status"),
+                position_side=_hstr("position_side"),
+                position_size=_safe_float(h.get("position_size")) if has_h else None,
                 unrealized_pnl=None,
                 total_pnl=round(_safe_float_required(row.get("total_pnl")), 2),
                 win_rate_pct=round(wr, 1),
                 profit_factor=_safe_float_required(row.get("profit_factor")),
                 trade_count=_safe_int(row.get("trades")),
                 last_updated=str(row.get("last_trade")) if row.get("last_trade") is not None else None,
-                mode=str(h.get("mode") or "") or None if h else None,
+                mode=_hstr("mode"),
             ))
 
     return BotListResponse(bots=bots)
