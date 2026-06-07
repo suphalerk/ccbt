@@ -28,6 +28,8 @@ export type ModeResponse = components['schemas']['ModeResponse']
 export type BulkModeRequest = components['schemas']['BulkModeRequest']
 export type BulkModeResponse = components['schemas']['BulkModeResponse']
 export type HealthResponse = components['schemas']['HealthResponse']
+export type CandleBar = components['schemas']['CandleBar']
+export type CandlesResponse = components['schemas']['CandlesResponse']
 
 // ---- operations (unused as types, but confirms codegen is present) ---------
 export type _ops = operations  // type-checks that codegen produced operations
@@ -118,4 +120,7 @@ export const api = {
 
   setBulkMode: (body: BulkModeRequest, token?: string | null) =>
     post<BulkModeResponse>('/api/bots/mode/bulk', body, token),
+
+  candles: (params?: { symbol?: string | null; timeframe?: string | null; limit?: number }) =>
+    get<CandlesResponse>('/api/candles', params as Record<string, string | number>),
 }

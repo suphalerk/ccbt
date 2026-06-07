@@ -22,7 +22,7 @@ from typing import AsyncIterator, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import control, metrics, portfolio
+from api.routers import candles, control, metrics, portfolio
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -91,6 +91,7 @@ app.add_middleware(
 app.include_router(portfolio.router)
 app.include_router(metrics.router)
 app.include_router(control.router)
+app.include_router(candles.router)
 
 # ---------------------------------------------------------------------------
 # Health check

@@ -629,7 +629,7 @@
           "control"
         ],
         "summary": "Set Bot Mode",
-        "description": "Set mode for a single bot (NORMAL | GRACEFUL_STOP | TP_ONLY | PANIC).",
+        "description": "Set mode for a single bot (NORMAL | GRACEFUL_STOP | TP_ONLY | PANIC).\n\nArgs:\n    symbol: sym_clean'd symbol in the URL path (e.g. BTCUSDT).\n    body: ModeRequest with ``mode`` field and optional ``confirm_panic``.\n\nReturns:\n    ModeResponse indicating acceptance and the resulting mode.\n\nRaises:\n    HTTPException 400: Symbol not in roster or invalid format.\n    HTTPException 422: Unknown mode string.\n    HTTPException 401: Missing or wrong X-Dash-Token.",
         "operationId": "set_bot_mode_api_bots__symbol__mode_post",
         "parameters": [
           {
@@ -698,7 +698,7 @@
           "control"
         ],
         "summary": "Set Bulk Mode",
-        "description": "Set mode for multiple bots in one request.",
+        "description": "Set mode for multiple (or all) roster bots in one request.\n\nIf ``symbols`` is empty, the mode is applied to every bot in the roster.\n\nPANIC debounce: a 2nd bulk PANIC within ``CCBT_PANIC_DEBOUNCE_S`` seconds\nreturns 429 to prevent accidental double-clicks from closing everything twice.\n\nArgs:\n    body: BulkModeRequest with ``symbols`` list (empty = all) and ``mode``.\n\nReturns:\n    BulkModeResponse with per-symbol ModeResponse entries.\n\nRaises:\n    HTTPException 422: Unknown mode string.\n    HTTPException 429: Rapid duplicate bulk PANIC.\n    HTTPException 401: Missing or wrong X-Dash-Token.",
         "operationId": "set_bulk_mode_api_bots_mode_bulk_post",
         "parameters": [
           {
@@ -735,6 +735,84 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BulkModeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/candles": {
+      "get": {
+        "tags": [
+          "candles"
+        ],
+        "summary": "Get Candles",
+        "description": "Persisted OHLCV candles + indicators for a symbol.\n\nReturns {available: false} when no candles are persisted.\nThe bot writes to bot_ohlcv whenever it fetches OHLCV from the exchange.\nThe dashboard NEVER calls the exchange directly.",
+        "operationId": "get_candles_api_candles_get",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Symbol"
+            }
+          },
+          {
+            "name": "timeframe",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Timeframe"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandlesResponse"
                 }
               }
             }
@@ -1110,6 +1188,127 @@
         ],
         "title": "CalendarResponse",
         "description": "GET /api/calendar?symbol=&year=&month="
+      },
+      "CandleBar": {
+        "properties": {
+          "ts": {
+            "type": "integer",
+            "title": "Ts"
+          },
+          "open": {
+            "type": "number",
+            "title": "Open"
+          },
+          "high": {
+            "type": "number",
+            "title": "High"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close"
+          },
+          "volume": {
+            "type": "number",
+            "title": "Volume"
+          },
+          "ema9": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ema9"
+          },
+          "ema21": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ema21"
+          },
+          "rsi14": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rsi14"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume",
+          "ema9",
+          "ema21",
+          "rsi14"
+        ],
+        "title": "CandleBar",
+        "description": "One OHLCV candle with indicator snapshots."
+      },
+      "CandlesResponse": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "timeframe": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeframe"
+          },
+          "candles": {
+            "items": {
+              "$ref": "#/components/schemas/CandleBar"
+            },
+            "type": "array",
+            "title": "Candles",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "available",
+          "symbol",
+          "timeframe"
+        ],
+        "title": "CandlesResponse",
+        "description": "GET /api/candles?symbol=&timeframe=&limit=\n\nWhen available=False the candles list is empty and the UI shows a fallback."
       },
       "CloseReasonItem": {
         "properties": {

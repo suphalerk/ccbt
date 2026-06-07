@@ -117,12 +117,57 @@ export interface paths {
      */
     get: operations["health_api_health_get"];
   };
+  "/api/candles": {
+    /**
+     * Get Candles
+     * @description Persisted OHLCV candles + indicators for a symbol.
+     */
+    get: operations["get_candles_api_candles_get"];
+  };
 }
 
 export type webhooks = Record<string, never>;
 
 export interface components {
   schemas: {
+    /**
+     * CandleBar
+     * @description One OHLCV candle with indicator snapshots.
+     */
+    CandleBar: {
+      /** Ts - unix epoch ms (open time) */
+      ts: number;
+      /** Open */
+      open: number;
+      /** High */
+      high: number;
+      /** Low */
+      low: number;
+      /** Close */
+      close: number;
+      /** Volume */
+      volume: number;
+      /** Ema9 */
+      ema9: number | null;
+      /** Ema21 */
+      ema21: number | null;
+      /** Rsi14 */
+      rsi14: number | null;
+    };
+    /**
+     * CandlesResponse
+     * @description GET /api/candles?symbol=&timeframe=&limit=
+     */
+    CandlesResponse: {
+      /** Available */
+      available: boolean;
+      /** Symbol */
+      symbol: string | null;
+      /** Timeframe */
+      timeframe: string | null;
+      /** Candles */
+      candles: components["schemas"]["CandleBar"][];
+    };
     /**
      * AICalibrationResponse
      * @description GET /api/ai/calibration
@@ -902,6 +947,33 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["HealthResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * Get Candles
+   * @description Persisted OHLCV candles + indicators for a symbol.
+   */
+  get_candles_api_candles_get: {
+    parameters: {
+      query?: {
+        symbol?: string | null;
+        timeframe?: string | null;
+        limit?: number;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CandlesResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
       };
     };

@@ -308,6 +308,37 @@ class BulkModeResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# N6 candles (persisted OHLCV from the bot — never fetched from the exchange)
+# ---------------------------------------------------------------------------
+
+
+class CandleBar(BaseModel):
+    """One OHLCV candle with indicator snapshots."""
+
+    ts: int                    # unix epoch ms (open time)
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+    ema9: Optional[float]
+    ema21: Optional[float]
+    rsi14: Optional[float]
+
+
+class CandlesResponse(BaseModel):
+    """GET /api/candles?symbol=&timeframe=&limit=
+
+    When available=False the candles list is empty and the UI shows a fallback.
+    """
+
+    available: bool
+    symbol: Optional[str]
+    timeframe: Optional[str]
+    candles: List[CandleBar] = []
+
+
+# ---------------------------------------------------------------------------
 # WebSocket envelopes (not covered by OpenAPI — defined here for TS codegen)
 # ---------------------------------------------------------------------------
 
