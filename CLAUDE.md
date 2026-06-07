@@ -44,7 +44,7 @@ dashboard/
 ├── app.py               → Streamlit web UI (multi-bot portfolio + single-bot drill-down) — current deployed UI
 ├── components.py        → Plotly chart components (per-bot PnL bar, portfolio table)
 └── queries.py           → SQLite query helpers (symbol-filtered) + log file reader — SHARED with the v2 API
-api/                     → [v2, branch dashboard-rewrite-impl, NOT merged] FastAPI + WS service; reuses dashboard/queries.py (single source of truth for all financial math), serves the Vite SPA. See docs/tickets/dashboard-rewrite/
+api/                     → [v2, MERGED — not yet cutover] FastAPI + WS service; reuses dashboard/queries.py (single source of truth for all financial math), serves the Vite SPA. See docs/tickets/dashboard-rewrite/
 web/                     → [v2] Vite + React + Tailwind SPA (builds to web/dist, served by FastAPI on one port)
 backtest/
 ├── engine.py            → Event-driven backtesting simulator (own signal dispatch — see strategy checklist)
@@ -220,7 +220,7 @@ BOT_DATA_DIR                 — Data directory (default: ./data in Docker, . lo
 - **All bots in a single process** via `main_multi.py` (shared ccxt exchange pool); ~59 active configs as of 2026-06-07 (roster lives in `deploy/macos/start.sh`)
 - **RAM**: ~340 MB total (vs ~25 GB if running each bot as a separate Docker container)
 - **Start/stop**: `bash scripts/start_all_bots.sh` / `bash scripts/start_all_bots.sh stop`
-- **Dashboard**: Streamlit local on port 8501 (`streamlit run dashboard/app.py`) — current deployed UI. A **v2 rewrite (Vite SPA + FastAPI + WebSocket)** lives on branch `dashboard-rewrite-impl` (NOT merged/cutover); run locally with `.venv-dash/bin/python -m uvicorn api.main:app --host 127.0.0.1 --port 8610` (serves API + SPA on one port). Plan/tickets/build-status: [docs/tickets/dashboard-rewrite/README.md](docs/tickets/dashboard-rewrite/README.md). Cutover is N13 (uses a distinct port `com.ccbt.dashboard-v2`; Streamlit stays until parity sign-off).
+- **Dashboard**: Streamlit local on port 8501 (`streamlit run dashboard/app.py`) — still the deployed/running UI. A **v2 rewrite (Vite SPA + FastAPI + WebSocket)** is now **MERGED to main but NOT yet cutover** (Streamlit keeps running). Run v2 locally: `.venv-dash/bin/python -m uvicorn api.main:app --host 127.0.0.1 --port 8610` (serves API + SPA on one port). Plan/tickets/build-status: [docs/tickets/dashboard-rewrite/README.md](docs/tickets/dashboard-rewrite/README.md). Cutover is N12/N13 (loads `com.ccbt.dashboard-v2` on a distinct port, soaks alongside Streamlit, retires Streamlit only after parity sign-off — the plist is written but NOT loaded).
 - **Per-bot mode control**: mode files in `data/mode_{symbol}.json` (read each loop tick)
 - **Exchange**: Binance testnet (set `use_testnet: false` in configs to go live)
 - Docker deployment still supported for VPS: `docker compose up -d --build`

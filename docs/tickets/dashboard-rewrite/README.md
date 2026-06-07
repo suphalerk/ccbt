@@ -6,7 +6,7 @@
 > (architect/frontend/trader/qa/devops) on 2026-06-07 — verdict **GO-with-changes**; all must-fixes
 > below are baked into the tickets.
 
-## 🏗️ Build status (2026-06-07, branch `dashboard-rewrite-impl`, NOT merged)
+## 🏗️ Build status (2026-06-07 — ✅ MERGED to main `claude/crypto-trading-bot-1xlt7` via `c89330a`; NOT yet cutover)
 - **Implemented**: all 13 tickets coded TDD + committed (N11 deferred). `api/` (FastAPI+WS) + `web/`
   (Vite SPA, builds to `web/dist`) created; `.venv-dash` on Homebrew python3.12; `dashboard/queries.py`
   shared by Streamlit + the API. **Live bot untouched** (0-byte diff to engine/strategy/risk/main_multi/
@@ -29,6 +29,9 @@
   `bot_ohlcv` candle producer (consumer ships `available=false` + chart hidden).
 - **Run locally**: `.venv-dash/bin/python -m uvicorn api.main:app --host 127.0.0.1 --port 8610` then open
   `http://127.0.0.1:8610/`.
+- **Merged 2026-06-07** (merge commit `c89330a`, 37 commits, 296 dashboard pytest + 163 web tests green,
+  live bot 0-byte diff). Cutover (N12/N13: load `com.ccbt.dashboard-v2`, soak, retire Streamlit) is still
+  pending and gated. Deferred engine items (N11, bot_ohlcv producer) still need explicit go-ahead.
 
 ## ⚖️ Honest cost note (architect lens — read before starting)
 This is a single-user, localhost-bound dashboard reading **242 closed trades** on a Mac Mini. The
