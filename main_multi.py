@@ -63,7 +63,7 @@ from dotenv import load_dotenv
 
 from bot.engine import TradingEngine
 from bot.logger import setup_logging
-from bot.shared_exchange_pool import get_shared_exchange
+from bot.shared_exchange_pool import SharedMarketData, get_shared_exchange
 
 
 # ---------------------------------------------------------------------------
@@ -283,6 +283,58 @@ def load_config(path: str) -> Optional[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Startup warm plan helper
+# ---------------------------------------------------------------------------
+
+def compute_warm_plan(configs: list[dict]) -> dict[tuple[str, str], int]:
+    """Compute the OHLCV warm limit for every unique (symbol, timeframe) group.
+
+    Each bot that references a ``(symbol, timeframe)`` pair contributes its
+    ``ema_trend`` to that group.  The warm limit for the group is::
+
+        max(100, max(ema_trend_i * 3) over bots in the group)
+
+    The floor of 100 ensures the cache always holds enough bars for the
+    default indicator warmup period.  The ``ema_trend * 3`` factor covers
+    the longest EMA used by any bot in the group so the first signal can be
+    computed without an extra fetch.
+
+    A bot contributes two timeframe keys: ``timeframe_signal`` and
+    ``timeframe_trend``.  When the two are identical the key is deduped
+    (appears only once, as expected from a ``dict``).
+
+    Args:
+        configs: List of valid bot config dicts (each must have at least
+            "symbol", "timeframe_signal", "timeframe_trend", "ema_trend").
+
+    Returns:
+        Dict mapping ``(symbol, timeframe_str)`` → warm limit (int).
+    """
+    # Map (symbol, tf) → max ema_trend seen across bots sharing that pair
+    group_max_ema: dict[tuple[str, str], int] = {}
+
+    for cfg in configs:
+        symbol: str = cfg.get("symbol", "")
+        tf_signal: str = cfg.get("timeframe_signal", "")
+        tf_trend: str = cfg.get("timeframe_trend", "")
+        ema_trend: int = int(cfg.get("ema_trend", 50))
+
+        # Update both timeframes for this bot (deduped by dict key)
+        for tf in (tf_signal, tf_trend):
+            if not symbol or not tf:
+                continue
+            key = (symbol, tf)
+            if key not in group_max_ema or ema_trend > group_max_ema[key]:
+                group_max_ema[key] = ema_trend
+
+    # Convert max ema_trend → warm limit
+    return {
+        key: max(100, ema_trend * 3)
+        for key, ema_trend in group_max_ema.items()
+    }
+
+
+# ---------------------------------------------------------------------------
 # Per-bot coroutine
 # ---------------------------------------------------------------------------
 
@@ -293,6 +345,7 @@ async def run_bot(
     portfolio_manager: Optional[PortfolioManager] = None,
     risk_override: Optional[float] = None,
     leverage_override: Optional[int] = None,
+    market_data: Optional[SharedMarketData] = None,
 ) -> None:
     """Run a single bot coroutine inside the shared event loop.
 
@@ -305,6 +358,10 @@ async def run_bot(
             bots (e.g. 0.01 for 1%).  Takes precedence over the config value.
         leverage_override: If set, overrides config's ``leverage`` for all
             bots.  Takes precedence over the config value.
+        market_data: Optional SharedMarketData instance.  When set and
+            CCBT_SHARED_MARKETDATA=='1', the engine's BybitClient will
+            early-return balance/OHLCV from the shared cache rather than
+            hitting the exchange on every tick.
     """
     config = load_config(config_path)
     if config is None:
@@ -326,6 +383,7 @@ async def run_bot(
             shutdown_event=shutdown_event,
             shared_exchange=shared_exchange,
             portfolio_manager=portfolio_manager,
+            market_data=market_data,
         )
         await engine.run()
     except Exception as e:
@@ -442,6 +500,58 @@ async def async_main(
         },
     )
 
+    # -----------------------------------------------------------------------
+    # T4: Startup warm + stagger (flag-guarded).
+    # When CCBT_SHARED_MARKETDATA == '1': build one SharedMarketData, warm
+    # balance once and warm OHLCV for every unique (symbol, tf) group at the
+    # correct limit, then stagger task launches ~200 ms apart to spread the
+    # initial load across the exchange rate limiter.
+    #
+    # When flag is off: no warm, no stagger — byte-for-byte today's behaviour.
+    # -----------------------------------------------------------------------
+    shared_market_data: Optional[SharedMarketData] = None
+    _flag = os.environ.get("CCBT_SHARED_MARKETDATA")
+
+    if _flag == "1":
+        # Load all configs up-front so we can compute the warm plan
+        valid_configs: list[dict] = []
+        for path in config_files:
+            cfg = load_config(path)
+            if cfg is not None:
+                valid_configs.append(cfg)
+
+        shared_market_data = SharedMarketData(exchange=shared_exchange)
+
+        # --- Warm balance once ---
+        logger.info("startup_warm_balance_start")
+        try:
+            shared_market_data.get_balance(fresh=True)
+            logger.info("startup_warm_balance_done")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("startup_warm_balance_failed", extra={"error": str(exc)})
+
+        # --- Warm OHLCV per (symbol, tf) group ---
+        warm_plan = compute_warm_plan(valid_configs)
+        logger.info(
+            "startup_warm_ohlcv_start",
+            extra={"pairs": len(warm_plan)},
+        )
+        for (sym, tf), limit in warm_plan.items():
+            # Normalise symbol: BTCUSDT → BTC/USDT:USDT (same as BybitClient does)
+            base = sym.replace("USDT", "").replace("/", "").replace(":USDT", "")
+            ccxt_symbol = f"{base}/USDT:USDT"
+            try:
+                shared_market_data.get_ohlcv(ccxt_symbol, tf, limit=limit, fresh=True)
+                logger.info(
+                    "startup_warm_ohlcv_done",
+                    extra={"symbol": ccxt_symbol, "tf": tf, "limit": limit},
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "startup_warm_ohlcv_failed",
+                    extra={"symbol": ccxt_symbol, "tf": tf, "error": str(exc)},
+                )
+
     # Register signal handlers now that we have the event loop
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -453,9 +563,13 @@ async def async_main(
             ),
         )
 
-    # Launch all bots as concurrent tasks
-    tasks = [
-        asyncio.create_task(
+    # Launch all bots as concurrent tasks.
+    # Flag ON:  stagger launches ~200 ms apart to spread initial load.
+    # Flag OFF: all tasks created immediately (today's behaviour).
+    _STAGGER_S = 0.2  # seconds between task launches when flag is on
+    tasks = []
+    for cfg in config_files:
+        task = asyncio.create_task(
             run_bot(
                 cfg,
                 shared_exchange,
@@ -463,11 +577,13 @@ async def async_main(
                 portfolio_manager=portfolio_manager,
                 risk_override=risk_override,
                 leverage_override=leverage_override,
+                market_data=shared_market_data,
             ),
             name=f"bot-{Path(cfg).stem}",
         )
-        for cfg in config_files
-    ]
+        tasks.append(task)
+        if _flag == "1":
+            await asyncio.sleep(_STAGGER_S)
 
     # Launch Telegram command handler alongside bots
     from bot.telegram_commands import run_telegram_handler

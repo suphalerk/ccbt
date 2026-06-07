@@ -42,6 +42,12 @@ echo "  Working: $PROJECT_DIR"
 # override or unset it. bot/exchange.py + bot/shared_exchange_pool.py read this.
 export CCBT_SOCKS_PROXY="${CCBT_SOCKS_PROXY:-socks5h://127.0.0.1:1080}"
 
+# Enable shared market-data cache: balance (30s TTL) + OHLCV (candle-boundary)
+# shared across all bots.  Cuts API fan-out from ~600 calls/tick to ~50.
+# See docs/plans/shared-market-data-refactor.md and bot/shared_exchange_pool.py.
+# Default is OFF in code — this is the canonical place to enable it for production.
+export CCBT_SHARED_MARKETDATA=1
+
 # Pre-flight: refuse to start unless the proxy egresses the whitelisted IP.
 # launchd (SuccessfulExit=false) will retry every ThrottleInterval until the
 # tunnel is healthy — never trade with the wrong outbound IP.

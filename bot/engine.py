@@ -381,11 +381,13 @@ class TradingEngine:
         shutdown_event: asyncio.Event,
         shared_exchange=None,
         portfolio_manager=None,
+        market_data=None,
     ) -> None:
         self._config = config
         self._shutdown_event = shutdown_event
         self._shared_exchange = shared_exchange
         self._portfolio_manager = portfolio_manager  # Optional global position limit
+        self._market_data = market_data  # Optional SharedMarketData (T4)
 
         # Components (constructed in run() after initial balance fetch)
         self._client: Optional[BybitClient] = None
@@ -418,7 +420,11 @@ class TradingEngine:
         config = self._config
 
         # --- Build components ---
-        self._client = BybitClient(config, shared_exchange=self._shared_exchange)
+        self._client = BybitClient(
+            config,
+            shared_exchange=self._shared_exchange,
+            market_data=self._market_data,
+        )
         self._balance = self._client.get_balance()
         self._risk_mgr = RiskManager(config, self._balance)
         self._journal = TradeJournal()
