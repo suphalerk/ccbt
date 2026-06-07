@@ -81,6 +81,9 @@ pytest tests/ -v
 # Check for timeframe drift (strategy on a TF it wasn't validated on)
 python scripts/check_config_timeframes.py --deployed-only
 
+# Track the 4H forward-test cohort (candidates accumulating live trades → 15)
+python research/forward_test_report.py
+
 # Single bot (legacy)
 python main.py --config config.json
 YOLO_MODE=1 python main.py --config config_yolo.json

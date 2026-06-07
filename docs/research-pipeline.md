@@ -21,6 +21,17 @@ python3 research/auto_research.py --generate-configs --input data/sweep_results.
 python3 research/portfolio_backtest_v2.py
 ```
 
+## 4H Forward-Test Cohort
+Strategies that show an edge in backtest but have **< 15 trades** can't be deployed (audit gate), and backtest data can't produce more trades — they must accumulate live. The forward-test cohort runs such candidates on testnet to gather ≥ 15 attributable trades, then re-audits.
+
+- **Manifest**: `research/forward_test_cohort.json` — each candidate's coin, strategy, tf, backtest baseline (PF/trades), status (`testing` / `blocked_slot`).
+- **Clean attribution**: candidates must have a **FREE symbol** (not traded by any main bot) so their per-symbol `trades.db` rows are wholly theirs. A symbol already in `AUDITED_CONFIGS` is `blocked_slot` (duplicate-coin gate would prevent it trading) — free the slot first.
+- **Deploy**: `FORWARD_TEST_CONFIGS` in `deploy/macos/start.sh` (separate from `AUDITED_CONFIGS`, same process so the PortfolioManager coordinates).
+- **Track**: `python research/forward_test_report.py` → per candidate: live trades since added, live PF/WR, and a verdict (`KEEP_TESTING` < 15 tr / `READY_TO_AUDIT` ≥ 15 & PF ≥ 1.3 / `MARGINAL` / `DROP` PF < 1).
+- **Graduate**: when `READY_TO_AUDIT`, run the full backtest audit on the now-larger sample before promoting into `AUDITED_CONFIGS`.
+
+First cohort (2026-06-07, AO 4H from the timeframe audit): ZEN, DASH, ALICE, TON, PENGU (testing); AXS, PIXEL, SAND, ENJ (blocked_slot — symbol busy in main).
+
 ## Research Methodology (`/research`)
 
 Iterative optimization loop proven to improve strategy from 10%/yr to 523%/yr:

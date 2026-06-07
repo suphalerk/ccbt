@@ -1,0 +1,89 @@
+{
+  "_doc": "4H forward-test cohort: AO candidates with a 4H edge but <15 backtest trades. Run live (testnet) to accumulate >=15 attributable trades, then re-audit. FREE symbols (not in main start.sh) give clean per-symbol DB attribution and are deployed; BLOCKED symbols already trade another strategy in main (duplicate-coin gate) so their slot must be freed before forward-testing. Track with research/forward_test_report.py.",
+  "min_trades": 15,
+  "graduate_pf": 1.3,
+  "added": "2026-06-07",
+  "candidates": [
+    {
+      "coin": "ZENUSDT",
+      "strategy": "awesome_oscillator",
+      "tf": "4h",
+      "config": "config_zenusdt_awesome4h.json",
+      "backtest_pf": 2.51,
+      "backtest_trades": 5,
+      "status": "testing"
+    },
+    {
+      "coin": "DASHUSDT",
+      "strategy": "awesome_oscillator",
+      "tf": "4h",
+      "config": "config_dashusdt_awesome4h.json",
+      "backtest_pf": 1.18,
+      "backtest_trades": 11,
+      "status": "testing"
+    },
+    {
+      "coin": "ALICEUSDT",
+      "strategy": "awesome_oscillator",
+      "tf": "4h",
+      "config": "config_aliceusdt_awesome4h.json",
+      "backtest_pf": 2.87,
+      "backtest_trades": 10,
+      "status": "testing"
+    },
+    {
+      "coin": "TONUSDT",
+      "strategy": "awesome_oscillator",
+      "tf": "4h",
+      "config": "config_tonusdt_awesome4h.json",
+      "backtest_pf": 3.14,
+      "backtest_trades": 11,
+      "status": "testing"
+    },
+    {
+      "coin": "PENGUUSDT",
+      "strategy": "awesome_oscillator",
+      "tf": "4h",
+      "config": "config_penguusdt_awesome4h.json",
+      "backtest_pf": 4.0,
+      "backtest_trades": 7,
+      "status": "testing"
+    },
+    {
+      "coin": "AXSUSDT",
+      "strategy": "awesome_oscillator",
+      "tf": "4h",
+      "config": "config_axsusdt_awesome4h.json",
+      "backtest_pf": 1.57,
+      "backtest_trades": 15,
+      "status": "blocked_slot"
+    },
+    {
+      "coin": "PIXELUSDT",
+      "strategy": "awesome_oscillator",
+      "tf": "4h",
+      "config": "config_pixelusdt_awesome4h.json",
+      "backtest_pf": 2.22,
+      "backtest_trades": 12,
+      "status": "blocked_slot"
+    },
+    {
+      "coin": "SANDUSDT",
+      "strategy": "awesome_oscillator",
+      "tf": "4h",
+      "config": "config_sandusdt_awesome4h.json",
+      "backtest_pf": 1.41,
+      "backtest_trades": 10,
+      "status": "blocked_slot"
+    },
+    {
+      "coin": "ENJUSDT",
+      "strategy": "awesome_oscillator",
+      "tf": "4h",
+      "config": "config_enjusdt_awesome4h.json",
+      "backtest_pf": 1.95,
+      "backtest_trades": 12,
+      "status": "blocked_slot"
+    }
+  ]
+}
