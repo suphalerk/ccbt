@@ -315,6 +315,47 @@ def _apply_ai_adjustments(
 
 
 # ---------------------------------------------------------------------------
+# T3: Positions-fetch gate helper
+# ---------------------------------------------------------------------------
+
+def _should_skip_positions_fetch(
+    tracked_trades: dict,
+    portfolio_manager,
+    flag: Optional[str],
+) -> bool:
+    """Return True iff the routine positions fetch at the top of the trading
+    loop can be safely skipped.
+
+    Gate is active ONLY when ``CCBT_SHARED_MARKETDATA == '1'`` (flag == '1').
+    When the gate is inactive the function always returns False so the caller
+    performs an unconditional ``get_positions()`` — byte-for-byte today.
+
+    Gate logic (flag ON):
+    - A bot WITH any tracked trade ALWAYS fetches  (return False).
+    - A bot with NO tracked trades AND global cap full → skip (return True).
+    - A bot with NO tracked trades AND cap not full → fetch (return False).
+    - portfolio_manager is None (single-bot / main.py) → always fetch.
+    """
+    if flag != "1":
+        # Flag OFF: unconditional fetch (parity with pre-T3 behaviour).
+        return False
+
+    # Evaluate cheapest predicate first: does this bot hold any tracked trade?
+    if tracked_trades:
+        # Holder always fetches — needed for SL/TP/monitor paths.
+        return False
+
+    # No tracked trade.  If there is no portfolio manager there is no global
+    # cap concept → fetch anyway (single-bot path is unaffected).
+    if portfolio_manager is None:
+        return False
+
+    # Skip iff the global cap is already full; otherwise fetch so the bot can
+    # attempt to open a position.
+    return portfolio_manager.open_count >= portfolio_manager.max_positions
+
+
+# ---------------------------------------------------------------------------
 # TradingEngine class
 # ---------------------------------------------------------------------------
 
@@ -560,7 +601,17 @@ class TradingEngine:
                     continue
 
                 # Get current positions
-                positions = self._client.get_positions()
+                # T3: flag-guarded gate — skip per-symbol API call when this
+                # bot has no tracked trades and the global cap is already full
+                # (a no-trade bot can't act anyway).  Holders ALWAYS fetch.
+                if _should_skip_positions_fetch(
+                    tracked_trades=self._tracked_trades,
+                    portfolio_manager=self._portfolio_manager,
+                    flag=os.environ.get("CCBT_SHARED_MARKETDATA"),
+                ):
+                    positions = []
+                else:
+                    positions = self._client.get_positions()
                 num_positions = len(positions)
 
                 # Check for positions closed by exchange (SL/TP fills)
