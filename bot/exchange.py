@@ -70,7 +70,7 @@ class BybitClient:
     # Binance futures testnet base URL
     _BINANCE_TESTNET_BASE = "https://testnet.binancefuture.com"
 
-    def __init__(self, config: dict, shared_exchange=None) -> None:
+    def __init__(self, config: dict, shared_exchange=None, market_data=None) -> None:
         """Initialize the exchange client.
 
         Args:
@@ -83,10 +83,15 @@ class BybitClient:
                 and several seconds per bot in multi-bot mode.
                 Use bot.shared_exchange_pool.get_shared_exchange() to obtain
                 a suitable instance.
+            market_data: Optional SharedMarketData instance.  When set AND
+                env CCBT_SHARED_MARKETDATA=='1', get_balance() and get_ohlcv()
+                early-return from the cache before _retry/_rate_limit.
+                get_positions() is always fetched fresh per-symbol regardless.
         """
         self.config = config
         self._last_request_time = 0.0
         self._exchange_name = config.get("exchange", "bybit").lower()
+        self._market_data = market_data
 
         if shared_exchange is not None:
             # Fast path: reuse caller-supplied exchange (already has markets loaded).
@@ -227,6 +232,11 @@ class BybitClient:
                 extra={"exchange": "binance", "mode": "LIVE", "warning": "REAL MONEY MODE"},
             )
 
+    @staticmethod
+    def _shared_marketdata_enabled() -> bool:
+        """Return True iff CCBT_SHARED_MARKETDATA environment variable is '1'."""
+        return os.getenv("CCBT_SHARED_MARKETDATA", "") == "1"
+
     def _rate_limit(self) -> None:
         """Enforce rate limiting between API calls."""
         elapsed = time.time() - self._last_request_time
@@ -282,12 +292,28 @@ class BybitClient:
                 raise
         raise last_error  # type: ignore[misc]
 
-    def get_balance(self) -> float:
+    def get_balance(self, fresh: bool = False) -> float:
         """Get USDT wallet balance.
+
+        When CCBT_SHARED_MARKETDATA='1' and a SharedMarketData instance was
+        supplied at construction time, this method returns the cached balance
+        as the very first action — before _retry or _rate_limit — and does NOT
+        advance _last_request_time.  Pass fresh=True to force a live fetch
+        through the cache's write-through path.
+
+        When the flag is off or market_data is None: behaviour is identical to
+        the original implementation (calls _retry → exchange.fetch_balance).
+
+        Args:
+            fresh: Bypass cache TTL and re-fetch from the exchange.
 
         Returns:
             Available USDT balance.
         """
+        # Early-return from shared cache when flag is on and market_data is wired.
+        if self._market_data is not None and self._shared_marketdata_enabled():
+            return self._market_data.get_balance(fresh=fresh)
+
         balance = self._retry(self.exchange.fetch_balance)
         usdt = balance.get("USDT", {})
         free = usdt.get("free", None)
@@ -296,18 +322,34 @@ class BybitClient:
         return float(free)
 
     def get_ohlcv(
-        self, symbol: str, timeframe: str, limit: int = 100
+        self, symbol: str, timeframe: str, limit: int = 100, fresh: bool = False
     ) -> pd.DataFrame:
         """Fetch OHLCV candlestick data.
+
+        When CCBT_SHARED_MARKETDATA='1' and a SharedMarketData instance was
+        supplied at construction time, this method returns the cached frame
+        as the very first action — before _retry or _rate_limit — and does NOT
+        advance _last_request_time.  Pass fresh=True to force a live fetch
+        through the cache's write-through path.
+
+        When the flag is off or market_data is None: behaviour is identical to
+        the original implementation (calls _retry → exchange.fetch_ohlcv).
 
         Args:
             symbol: Trading pair symbol (e.g., 'BTCUSDT').
             timeframe: Candle timeframe (e.g., '15m', '1h').
             limit: Number of candles to fetch.
+            fresh: Bypass cache and re-fetch from the exchange.
 
         Returns:
-            DataFrame with columns: timestamp, open, high, low, close, volume.
+            DataFrame with columns: open, high, low, close, volume (DatetimeIndex).
         """
+        # Early-return from shared cache when flag is on and market_data is wired.
+        if self._market_data is not None and self._shared_marketdata_enabled():
+            return self._market_data.get_ohlcv(
+                self.symbol, timeframe, limit=limit, fresh=fresh
+            )
+
         ohlcv = self._retry(
             self.exchange.fetch_ohlcv, symbol, timeframe, limit=limit
         )
