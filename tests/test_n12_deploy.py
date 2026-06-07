@@ -395,3 +395,169 @@ class TestFastAPIServesBundle:
         assert "text/html" in resp.headers.get("content-type", ""), (
             f"Expected HTML at /, got content-type={resp.headers.get('content-type')!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Deployment topology tests — verify the nginx /v2 + root-asset topology is
+# correct so that the SPA loads in production (blank-page regression guard).
+#
+# Root cause: the Vite bundle emits root-absolute asset URLs (/assets/...,
+# /favicon.svg) not prefixed with /v2.  The browser fetches them directly at
+# root, bypassing the /v2 location.  Without explicit /assets/ + /favicon.svg
+# location blocks in nginx the assets 404 and the SPA loads a blank page.
+# ---------------------------------------------------------------------------
+
+class TestNginxDeploymentTopology:
+    """nginx /v2 + root-asset topology must be correct to prevent blank SPA."""
+
+    def test_assets_location_exists(self) -> None:
+        """nginx must have a root-level /assets/ location block.
+
+        The Vite bundle emits <script src="/assets/index-HASH.js"> with a
+        root-absolute path.  The browser fetches /assets/... directly — NOT
+        /v2/assets/... — so the /v2 location block (with its /v2 prefix rewrite)
+        never handles these requests.  A root /assets/ location is required.
+        """
+        txt = _nginx_text()
+        assert re.search(r"location\s+/assets/", txt), (
+            "deploy/nginx-ws-v2.conf must have a 'location /assets/' block.\n"
+            "The Vite bundle uses root-absolute asset URLs (/assets/...) so the\n"
+            "browser fetches them at root, not at /v2/assets/.  Without this\n"
+            "location block assets 404 and the SPA shows a blank page."
+        )
+
+    def test_favicon_location_exists(self) -> None:
+        """nginx must have a root-level location for /favicon.svg.
+
+        Vite's default config emits <link rel='icon' href='/favicon.svg'> —
+        a root-absolute path that the browser fetches at root, not /v2/favicon.svg.
+        """
+        txt = _nginx_text()
+        assert re.search(r"location\s+=\s*/favicon\.svg", txt) or re.search(r"location\s+/favicon", txt), (
+            "deploy/nginx-ws-v2.conf must have a root-level location for /favicon.svg.\n"
+            "Vite emits href='/favicon.svg' (root-relative) in index.html — the\n"
+            "browser fetches it at root, not /v2/favicon.svg."
+        )
+
+    def test_icons_location_exists(self) -> None:
+        """nginx must have a root-level location for /icons.svg."""
+        txt = _nginx_text()
+        assert re.search(r"location\s+=\s*/icons\.svg", txt) or re.search(r"location\s+/icons", txt), (
+            "deploy/nginx-ws-v2.conf must have a root-level location for /icons.svg."
+        )
+
+    def test_assets_location_proxies_to_v2_backend(self) -> None:
+        """The /assets/ location must proxy to the same v2 backend (port 8601).
+
+        If /assets/ is not proxied to ccbt_v2_backend the JS bundle request
+        returns 404 (or the wrong server) and the SPA never loads.
+        """
+        txt = _nginx_text()
+
+        # Extract only the /assets/ location block text
+        assets_block = _extract_location_block(txt, r"location\s+/assets/")
+        assert assets_block, (
+            "Could not locate 'location /assets/' block — add it to nginx-ws-v2.conf"
+        )
+        assert "ccbt_v2_backend" in assets_block or "8601" in assets_block, (
+            "/assets/ location must proxy_pass to ccbt_v2_backend (port 8601)."
+        )
+
+    def test_assets_location_has_auth_basic(self) -> None:
+        """The root /assets/ location must carry auth_basic (same gate as /v2).
+
+        Without auth_basic on /assets/ an unauthenticated client can fetch the
+        entire JS bundle by requesting /assets/index-HASH.js directly, bypassing
+        the /v2 password gate.
+        """
+        txt = _nginx_text()
+        assets_block = _extract_location_block(txt, r"location\s+/assets/")
+        assert assets_block, "Could not locate 'location /assets/' block"
+        assert "auth_basic" in assets_block, (
+            "/assets/ location must include 'auth_basic' — otherwise the Vite\n"
+            "JS bundle is publicly accessible at /assets/index-HASH.js regardless\n"
+            "of the /v2 basic-auth gate."
+        )
+
+    def test_v2_rewrite_strips_prefix(self) -> None:
+        """The /v2 location must strip the /v2 prefix via rewrite before proxying.
+
+        Without the prefix strip, FastAPI sees /v2/ instead of / and the
+        spa_catch_all handler cannot match the path to web/dist/index.html.
+        """
+        txt = _nginx_text()
+        v2_block = _extract_location_block(txt, r"location\s+/v2\b")
+        assert v2_block, "Could not locate 'location /v2' block"
+        # Must have a rewrite rule that strips /v2
+        has_rewrite = bool(
+            re.search(r"rewrite\s+\^/v2", v2_block)
+        )
+        assert has_rewrite, (
+            "/v2 location must rewrite the /v2 prefix away before proxying.\n"
+            "FastAPI's spa_catch_all serves paths relative to web/dist/ with no\n"
+            "prefix, so nginx must strip /v2 before forwarding."
+        )
+
+    def test_fastapi_serves_assets_at_root_no_prefix(self) -> None:
+        """FastAPI must serve /assets/<bundle>.js at the root path (no /v2 prefix).
+
+        This is the server-side counterpart to the nginx topology test: FastAPI's
+        spa_catch_all must handle GET /assets/index-HASH.js → 200 JS.  The nginx
+        /assets/ location strips nothing (no rewrite) — it proxies the exact path,
+        so FastAPI must serve /assets/... from web/dist/assets/ directly.
+
+        This test exercises the REAL web/dist bundle filename.
+        """
+        from fastapi.testclient import TestClient
+        import sys
+        sys.path.insert(0, str(REPO))
+        from api.main import app
+
+        assets_dir = REPO / "web" / "dist" / "assets"
+        if not assets_dir.exists():
+            pytest.skip("web/dist/assets not built — run: npm --prefix web run build")
+
+        # Find actual main JS file
+        main_js = None
+        for f in sorted(assets_dir.iterdir()):
+            if f.name.startswith("index-") and f.suffix == ".js" and ".map" not in f.name:
+                main_js = f.name
+                break
+        if main_js is None:
+            pytest.skip("No index-*.js found in web/dist/assets/")
+
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get(f"/assets/{main_js}")
+        assert resp.status_code == 200, (
+            f"FastAPI must serve /assets/{main_js} at 200, got {resp.status_code}.\n"
+            "This is the path nginx proxies without a /v2 prefix — if FastAPI\n"
+            "can't serve it the SPA will load a blank page in production."
+        )
+        ct = resp.headers.get("content-type", "")
+        assert "javascript" in ct, (
+            f"FastAPI served /assets/{main_js} with content-type={ct!r} — "
+            "expected 'javascript'.  The browser will refuse to execute it."
+        )
+
+
+def _extract_location_block(nginx_txt: str, location_re: str) -> str:
+    """Extract the text of a single nginx location block matching location_re.
+
+    Returns the block text (including braces) or an empty string if not found.
+    """
+    in_block = False
+    brace_depth = 0
+    lines: list[str] = []
+    for line in nginx_txt.splitlines():
+        stripped = line.strip()
+        if not in_block:
+            if re.match(location_re, stripped):
+                in_block = True
+                brace_depth = stripped.count("{") - stripped.count("}")
+                lines.append(line)
+        else:
+            lines.append(line)
+            brace_depth += stripped.count("{") - stripped.count("}")
+            if brace_depth <= 0:
+                break
+    return "\n".join(lines)
