@@ -34,4 +34,18 @@ static-export footguns and a smaller dep surface.)
   `/bots/:symbol` resolves via client routing for any symbol.
 
 ## Result
-_(fill on completion)_
+Completed. Commit `6085bb3` on branch `dashboard-rewrite-impl`.
+
+**Implemented:**
+- `web/src/hooks/useLiveSnapshot.ts` — WS hook with auto-connect, exponential-backoff reconnect (base 1s, max 30s), hydrates TanStack Query cache from typed WS messages. Falls back gracefully to REST polling via TanStack's own refetch.
+- `web/src/api/client.ts` — typed API client wrapping `openapi-typescript`-generated `api-types.d.ts`. No hand-written types.
+- `web/src/utils/format.ts` — `formatMoney / formatPct / formatPF / formatDuration / formatPriceChange`. Only place TS touches financial values.
+- `web/src/components/Sidebar.tsx` — live bot list from `/api/bots`, NavLink highlighting, status dots.
+- `web/src/components/StatusBar.tsx` — WS status indicator (connected/connecting/reconnecting/offline) + last-updated time.
+- `web/src/pages/PortfolioPage.tsx` + `BotDetailPage.tsx` — stubs for N4/N6.
+- `web/src/App.tsx` — full shell with `Routes` (`/` → Portfolio, `/bots/:symbol` → BotDetail), `useLiveSnapshot` at root.
+- `web/src/main.tsx` — `BrowserRouter` + `QueryClientProvider` wrappers.
+- `web/src/index.css` — Tailwind v4 CSS custom properties ported from `dashboard/components.py COLORS`.
+- React-router-dom v7 added to `package.json`.
+
+**Tests:** 39 vitest tests (all pass); `npm run build` → `web/dist` clean (271 KB bundle).
