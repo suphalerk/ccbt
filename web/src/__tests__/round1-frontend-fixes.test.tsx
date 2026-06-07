@@ -231,6 +231,144 @@ describe('useLiveSnapshot — WS envelope hydration', () => {
 })
 
 // ============================================================================
+// RESIDUAL #1: WS snapshot must NOT clobber REST bots list
+//
+// This test verifies the root cause of "portfolio bot-grid shows 0 while
+// sidebar shows 40":
+//   - The hook must NOT overwrite the ['bots'] TanStack cache with a raw array.
+//   - It must wrap bots in { bots: [...] } (matching BotListResponse) so that
+//     consumers reading data?.bots always get the array, not undefined.
+//   - After delivering the real py-shaped WS snapshot, the seeded 40 bots must
+//     still be present and their count must remain 40 (not 0).
+// ============================================================================
+
+import type { BotRow } from '../api/client'
+
+describe('useLiveSnapshot — WS snapshot does NOT clobber REST bots list (RESIDUAL #1)', () => {
+  afterEach(() => {
+    vi.clearAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('bots count stays 40 after delivering the real py-shaped WS snapshot', async () => {
+    // --- Build 40 REST-shaped bots (the shape api.listBots() returns) -----------
+    const restBots: BotRow[] = Array.from({ length: 40 }, (_, i) => ({
+      symbol: `BOT${i}USDT`,
+      strategy: 'ema_crossover',
+      timeframe: '15m',
+      status: 'active',
+      position_side: null,
+      position_size: null,
+      unrealized_pnl: null,
+      total_pnl: i * 1.5,
+      win_rate_pct: 60.0,
+      profit_factor: 1.8,
+      trade_count: i + 1,
+      last_updated: null,
+      mode: 'NORMAL',
+    }))
+
+    // --- The ACTUAL py-shaped envelope that api/ws.py sends after the fix ------
+    // bots here are also 40 entries with the full BotRow shape (mirroring the
+    // improved _build_snapshot in api/ws.py).  What matters for this regression
+    // test is that the hook wraps them in { bots: [...] } before writing the
+    // TanStack cache — not that the values are identical to the REST payload.
+    const wsBots = restBots.map(b => ({
+      symbol: b.symbol,
+      strategy: b.strategy,
+      timeframe: null,
+      status: b.status,
+      position_side: null,
+      position_size: null,
+      unrealized_pnl: null,
+      total_pnl: b.total_pnl,
+      win_rate_pct: b.win_rate_pct,
+      profit_factor: b.profit_factor,
+      trade_count: b.trade_count,
+      last_updated: null,
+      mode: 'NORMAL',
+    }))
+
+    const pyMsg = {
+      type: 'snapshot',
+      ts: '2026-06-07T00:00:00Z',
+      data: {
+        portfolio: {
+          total_trades: 120,
+          closed_trades: 100,
+          win_rate_pct: 62.0,
+          profit_factor: 1.75,
+          total_pnl: 500.0,
+          best_bot: 'BOT0USDT',
+          worst_bot: 'BOT39USDT',
+          active_bots: 40,
+        },
+        bots: wsBots,
+      },
+    }
+
+    // --- Capture WebSocket instance -------------------------------------------
+    let capturedWs: { onopen: (() => void) | null; onmessage: ((e: { data: string }) => void) | null; onclose: (() => void) | null; onerror: (() => void) | null; close: () => void } | null = null
+    class MockWS {
+      onopen: (() => void) | null = null
+      onmessage: ((e: { data: string }) => void) | null = null
+      onclose: (() => void) | null = null
+      onerror: (() => void) | null = null
+      readyState = 1
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      constructor(_url: string) {
+        capturedWs = this
+        setTimeout(() => { this.onopen?.() }, 0)
+      }
+      close() {}
+    }
+    vi.stubGlobal('WebSocket', MockWS)
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+    // --- Seed the cache with the REST-loaded 40 bots (simulating a prior GET) --
+    client.setQueryData(['bots'], { bots: restBots })
+
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <WsHarness onReady={() => {}} />
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+
+    // Wait for onopen
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 20))
+    })
+
+    // Verify cache before WS message
+    const beforeData = client.getQueryData<{ bots: BotRow[] }>(['bots'])
+    expect(beforeData?.bots).toHaveLength(40)
+
+    // Deliver the real py-shaped WS snapshot
+    await act(async () => {
+      capturedWs?.onmessage?.({ data: JSON.stringify(pyMsg) })
+    })
+
+    // After WS snapshot, the cache must still have 40 bots in { bots: [...] } shape
+    const afterData = client.getQueryData<{ bots: BotRow[] }>(['bots'])
+    expect(afterData).toBeDefined()
+    // bots must be an array accessible via .bots (not a raw array that returns undefined)
+    expect(Array.isArray(afterData?.bots)).toBe(true)
+    expect(afterData?.bots).toHaveLength(40)
+
+    // Also verify portfolio was hydrated from WS
+    const portEl = screen.getByTestId('cache-portfolio')
+    expect(portEl.textContent).toContain('"total_trades":120')
+
+    // And bots cache shows the symbols (DOM reads via WsHarness)
+    const botsEl = screen.getByTestId('cache-bots')
+    expect(botsEl.textContent).toContain('BOT0USDT')
+  })
+})
+
+// ============================================================================
 // BLOCKER #4: DOW labels — pandas Mon=0, Sun=6
 // ============================================================================
 

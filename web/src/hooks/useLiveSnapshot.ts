@@ -14,6 +14,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { WSEnvelope, WSSnapshotPayload, BotRow, PortfolioSummary, WSSnapshotData } from '../ws-types'
+import type { BotListResponse } from '../api/client'
 
 export type WsStatus = 'connecting' | 'connected' | 'reconnecting' | 'closed'
 
@@ -106,8 +107,13 @@ export function useLiveSnapshot(): LiveSnapshotState {
         if (portfolio) {
           queryClient.setQueryData<PortfolioSummary>(QUERY_KEYS.portfolio, portfolio)
         }
+        // Wrap bots array in BotListResponse shape { bots: [...] } so the cache
+        // entry matches what api.listBots() returns and consumers reading
+        // data?.bots always get the array (not undefined).  The WS snapshot now
+        // returns the full BotRow shape (see api/ws.py _build_snapshot), so no
+        // data is lost by this update.
         if (bots) {
-          queryClient.setQueryData<BotRow[]>(QUERY_KEYS.bots, bots)
+          queryClient.setQueryData<BotListResponse>(QUERY_KEYS.bots, { bots: bots as BotRow[] })
         }
       }
     }

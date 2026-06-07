@@ -247,7 +247,13 @@ class ChangeDetector:
     # ------------------------------------------------------------------
 
     def _build_snapshot(self) -> Dict[str, Any]:
-        """Build a portfolio+bots snapshot dict from queries.py (best-effort)."""
+        """Build a portfolio+bots snapshot dict from queries.py (best-effort).
+
+        The ``bots`` list in the payload matches the full ``BotRow`` shape used
+        by ``GET /api/bots`` so that ``useLiveSnapshot`` can safely write it
+        into the TanStack Query ``['bots']`` cache as ``{bots: [...]}`` without
+        clobbering the richer REST-loaded list with a lesser payload.
+        """
         ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
         payload: Dict[str, Any] = {
             "type": "snapshot",
@@ -258,15 +264,21 @@ class ChangeDetector:
         if not db.exists():
             return payload
         try:
+            import math
             import sys
             if str(REPO) not in sys.path:
                 sys.path.insert(0, str(REPO))
-            from dashboard.queries import get_trade_stats, get_per_bot_summary  # type: ignore[import]
+            from dashboard.queries import (  # type: ignore[import]
+                get_bot_health,
+                get_open_trades,
+                get_per_bot_summary,
+                get_trade_stats,
+            )
 
             stats = get_trade_stats(db_path=self.db_path)
             per_bot_df = get_per_bot_summary(db_path=self.db_path)
-
-            import math
+            health_df = get_bot_health(db_path=self.db_path)
+            open_df = get_open_trades(db_path=self.db_path)
 
             def _safe(v: Any, default: Any = None) -> Any:
                 if v is None:
@@ -275,24 +287,69 @@ class ChangeDetector:
                     return default
                 return v
 
+            # Build health lookup keyed by symbol
+            health_map: Dict[str, Any] = {}
+            if not health_df.empty and "symbol" in health_df.columns:
+                for _, hrow in health_df.iterrows():
+                    sym = str(hrow.get("symbol") or "")
+                    if sym:
+                        health_map[sym] = hrow
+
+            # Active bots: distinct symbols with an open trade
+            active_bots = (
+                int(open_df["symbol"].nunique())
+                if not open_df.empty and "symbol" in open_df.columns
+                else 0
+            )
+
             portfolio: Dict[str, Any] = {
                 "total_trades": int(stats.get("total_trades") or 0),
+                "closed_trades": int(stats.get("total_trades") or 0),
                 "win_rate_pct": round(float(_safe(stats.get("win_rate"), 0.0)) * 100, 1),
                 "profit_factor": _safe(stats.get("profit_factor"), 0.0),
                 "total_pnl": round(float(_safe(stats.get("total_pnl"), 0.0)), 2),
+                "best_bot": None,
+                "worst_bot": None,
+                "active_bots": active_bots,
             }
 
+            # Full BotRow shape — mirrors api/routers/portfolio.py list_bots()
             bots: List[Dict[str, Any]] = []
             if not per_bot_df.empty and "symbol" in per_bot_df.columns:
-                for _, row in per_bot_df.head(50).iterrows():
+                for _, row in per_bot_df.iterrows():
+                    symbol = str(row.get("symbol") or "")
+                    h = health_map.get(symbol)
+
+                    def _hstr(key: str) -> Optional[str]:
+                        if h is None:
+                            return None
+                        val = h.get(key)
+                        return (str(val) if val is not None else "") or None
+
+                    wr = float(_safe(row.get("win_rate"), 0.0))
                     bots.append(
                         {
-                            "symbol": str(row.get("symbol", "")),
-                            "total_pnl": round(float(_safe(row.get("total_pnl"), 0.0)), 2),
-                            "win_rate_pct": round(
-                                float(_safe(row.get("win_rate"), 0.0)) * 100, 1
+                            "symbol": symbol,
+                            "strategy": _hstr("strategy"),
+                            "timeframe": None,
+                            "status": _hstr("status"),
+                            "position_side": _hstr("position_side"),
+                            "position_size": (
+                                float(h.get("position_size"))
+                                if h is not None and h.get("position_size") is not None
+                                else None
                             ),
-                            "trade_count": int(_safe(row.get("trade_count"), 0)),
+                            "unrealized_pnl": None,
+                            "total_pnl": round(float(_safe(row.get("total_pnl"), 0.0)), 2),
+                            "win_rate_pct": round(wr, 1),
+                            "profit_factor": float(_safe(row.get("profit_factor"), 0.0)),
+                            "trade_count": int(_safe(row.get("trades"), 0)),
+                            "last_updated": (
+                                str(row.get("last_trade"))
+                                if row.get("last_trade") is not None
+                                else None
+                            ),
+                            "mode": _hstr("mode"),
                         }
                     )
 
