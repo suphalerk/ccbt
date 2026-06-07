@@ -1,17 +1,63 @@
 @import "tailwindcss";
 
-/* CCBT Dashboard v2 — base styles */
+/**
+ * N3 — CCBT Dashboard v2 base styles + design tokens.
+ * Colors ported from dashboard/components.py COLORS dict.
+ *
+ * Tailwind v4 uses CSS custom properties for theme tokens.
+ */
+
+/* Design tokens — mirroring dashboard/components.py COLORS */
 :root {
   color-scheme: dark;
+
+  /* Core palette */
+  --color-profit:      #00C853;  /* green — profit / bullish / long */
+  --color-loss:        #FF1744;  /* red — loss / bearish / short */
+  --color-neutral:     #78909C;  /* grey — neutral state */
+  --color-warning:     #FFD600;  /* yellow — warning / EMA fast */
+  --color-info:        #2979FF;  /* blue — EMA slow */
+  --color-cyan:        #00E5FF;  /* cyan — equity line */
+
+  /* Backgrounds */
+  --color-bg:          #0E1117;  /* main background */
+  --color-bg-card:     #151A22;  /* card / log background */
+  --color-bg-hover:    #1E2530;  /* grid lines / hover state */
+
+  /* Text */
+  --color-text:        #FAFAFA;
+  --color-text-muted:  #78909C;
+
+  /* Gauge */
+  --color-gauge-safe:  #00C853;
+  --color-gauge-warn:  #FFD600;
+  --color-gauge-danger:#FF1744;
+
+  /* Signal source colors */
+  --color-sig-ema:         #FFD600;
+  --color-sig-ema-fast:    #FF9800;
+  --color-sig-ichimoku:    #9C27B0;
+  --color-sig-rsi-div:     #E91E63;
+  --color-sig-squeeze:     #00BCD4;
+  --color-sig-bb:          #8BC34A;
+  --color-sig-mean-rev:    #FF5722;
+  --color-sig-body-dom:    #607D8B;
 }
 
 body {
   margin: 0;
   font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
-  background: #0f172a;
-  color: #e2e8f0;
+  background: var(--color-bg);
+  color: var(--color-text);
 }
 
 #root {
   min-height: 100svh;
 }
+
+/* Utility classes that use the CCBT palette (not in Tailwind defaults) */
+.text-profit   { color: var(--color-profit); }
+.text-loss     { color: var(--color-loss); }
+.text-neutral  { color: var(--color-neutral); }
+.bg-card       { background-color: var(--color-bg-card); }
+.border-grid   { border-color: var(--color-bg-hover); }
