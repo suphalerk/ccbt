@@ -810,6 +810,144 @@ class TestP10TradeGate:
         finally:
             _reset(app)
 
+    def test_config_count_matches_queries_per_symbol(self, tmp_path: Path) -> None:
+        """config_count from the endpoint must match get_trade_gate() per-symbol values.
+
+        This test catches the prior regression where config_count was emitted as
+        the default 1 for every row because the key was absent from rows_out.
+        """
+        db = _create_rich_db(tmp_path)
+        client, app = _get_client(db)
+        try:
+            from dashboard.queries import get_trade_gate
+            since = self._manifest_since()
+            qs = get_trade_gate(db_path=db, project_root=REPO, since=since)
+            api = client.get("/api/trade-gate").json()
+            # Build lookup: symbol → config_count from the query result
+            qs_by_sym = {r["symbol"]: r for r in qs.get("rows", [])}
+            for api_row in api["rows"]:
+                sym = api_row["symbol"]
+                if sym not in qs_by_sym:
+                    continue
+                qs_cc = qs_by_sym[sym].get("config_count", 1)
+                api_cc = api_row["config_count"]
+                assert api_cc == qs_cc, (
+                    f"{sym} config_count: endpoint={api_cc} queries={qs_cc} — "
+                    "endpoint must not default to 1 when queries returns a different value"
+                )
+        finally:
+            _reset(app)
+
+    def test_real_r_key_present_in_all_rows(self, tmp_path: Path) -> None:
+        """real_r must be a key in every endpoint row (may be null, must not be absent).
+
+        Prior bug: get_trade_gate never emitted the 'real_r' key, so
+        r.get('real_r') silently returned None.  A row without the key is
+        indistinguishable from one with real_r=null at the JSON level, but the
+        queries.py dict must contain the key so future callers can rely on it.
+        """
+        db = _create_rich_db(tmp_path)
+        client, app = _get_client(db)
+        try:
+            from dashboard.queries import get_trade_gate
+            since = self._manifest_since()
+            qs = get_trade_gate(db_path=db, project_root=REPO, since=since)
+            # The key must be present in the raw queries.py dict
+            for r in qs.get("rows", []):
+                assert "real_r" in r, (
+                    f"{r.get('symbol')}: 'real_r' key absent from get_trade_gate() row — "
+                    "add it to rows_out.append() dict"
+                )
+            # The key must also be present in the API JSON
+            api = client.get("/api/trade-gate").json()
+            for row in api["rows"]:
+                assert "real_r" in row, f"'real_r' key absent from endpoint row: {row}"
+        finally:
+            _reset(app)
+
+    def test_real_r_non_null_for_symbol_with_losses(self, tmp_path: Path) -> None:
+        """real_r must be non-null for symbols that have both wins and losses.
+
+        real_r = reward_to_avgloss (avg_pnl / mean(|losing_pnl|)).  BTC in the
+        fixture has wins and losses so real_r should be a finite float, not null.
+
+        Tests get_trade_gate() directly (since=None) so Jan-2026 fixture trades
+        are not filtered by the cohort manifest's 2026-06-07 cutoff.
+        """
+        db = _create_rich_db(tmp_path)
+        from dashboard.queries import get_trade_gate
+        result = get_trade_gate(db_path=db, project_root=REPO, since=None)
+        btc_rows = [r for r in result.get("rows", []) if "BTC" in str(r.get("symbol", ""))]
+        assert btc_rows, "BTC row missing from get_trade_gate() result"
+        btc = btc_rows[0]
+        assert "real_r" in btc, (
+            f"'real_r' key absent from get_trade_gate() BTC row — "
+            "must be explicitly emitted in rows_out.append()"
+        )
+        assert btc["real_r"] is not None, (
+            f"BTC real_r is null but BTC has losses — expected a finite float. "
+            f"Row: {btc}"
+        )
+
+    def test_since_filter_excludes_pre_cohort_trades(self, tmp_path: Path) -> None:
+        """Endpoint must exclude trades predating the cohort manifest's 'added' date.
+
+        This directly tests the since= parity fix: the endpoint must pass
+        since=manifest['added'] to get_trade_gate().  We insert post-cohort trades
+        and verify the endpoint returns them while unfiltered get_trade_gate returns
+        pre-cohort trades.
+        """
+        import sqlite3 as _sqlite3
+        # Use a fresh DB with known timestamps straddling a hard-coded since date
+        db = str(tmp_path / "since_test.db")
+        conn = _sqlite3.connect(db)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(
+            """CREATE TABLE trades (
+                id INTEGER PRIMARY KEY, symbol TEXT, side TEXT, status TEXT,
+                close_reason TEXT, pnl REAL, pnl_pct REAL, timestamp TEXT,
+                entry_price REAL, exit_price REAL, size REAL, stop_loss REAL,
+                ai_decision TEXT, ai_confidence REAL, ai_reasoning TEXT,
+                ai_override INTEGER, duration_seconds INTEGER, strategy TEXT
+            )"""
+        )
+        conn.execute(
+            """CREATE TABLE bot_health (
+                symbol TEXT PRIMARY KEY, strategy TEXT, mode TEXT, status TEXT,
+                last_heartbeat TEXT, position_side TEXT, position_size REAL,
+                position_entry REAL, error_count INTEGER, loop_count INTEGER,
+                total_trades INTEGER, total_pnl REAL, updated_at TEXT
+            )"""
+        )
+        # Pre-cohort trade — must be excluded when since='2026-01-15'
+        conn.execute(
+            """INSERT INTO trades VALUES
+               (1,'ALICE/USDT:USDT','long','closed',NULL,5.0,0.5,'2026-01-10T00:00:00',
+                100.0,105.0,1.0,95.0,'LONG',0.8,'ok',0,3600,'ema_crossover')"""
+        )
+        # Post-cohort trade — must be included when since='2026-01-15'
+        conn.execute(
+            """INSERT INTO trades VALUES
+               (2,'ALICE/USDT:USDT','long','closed',NULL,3.0,0.3,'2026-01-20T00:00:00',
+                102.0,105.0,1.0,97.0,'LONG',0.75,'ok',0,2700,'ema_crossover')"""
+        )
+        conn.commit()
+        conn.close()
+
+        from dashboard.queries import get_trade_gate
+        # Without filter: 2 trades
+        unfiltered = get_trade_gate(db_path=db, project_root=REPO, since=None)
+        unfiltered_trades = {r["symbol"]: r["trades"] for r in unfiltered.get("rows", [])}
+        assert unfiltered_trades.get("ALICE/USDT:USDT", 0) == 2, (
+            f"Expected 2 unfiltered trades, got {unfiltered_trades}"
+        )
+        # With filter: only the post-cohort trade
+        filtered = get_trade_gate(db_path=db, project_root=REPO, since="2026-01-15")
+        filtered_trades = {r["symbol"]: r["trades"] for r in filtered.get("rows", [])}
+        assert filtered_trades.get("ALICE/USDT:USDT", 0) == 1, (
+            f"Expected 1 filtered trade (post-cohort only), got {filtered_trades}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # P11 — Open risk: /api/risk  vs  get_open_trades

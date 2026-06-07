@@ -1034,6 +1034,11 @@ def get_trade_gate(
             "total_pnl": round(total_pnl, 4),
             "avg_pnl": round(avg_pnl, 4),
             "reward_to_avgloss": round(reward_to_avgloss, 4) if reward_to_avgloss is not None else None,
+            # real_r: avg_pnl / mean(|losing_pnl|) — same quantity as reward_to_avgloss,
+            # kept as a distinct key so endpoint callers and the frontend have a stable
+            # field that can later be replaced with a per-trade R-multiple if the DB
+            # gains a risk_per_trade column.  Null only when there are zero losses.
+            "real_r": round(reward_to_avgloss, 4) if reward_to_avgloss is not None else None,
             "meets_min": meets_min,
             "verdict": verdict,
         })
