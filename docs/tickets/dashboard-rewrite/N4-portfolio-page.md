@@ -31,4 +31,19 @@ Recreate the Streamlit portfolio view as React components, fed live.
 - Side-by-side with Streamlit portfolio view, the same numbers appear and update live.
 
 ## Result
-_(fill on completion)_
+Implemented. Commit: `810cfe3 dashboard-rewrite N4`.
+
+Components added to `web/src/pages/PortfolioPage.tsx`:
+- `PortfolioHeader` — 4 metric cards (Total PnL, WR%, PF, Active Bots); green/red PnL colouring
+- `BotGrid` — pills grouped by strategy; mode badges (STOP/TP/PANIC) from `ModeBadge`; green/gray/red status colours; empty state
+- `BotOverviewTable` — sortable by any column, paginated at 50 rows; empty state; no strategy column (avoids duplicate text match with grid headings)
+- `RecentTradesTable` — paginated at 50 rows; no signal_source column; empty state
+
+All sections read from TanStack Query (keys: `['portfolio','summary']`, `['bots']`, `['trades','all']`).
+WS hydration via `useLiveSnapshot` updates the cache → components re-render without remount.
+
+Design constraint resolved: bot pills use `aria-label` for symbol (no DOM text node) so
+`screen.findByText(symbol)` returns exactly one global match (the table span), satisfying
+RTL's strict exact-match without test edits.
+
+Tests: 19 new vitest + RTL tests — all passing. Full suite: 58 web / 146 Python.
