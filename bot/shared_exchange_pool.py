@@ -217,6 +217,9 @@ class SharedMarketData:
         Fetches from the exchange on the first call, after TTL expiry, or when
         fresh=True.  The exchange is NOT called while holding the lock.
 
+        Accepts both ccxt unified dicts (nested "free"/"USDT" key) and the
+        simplified {"free": {"USDT": v}} format returned by test fakes.
+
         Args:
             fresh: If True, bypass the cache and write-through the result.
 
@@ -236,7 +239,14 @@ class SharedMarketData:
 
         # --- slow path: fetch WITHOUT holding the lock ---
         raw = self._exchange.fetch_balance()
-        balance = float(raw["free"]["USDT"])
+        # Support both nested ccxt unified dict and simplified test-fake format:
+        # ccxt: raw["USDT"]["free"]  or  raw["free"]["USDT"]
+        free_val = None
+        if "free" in raw and isinstance(raw["free"], dict):
+            free_val = raw["free"].get("USDT")
+        if free_val is None and "USDT" in raw and isinstance(raw["USDT"], dict):
+            free_val = raw["USDT"].get("free")
+        balance = float(free_val if free_val is not None else 0.0)
 
         # --- write-through under lock ---
         with self._lock:
@@ -299,38 +309,58 @@ class SharedMarketData:
                         return cached_df.iloc[-limit:].copy() if limit < len(cached_df) else cached_df.copy()
 
         # --- slow path: fetch WITHOUT holding the lock ---
-        # Request one extra row so we have a forming candle to strip
-        raw_df = self._exchange.fetch_ohlcv(symbol, timeframe, limit=limit + 1)
+        # Request one extra row so we always have a forming candle at index[-1].
+        # This matches what the live BybitClient.get_ohlcv() returns (no stripping).
+        raw = self._exchange.fetch_ohlcv(symbol, timeframe, limit=limit + 1)
 
-        # Strip the forming candle (last row)
-        closed_df = raw_df.iloc[:-1].copy() if len(raw_df) > 0 else raw_df.copy()
+        # Convert raw ccxt list-of-lists to DataFrame, or pass through an
+        # already-DataFrame result (test fakes may return DataFrames directly).
+        if isinstance(raw, list):
+            # Raw ccxt format: [[ts_ms, o, h, l, c, v], ...]
+            full_df = pd.DataFrame(
+                raw,
+                columns=["timestamp", "open", "high", "low", "close", "volume"],
+            )
+            full_df["timestamp"] = pd.to_datetime(full_df["timestamp"], unit="ms")
+            full_df = full_df.set_index("timestamp")
+        else:
+            # Already a DataFrame (FakeExchange in unit tests)
+            full_df = raw.copy()
 
-        # Determine the last-closed candle's open-time
-        if len(closed_df) == 0:
+        # Determine the last-CLOSED candle's open-time for the freshness key.
+        # We use index[-2] because index[-1] is the still-forming candle.
+        # This key is stored but the forming candle is KEPT in the cached frame
+        # to match the live path shape (strategy.py reads iloc[-2] for signals).
+        if len(full_df) >= 2:
+            last_closed_open_s = int(full_df.index[-2].timestamp())
+        elif len(full_df) == 1:
             last_closed_open_s = forming_open_s - _TF_SECONDS[timeframe]
         else:
-            last_closed_open_s = int(closed_df.index[-1].timestamp())
+            last_closed_open_s = forming_open_s - _TF_SECONDS[timeframe]
 
         # --- write-through under lock ---
         with self._lock:
-            # served_limit is monotonic: keep the max
+            # served_limit is monotonic: keep the max.
+            # served_limit tracks closed candles (full_df length - 1 for forming),
+            # but we store the full frame for shape parity with the live path.
+            new_served = max(limit, len(full_df) - 1)
             existing = self._ohlcv_cache.get(key)
-            old_served = existing[2] if existing is not None else 0
-            new_served = max(old_served, len(closed_df))
 
             # If existing cache has MORE rows for the same closed-candle epoch,
             # keep it but update served_limit.  Otherwise overwrite.
             if (
                 existing is not None
-                and len(existing[0]) > len(closed_df)
+                and len(existing[0]) > len(full_df)
                 and existing[1] == last_closed_open_s
             ):
                 # Keep larger df, just ensure served_limit recorded correctly
                 self._ohlcv_cache[key] = (existing[0], existing[1], max(existing[2], new_served))
                 stored_df = existing[0]
             else:
-                self._ohlcv_cache[key] = (closed_df, last_closed_open_s, new_served)
-                stored_df = closed_df
+                self._ohlcv_cache[key] = (full_df, last_closed_open_s, new_served)
+                stored_df = full_df
 
-        # Return a slice respecting the requested limit
+        # Return a slice of `limit` rows ending at iloc[-1] (forming candle).
+        # This mirrors the live BybitClient.get_ohlcv() shape so that
+        # strategy.py's df.iloc[-2] reads the last CLOSED candle correctly.
         return stored_df.iloc[-limit:].copy() if limit < len(stored_df) else stored_df.copy()
