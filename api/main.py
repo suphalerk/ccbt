@@ -280,21 +280,34 @@ if _dist.exists():
         # Fallback: prepend to body (no </head> found — minimal HTML)
         return snippet + html
 
+    from fastapi.responses import Response as _Response  # noqa: E402
+
     @app.get("/{full_path:path}", include_in_schema=False)
-    async def spa_catch_all(full_path: str) -> HTMLResponse:
+    async def spa_catch_all(full_path: str) -> _Response:
         """Serve static assets or index.html for SPA deep-links (N3).
 
         Priority:
         1. /api/* and /ws/* paths → 404 JSON (no token in body, to avoid leaking it).
            These should have been handled by earlier-registered routes; this branch
            is a safety net for /api/nonexistent and /ws/bogus.
+           Guard uses startswith("api/") or == "api" (and "ws/" / "ws") so that
+           SPA routes like /apikeys or /wstools still receive index.html.
         2. full_path resolves to a real file under _dist (e.g. assets/*.js) →
            FileResponse with correct MIME type.  Path traversal is blocked by
            checking the resolved path is still under _dist.
         3. Everything else → inject token into index.html for client-side routing.
+           index.html is served with Cache-Control: no-store so browsers never
+           cache a stale token injection.
         """
-        # --- 1. Guard: no-token 404 for /api/* and /ws/*
-        if full_path.startswith("api") or full_path.startswith("ws"):
+        # --- 1. Guard: no-token 404 for /api/* and /ws/* only
+        #   startswith("api") would wrongly catch /apikeys, /apistuff, etc.
+        #   We gate only on the exact segment boundary.
+        if (
+            full_path == "api"
+            or full_path.startswith("api/")
+            or full_path == "ws"
+            or full_path.startswith("ws/")
+        ):
             return JSONResponse(
                 status_code=404,
                 content={"detail": f"Not Found: /{full_path}"},
@@ -319,7 +332,11 @@ if _dist.exists():
             from api.deps import CCBT_DASH_TOKEN  # noqa: PLC0415
             html = index.read_text(encoding="utf-8")
             html = _inject_token(html, CCBT_DASH_TOKEN)
-            return HTMLResponse(content=html, status_code=200)
+            return HTMLResponse(
+                content=html,
+                status_code=200,
+                headers={"Cache-Control": "no-store"},
+            )
 
         # No SPA bundle at all
         return JSONResponse(status_code=404, content={"detail": "SPA bundle not found"})
