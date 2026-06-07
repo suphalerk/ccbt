@@ -28,6 +28,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import type { BotRow, TradeRow, PortfolioSummaryResponse } from '../api/client'
 import { formatMoney, formatPct, formatPF } from '../utils/format'
+import { EquityCurve, PerBotPnl, DailyPnl } from '../components/Charts'
 
 // ============================================================================
 // Header metric card
@@ -558,8 +559,30 @@ export function PortfolioPage() {
     refetchInterval: 30_000,
   })
 
+  const { data: equityData } = useQuery({
+    queryKey: ['equity'],
+    queryFn: () => api.equityCurve(),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  })
+
+  const { data: dailyPnlData } = useQuery({
+    queryKey: ['daily-pnl'],
+    queryFn: () => api.dailyPnl(),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  })
+
   const bots = botsData?.bots ?? []
   const trades = tradesData?.trades ?? []
+  const equityPoints = equityData?.points ?? []
+  const dailyDays = dailyPnlData?.days ?? []
+
+  // Per-bot PnL derived from the bot list (server-side computed total_pnl)
+  const botPnlItems = useMemo(
+    () => bots.map(b => ({ symbol: b.symbol, total_pnl: b.total_pnl })),
+    [bots]
+  )
 
   return (
     <div className="p-4 max-w-screen-xl mx-auto">
@@ -567,6 +590,23 @@ export function PortfolioPage() {
 
       {/* Header metrics */}
       <PortfolioHeader summary={summary} />
+
+      {/* Charts row: Equity curve + Daily PnL */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <Section title="Equity Curve">
+          <EquityCurve points={equityPoints} />
+        </Section>
+        <Section title="Daily PnL">
+          <DailyPnl days={dailyDays} />
+        </Section>
+      </div>
+
+      {/* Per-bot PnL bar chart */}
+      {bots.length > 0 && (
+        <Section title="Per-Bot PnL">
+          <PerBotPnl bots={botPnlItems} />
+        </Section>
+      )}
 
       {/* Bot status grid */}
       <Section title={`Bot Status (${bots.length})`}>
