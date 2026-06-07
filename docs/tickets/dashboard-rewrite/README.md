@@ -6,6 +6,30 @@
 > (architect/frontend/trader/qa/devops) on 2026-06-07 — verdict **GO-with-changes**; all must-fixes
 > below are baked into the tickets.
 
+## 🏗️ Build status (2026-06-07, branch `dashboard-rewrite-impl`, NOT merged)
+- **Implemented**: all 13 tickets coded TDD + committed (N11 deferred). `api/` (FastAPI+WS) + `web/`
+  (Vite SPA, builds to `web/dist`) created; `.venv-dash` on Homebrew python3.12; `dashboard/queries.py`
+  shared by Streamlit + the API. **Live bot untouched** (0-byte diff to engine/strategy/risk/main_multi/
+  start.sh — verified every round).
+- **Healed**: 5 fix→test→re-review rounds. The original 6 post-build blockers (WS hydration no-op,
+  trade-gate attribution/window, dow labels, dead startup guard, unauth /ws) + the SPA asset-shadow
+  blocker are fixed and **runtime-verified (not mocked)**.
+- **Screenshot-verified** (run against the real `trades.db`): Portfolio, Analytics Panels, Bot Detail,
+  Live Logs, AI Analytics all render with real data; must-fixes visibly working (PnL-sign donut,
+  "N of M meet 15-trade min", R-multiple column, candles graceful-degrade to "unavailable").
+- **Found by the real-server run (tests missed it)**: `/api/bots` 500 — pandas Series truth-value in
+  `list_bots` health lookup — FIXED (commit `8def892`).
+- **Remaining residuals (small, non-engine — being closed via a fix workflow)**:
+  1. Portfolio bot-grid shows 0 while the sidebar shows 40 (WS initial snapshot likely clobbers the
+     `['bots']` query cache on first load).
+  2. `nginx-ws-v2.conf` has no root-level `location /api/` block (SPA REST calls 404 behind the /v2 proxy).
+  3. `start-dashboard-v2.sh` uvicorn line lacks `--no-access-log` → the WS `?token=` is logged to disk.
+  + nits: over-broad `startswith('api')` SPA guard, `-> HTMLResponse` annotation, token Cache-Control.
+- **Deferred (need explicit go-ahead — touch the live engine)**: N11 close_reason enrichment; the
+  `bot_ohlcv` candle producer (consumer ships `available=false` + chart hidden).
+- **Run locally**: `.venv-dash/bin/python -m uvicorn api.main:app --host 127.0.0.1 --port 8610` then open
+  `http://127.0.0.1:8610/`.
+
 ## ⚖️ Honest cost note (architect lens — read before starting)
 This is a single-user, localhost-bound dashboard reading **242 closed trades** on a Mac Mini. The
 rewrite buys **maintainability + UX (real component model, real-time WS)** — it does **not** buy any
