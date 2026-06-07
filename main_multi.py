@@ -87,12 +87,15 @@ class PortfolioManager:
     def __init__(self, max_positions: int = 10) -> None:
         self.max_positions = max_positions
         self._open_coins: set[str] = set()
-        self._open_count: int = 0
         self._lock = asyncio.Lock()
 
     @property
     def open_count(self) -> int:
-        return self._open_count
+        # Count by UNIQUE coin — multiple strategy-bots share one netted
+        # exchange position per symbol, so the set is the source of truth.
+        # (A separate counter double-counted same-symbol register_open calls
+        # on restart, inflating the global cap and blocking all new entries.)
+        return len(self._open_coins)
 
     async def can_open(self, symbol: str) -> bool:
         """Return True if a new position may be opened for *symbol*.
@@ -102,23 +105,26 @@ class PortfolioManager:
         is successfully placed.
         """
         async with self._lock:
-            if self._open_count >= self.max_positions:
+            if len(self._open_coins) >= self.max_positions:
                 return False
             if symbol in self._open_coins:
                 return False
             return True
 
     async def register_open(self, symbol: str) -> None:
-        """Record that a new position has been opened for *symbol*."""
+        """Record that a new position has been opened for *symbol*.
+
+        Idempotent per symbol — registering the same coin twice (e.g. several
+        strategy-bots restoring one netted exchange position on restart) does
+        not inflate the count.
+        """
         async with self._lock:
             self._open_coins.add(symbol)
-            self._open_count += 1
 
     async def register_close(self, symbol: str) -> None:
         """Record that a position for *symbol* has been closed."""
         async with self._lock:
             self._open_coins.discard(symbol)
-            self._open_count = max(0, self._open_count - 1)
 
 load_dotenv()
 
