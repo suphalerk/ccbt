@@ -17,7 +17,7 @@ from bot.ai_analyst import AIAnalyst, CandidateSignal
 from bot.context_builder import ContextBuilder
 from bot.data import add_indicators
 from bot.exchange import BybitClient
-from bot.logger import CalibrationTracker, TradeJournal
+from bot.logger import CalibrationTracker, TradeJournal, upsert_candles
 from bot.mode import BotMode, read_bot_mode
 from bot.news_fetcher import NewsFetcher
 from bot.risk import RiskManager
@@ -1035,6 +1035,23 @@ class TradingEngine:
 
         # Generate signal (also returns enriched df with indicators for reuse)
         trade_signal, enriched_signal_df = generate_signal(signal_df, trend_df, config)
+
+        # N6: persist recent candles + indicators to bot_ohlcv so the dashboard
+        # can render the candle chart without hitting the exchange.
+        # This reuses the DataFrame already produced above — NO new fetch.
+        try:
+            db_path = self._journal.db_path
+            upsert_candles(
+                db_path=db_path,
+                symbol=config["symbol"],
+                timeframe=config["timeframe_signal"],
+                df=enriched_signal_df,
+            )
+        except Exception as _candle_err:
+            logger.warning(
+                "candle_persist_failed",
+                extra={"error": str(_candle_err)},
+            )
 
         if trade_signal is None:
             return False

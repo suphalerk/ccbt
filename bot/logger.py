@@ -8,6 +8,42 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
+import pandas as pd
+
+# ---------------------------------------------------------------------------
+# bot_ohlcv producer constants
+# ---------------------------------------------------------------------------
+
+#: Maximum number of candle rows retained per (symbol, timeframe) pair.
+#: Old rows are pruned so the table stays bounded.
+MAX_OHLCV_ROWS: int = 200
+
+_BOT_OHLCV_CREATE_SQL = """
+CREATE TABLE IF NOT EXISTS bot_ohlcv (
+    symbol    TEXT    NOT NULL,
+    timeframe TEXT    NOT NULL,
+    ts        INTEGER NOT NULL,   -- unix epoch ms (candle open time)
+    open      REAL    NOT NULL,
+    high      REAL    NOT NULL,
+    low       REAL    NOT NULL,
+    close     REAL    NOT NULL,
+    volume    REAL    NOT NULL,
+    ema9      REAL,               -- mapped from ema_fast
+    ema21     REAL,               -- mapped from ema_slow
+    rsi14     REAL,               -- mapped from rsi
+    PRIMARY KEY (symbol, timeframe, ts)
+)
+"""
+
+
+def _ensure_bot_ohlcv_table(conn: sqlite3.Connection) -> None:
+    """Create bot_ohlcv table if not already present (idempotent)."""
+    conn.execute(_BOT_OHLCV_CREATE_SQL)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_bot_ohlcv_sym_tf_ts "
+        "ON bot_ohlcv (symbol, timeframe, ts)"
+    )
+
 # Bangkok timezone (GMT+7)
 _TZ_BKK = timezone(timedelta(hours=7))
 
@@ -170,6 +206,9 @@ class TradeJournal:
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(timestamp)"
         )
+        # Candle producer table — created here so the table exists from bot startup
+        # even before the first upsert_candles() call.
+        _ensure_bot_ohlcv_table(self._conn)
         self._conn.commit()
 
     def log_trade_open(
@@ -445,6 +484,145 @@ class TradeJournal:
             all_vals,
         )
         self._conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Candle producer (N6)
+# ---------------------------------------------------------------------------
+
+def upsert_candles(
+    db_path: str,
+    symbol: str,
+    timeframe: str,
+    df: "pd.DataFrame",
+    max_rows: int = MAX_OHLCV_ROWS,
+) -> None:
+    """Persist OHLCV + indicator snapshot from the bot's per-loop DataFrame.
+
+    This is the **only** place the bot writes candle data to SQLite.
+    It MUST NOT fetch from the exchange — it reuses the DataFrame already
+    produced by ``add_indicators()`` in the trading loop.
+
+    Column mapping (add_indicators → bot_ohlcv):
+        ``ema_fast``  → ``ema9``
+        ``ema_slow``  → ``ema21``
+        ``rsi``       → ``rsi14``
+
+    The table is created idempotently on the first call.  Old rows beyond
+    ``max_rows`` per (symbol, timeframe) are pruned so the table stays bounded.
+
+    Args:
+        db_path:   Path to the SQLite trades database.
+        symbol:    Trading symbol (e.g. ``"BTCUSDT"`` or ``"BTC/USDT:USDT"``).
+        timeframe: Candle timeframe string (e.g. ``"15m"``, ``"1h"``).
+        df:        DataFrame produced by ``add_indicators()``.  Must have at
+                   minimum: ``timestamp``, ``open``, ``high``, ``low``,
+                   ``close``, ``volume``.  ``ema_fast``, ``ema_slow``, ``rsi``
+                   are mapped when present; ``None`` is stored when absent.
+        max_rows:  Maximum rows retained per (symbol, timeframe). Defaults to
+                   :data:`MAX_OHLCV_ROWS`.
+    """
+    if df is None or len(df) == 0:
+        return
+
+    import math
+
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        _ensure_bot_ohlcv_table(conn)
+
+        # Resolve the timestamp series.
+        # The live-bot DataFrame (from get_ohlcv) uses a DatetimeIndex.
+        # Test fixtures may supply a plain integer `timestamp` column.
+        if "timestamp" in df.columns:
+            # Column-based (test fixtures or already-reset index)
+            ts_series: "pd.Series" = df["timestamp"]
+            _ts_is_datetime = pd.api.types.is_datetime64_any_dtype(ts_series)
+        else:
+            # Index-based (live bot — get_ohlcv sets index to DatetimeIndex)
+            ts_series = df.index.to_series()
+            _ts_is_datetime = True
+
+        def _to_epoch_ms(ts_val) -> int:
+            """Convert a timestamp value to integer epoch milliseconds."""
+            if _ts_is_datetime:
+                # pandas Timestamp / numpy datetime64 → int ns → divide by 1e6
+                try:
+                    return int(pd.Timestamp(ts_val).timestamp() * 1000)
+                except Exception:
+                    return int(ts_val)
+            else:
+                # Already an integer (epoch ms from test fixture)
+                return int(ts_val)
+
+        # Build rows from the DataFrame.
+        # Columns may or may not be present depending on config (strategy type).
+        def _col(name: str) -> "pd.Series | None":
+            return df[name] if name in df.columns else None
+
+        ema_fast_col = _col("ema_fast")
+        ema_slow_col = _col("ema_slow")
+        rsi_col = _col("rsi")
+
+        def _safe_float(col: "pd.Series | None", idx: int) -> "float | None":
+            if col is None:
+                return None
+            val = col.iloc[idx]
+            if val is None:
+                return None
+            try:
+                fval = float(val)
+                return None if math.isnan(fval) else fval
+            except (TypeError, ValueError):
+                return None
+
+        rows = []
+        for idx in range(len(df)):
+            ts_ms = _to_epoch_ms(ts_series.iloc[idx])
+            rows.append((
+                symbol,
+                timeframe,
+                ts_ms,
+                float(df["open"].iloc[idx]),
+                float(df["high"].iloc[idx]),
+                float(df["low"].iloc[idx]),
+                float(df["close"].iloc[idx]),
+                float(df["volume"].iloc[idx]),
+                _safe_float(ema_fast_col, idx),   # ema9
+                _safe_float(ema_slow_col, idx),   # ema21
+                _safe_float(rsi_col, idx),        # rsi14
+            ))
+
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO bot_ohlcv
+                (symbol, timeframe, ts, open, high, low, close, volume,
+                 ema9, ema21, rsi14)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+
+        # Prune rows beyond max_rows — keep the most-recent ones.
+        conn.execute(
+            """
+            DELETE FROM bot_ohlcv
+            WHERE symbol = ? AND timeframe = ?
+              AND ts NOT IN (
+                  SELECT ts FROM bot_ohlcv
+                  WHERE symbol = ? AND timeframe = ?
+                  ORDER BY ts DESC
+                  LIMIT ?
+              )
+            """,
+            (symbol, timeframe, symbol, timeframe, max_rows),
+        )
+
+        conn.commit()
+    finally:
+        conn.close()
 
 
 class CalibrationTracker:
