@@ -274,8 +274,12 @@ class TestNonReduceOnlyErrorsNotSwallowed:
 # ---------------------------------------------------------------------------
 
 class TestHedgeModeDetection:
-    def test_hedge_mode_logged_and_skipped(self, caplog):
-        """When dualSidePosition=True is detected, log warning and skip the close."""
+    def test_hedge_mode_logged_and_raises(self, caplog):
+        """When dualSidePosition=True is detected, log warning and RAISE ExchangeError.
+
+        Raising (instead of silently skipping) prevents callers from recording a
+        phantom close — the position is still open and the book must stay accurate.
+        """
         import logging
 
         mock_ex = MagicMock()
@@ -288,14 +292,15 @@ class TestHedgeModeDetection:
         # fetch_positions: initial + re-fetch before fallback (hedge detected there)
         mock_ex.fetch_positions.side_effect = [
             [pos],   # initial get_positions
-            [pos],   # re-fetch before fallback (hedge detected → skip plain order)
+            [pos],   # re-fetch before fallback (hedge detected → raise)
         ]
         # reduceOnly attempt raises -2022; no second create_order expected
         mock_ex.create_order.side_effect = _invalid_order_2022()
 
         with caplog.at_level(logging.WARNING):
-            # Should NOT raise (hedge-mode: skip fallback, log warning)
-            client.close_all_positions()
+            # MUST raise ExchangeError so callers do not record a phantom close
+            with pytest.raises(ccxt.ExchangeError, match="hedge_mode_close_unsupported"):
+                client.close_all_positions()
 
         # Must NOT have placed a second (potentially direction-flipping) order
         # Exactly 1 create_order call: the reduceOnly attempt that failed

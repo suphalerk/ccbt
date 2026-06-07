@@ -632,6 +632,8 @@ class BybitClient:
 
             # Hedge-mode guard: if positionSide != 'BOTH', a plain market order
             # without positionSide would be ambiguous and could flip the position.
+            # RAISE so callers do NOT record a phantom close — the position is
+            # still open and the book must stay accurate.
             position_side = live_pos.get("info", {}).get("positionSide", "BOTH")
             if position_side not in ("BOTH", "", None):
                 logger.warning(
@@ -639,7 +641,7 @@ class BybitClient:
                     extra={
                         "symbol": symbol,
                         "positionSide": position_side,
-                        "action": "skipping_fallback_manual_close_required",
+                        "action": "manual_close_required",
                         "note": (
                             "Hedge-mode (dualSidePosition=True) detected. "
                             "Plain market fallback requires positionSide param "
@@ -647,7 +649,12 @@ class BybitClient:
                         ),
                     },
                 )
-                continue
+                raise ccxt.ExchangeError(
+                    f"hedge_mode_close_unsupported: symbol={symbol} "
+                    f"positionSide={position_side}. "
+                    "Plain market fallback is ambiguous in hedge mode; "
+                    "close the position manually."
+                )
 
             # Use abs(positionAmt) — authoritative, precision-applied.
             raw_amt = abs(float(live_pos.get("info", {}).get("positionAmt", 0)))
@@ -658,9 +665,17 @@ class BybitClient:
                 )
                 continue
 
-            close_qty = float(
-                self.exchange.amount_to_precision(symbol, raw_amt)
-            )
+            close_qty = _safe_precision(self.exchange, symbol, raw_amt, "amount")
+            if abs(close_qty - raw_amt) > 1e-9:
+                logger.info(
+                    "close_qty_dust_trimmed",
+                    extra={
+                        "symbol": symbol,
+                        "raw_amt": raw_amt,
+                        "close_qty": close_qty,
+                        "note": "precision rounding removed dust remainder",
+                    },
+                )
             fallback_side = "sell" if live_pos["side"] == "long" else "buy"
 
             self._retry(
@@ -674,7 +689,10 @@ class BybitClient:
             )
 
             # ----------------------------------------------------------------
-            # Post-close verification
+            # Post-close verification — RAISE if still open so callers do NOT
+            # record a phantom close.  The position is still live on the
+            # exchange; keeping the book accurate is more important than
+            # returning normally.
             # ----------------------------------------------------------------
             verify_positions = self.get_positions()
             still_open = any(
@@ -685,6 +703,12 @@ class BybitClient:
                 logger.error(
                     "position_not_flat_after_close",
                     extra={"symbol": symbol, "method": "plain_market_fallback"},
+                )
+                raise RuntimeError(
+                    f"position_not_flat_after_close: symbol={symbol} "
+                    "plain_market_fallback order was placed but position "
+                    "re-fetch still shows an open position. "
+                    "Manual intervention required."
                 )
             else:
                 logger.info(
