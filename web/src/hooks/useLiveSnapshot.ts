@@ -37,7 +37,15 @@ function buildWsUrl(): string {
   if (typeof window === 'undefined') return 'ws://localhost:8501/ws'
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const host = window.location.host
-  return `${protocol}//${host}/ws`
+  const base = `${protocol}//${host}/ws`
+  // Append ?token= when the dashboard token is injected at build-time or via
+  // the index.html bootstrap script (window.__CCBT_TOKEN__).
+  // Without this the backend rejects the WS with code 4403 when CCBT_DASH_TOKEN
+  // is set — which is mandatory for any non-localhost deployment.
+  const token = (typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).__CCBT_TOKEN__)
+    ? String((window as unknown as Record<string, unknown>).__CCBT_TOKEN__)
+    : undefined
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base
 }
 
 export function useLiveSnapshot(): LiveSnapshotState {

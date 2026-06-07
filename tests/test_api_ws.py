@@ -573,3 +573,117 @@ class TestWatchedSources:
         state1 = detector._snapshot_state()
 
         assert state0["log"] != state1["log"], "Log size/inode change must be detected"
+
+
+# ---------------------------------------------------------------------------
+# 11. WS token auth — reject without token, accept with token
+# ---------------------------------------------------------------------------
+
+class TestWSTokenAuth:
+    """CCBT_DASH_TOKEN gate must be tested on both /ws and /ws/logs.
+
+    TDD: these tests were written BEFORE the frontend fix.  They document:
+      - /ws without ?token= → rejected with code 4403 when token is configured
+      - /ws with correct ?token= → accepted (code 1000 clean close or data received)
+      - /ws/logs without ?token= → rejected
+      - /ws/logs with correct ?token= → accepted
+      - frontend buildWsUrl() must append ?token= when token is available
+    """
+
+    def test_ws_rejected_without_token_when_configured(self) -> None:
+        """When CCBT_DASH_TOKEN is set, /ws without ?token= must be rejected (4403)."""
+        import os
+        from unittest.mock import patch
+
+        from fastapi.testclient import TestClient
+        from api.main import app
+        import api.deps as _deps
+
+        _orig = _deps.CCBT_DASH_TOKEN
+        try:
+            _deps.CCBT_DASH_TOKEN = "test-secret-token"  # type: ignore[assignment]
+            with TestClient(app, raise_server_exceptions=False) as client:
+                with client.websocket_connect("/ws") as ws:
+                    msg = ws.receive_json()
+                    # Must receive an error message when token is wrong
+                    assert msg.get("type") == "error", (
+                        f"Expected error type when no token supplied, got: {msg}"
+                    )
+        finally:
+            _deps.CCBT_DASH_TOKEN = _orig
+
+    def test_ws_accepted_with_correct_token(self) -> None:
+        """When CCBT_DASH_TOKEN is set, /ws?token=<correct> must be accepted."""
+        from fastapi.testclient import TestClient
+        from api.main import app
+        import api.deps as _deps
+
+        _orig = _deps.CCBT_DASH_TOKEN
+        try:
+            _deps.CCBT_DASH_TOKEN = "test-secret-token"  # type: ignore[assignment]
+            with TestClient(app, raise_server_exceptions=False) as client:
+                with client.websocket_connect("/ws?token=test-secret-token") as ws:
+                    msg = ws.receive_json()
+                    # Must receive a real message (snapshot or heartbeat), NOT an error
+                    assert msg.get("type") != "error", (
+                        f"Correct token must be accepted; got: {msg}"
+                    )
+                    assert msg.get("type") in ("snapshot", "heartbeat", "initial"), (
+                        f"Expected snapshot/heartbeat after auth, got: {msg}"
+                    )
+        finally:
+            _deps.CCBT_DASH_TOKEN = _orig
+
+    def test_ws_logs_rejected_without_token_when_configured(self) -> None:
+        """When CCBT_DASH_TOKEN is set, /ws/logs without ?token= must be rejected."""
+        from fastapi.testclient import TestClient
+        from api.main import app
+        import api.deps as _deps
+
+        _orig = _deps.CCBT_DASH_TOKEN
+        try:
+            _deps.CCBT_DASH_TOKEN = "test-secret-token"  # type: ignore[assignment]
+            with TestClient(app, raise_server_exceptions=False) as client:
+                with client.websocket_connect("/ws/logs") as ws:
+                    msg = ws.receive_json()
+                    assert msg.get("type") == "error", (
+                        f"Expected error type on /ws/logs without token, got: {msg}"
+                    )
+        finally:
+            _deps.CCBT_DASH_TOKEN = _orig
+
+    def test_ws_logs_accepted_with_correct_token(self) -> None:
+        """When CCBT_DASH_TOKEN is set, /ws/logs?token=<correct> must be accepted."""
+        from fastapi.testclient import TestClient
+        from api.main import app
+        import api.deps as _deps
+
+        _orig = _deps.CCBT_DASH_TOKEN
+        try:
+            _deps.CCBT_DASH_TOKEN = "test-secret-token"  # type: ignore[assignment]
+            with TestClient(app, raise_server_exceptions=False) as client:
+                with client.websocket_connect("/ws/logs?token=test-secret-token") as ws:
+                    msg = ws.receive_json()
+                    assert msg.get("type") != "error", (
+                        f"Correct token must be accepted on /ws/logs; got: {msg}"
+                    )
+        finally:
+            _deps.CCBT_DASH_TOKEN = _orig
+
+    def test_no_token_env_allows_all(self) -> None:
+        """When CCBT_DASH_TOKEN is NOT set, /ws must accept connections without token."""
+        from fastapi.testclient import TestClient
+        from api.main import app
+        import api.deps as _deps
+
+        _orig = _deps.CCBT_DASH_TOKEN
+        try:
+            _deps.CCBT_DASH_TOKEN = None  # type: ignore[assignment]
+            with TestClient(app, raise_server_exceptions=False) as client:
+                with client.websocket_connect("/ws") as ws:
+                    msg = ws.receive_json()
+                    assert msg.get("type") != "error", (
+                        f"No token configured — must allow all connections; got: {msg}"
+                    )
+        finally:
+            _deps.CCBT_DASH_TOKEN = _orig

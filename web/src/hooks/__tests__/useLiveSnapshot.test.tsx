@@ -181,4 +181,35 @@ describe('useLiveSnapshot', () => {
 
     expect(result.current.status).toBe('connected')
   })
+
+  it('appends ?token= to WS URL when CCBT_DASH_TOKEN is injected via window.__CCBT_TOKEN__', async () => {
+    // Simulate the build-time token injection (Vite inject or index.html script)
+    const FAKE_TOKEN = 'my-secret-dashboard-token'
+    ;(window as unknown as Record<string, unknown>).__CCBT_TOKEN__ = FAKE_TOKEN
+
+    const wrapper = makeWrapper()
+    renderHook(() => useLiveSnapshot(), { wrapper })
+    await act(async () => { vi.runAllTimers() })
+
+    expect(MockWebSocket.instances).toHaveLength(1)
+    const wsUrl = MockWebSocket.instances[0].url
+    expect(wsUrl).toContain('?token=' + FAKE_TOKEN)
+
+    // Clean up
+    delete (window as unknown as Record<string, unknown>).__CCBT_TOKEN__
+  })
+
+  it('does NOT append ?token= when CCBT_DASH_TOKEN is not injected', async () => {
+    // Ensure no token is set
+    delete (window as unknown as Record<string, unknown>).__CCBT_TOKEN__
+
+    const wrapper = makeWrapper()
+    renderHook(() => useLiveSnapshot(), { wrapper })
+    await act(async () => { vi.runAllTimers() })
+
+    expect(MockWebSocket.instances).toHaveLength(1)
+    const wsUrl = MockWebSocket.instances[0].url
+    // URL should end at /ws without any token param
+    expect(wsUrl).not.toContain('token=')
+  })
 })

@@ -99,23 +99,40 @@ async def close_reasons(
 async def trade_gate(db: str = Depends(get_db_path)) -> TradeGateResponse:
     """Per-symbol attribution gate (FREE / MIXED) with sample-size guard.
 
-    Loads research/forward_test_cohort.json to pass since=manifest['added'] to
-    get_trade_gate(), giving parity with the forward_test_report CLI which also
-    filters by that date.
+    Loads research/forward_test_cohort.json to pass since=manifest['added'] and
+    the cohort symbol list to get_trade_gate().
+
+    The ``since=`` filter is scoped to cohort symbols only — non-cohort portfolio
+    symbols always use the full trade history.  This prevents the gate panel from
+    appearing empty when all portfolio trades predate the manifest's added date
+    (the common state on the first day of a new forward-test cohort).
     """
     from dashboard.queries import get_trade_gate
 
-    # Load since= from the cohort manifest (parity with forward_test_report CLI)
+    # Load since= and cohort symbol list from the manifest
     since: Optional[str] = None
+    cohort_symbols: Optional[set] = None
     manifest_path = REPO / "research" / "forward_test_cohort.json"
     try:
         import json as _json
         manifest = _json.loads(manifest_path.read_text())
         since = manifest.get("added") or None
+        candidates = manifest.get("candidates", [])
+        # Normalise to raw coin symbol (e.g. "ZENUSDT") matching DB format
+        cohort_symbols = {
+            c["coin"].upper()
+            for c in candidates
+            if isinstance(c, dict) and c.get("coin")
+        }
     except Exception:
-        pass  # manifest missing or malformed — proceed without since= filter
+        pass  # manifest missing or malformed — proceed without since= / cohort filter
 
-    result = get_trade_gate(db_path=db, project_root=REPO, since=since)
+    result = get_trade_gate(
+        db_path=db,
+        project_root=REPO,
+        since=since,
+        cohort_symbols=cohort_symbols if cohort_symbols else None,
+    )
     raw_rows = result.get("rows", [])
     summary_data = result.get("summary", {})
 

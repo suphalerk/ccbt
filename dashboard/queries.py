@@ -919,6 +919,7 @@ def get_trade_gate(
     graduate_pf: Optional[float] = None,
     project_root: Optional[Path] = None,
     since: Optional[str] = None,
+    cohort_symbols: Optional[set] = None,
 ) -> Dict[str, Any]:
     """Compute per-symbol forward-test gate verdicts.
 
@@ -929,7 +930,12 @@ def get_trade_gate(
 
     The ``since`` parameter mirrors the forward_test_report CLI's
     ``_live_stats(symbol, since=manifest['added'])`` filter so that the gate
-    verdict matches what the CLI reports.
+    verdict matches what the CLI reports.  When ``cohort_symbols`` is provided,
+    the ``since=`` filter is applied ONLY to those symbols — all other symbols
+    use the full trade history.  This prevents the dashboard gate panel from
+    appearing empty when the portfolio's historical trades all predate the
+    manifest's ``added`` date (the common production state on day-1 of a new
+    forward-test cohort).
 
     graduate_pf defaults to the value in research/forward_test_cohort.json
     if not provided (same source as the forward_test_report CLI).
@@ -941,9 +947,14 @@ def get_trade_gate(
             Defaults to the manifest value (currently 1.3).
         project_root: Project root directory used to count config files.
             Defaults to the project root inferred from this file's location.
-        since: ISO date string (e.g. "2026-06-07").  When set, only trades
-            with ``timestamp >= since`` are counted — same filter as the
-            forward_test_report CLI's ``_live_stats(symbol, since=...)``.
+        since: ISO date string (e.g. "2026-06-07").  When set together with
+            ``cohort_symbols``, only cohort symbol trades with
+            ``timestamp >= since`` are counted; non-cohort symbols are
+            unfiltered.  When ``cohort_symbols`` is None, the filter is applied
+            globally (legacy behaviour, kept for direct CLI callers).
+        cohort_symbols: Set of symbol strings (as they appear in the DB, e.g.
+            ``{'ALICEUSDT', 'DASHUSDT'}``).  When provided, ``since=`` is
+            scoped to these symbols only.
 
     Returns:
         Dict with:
@@ -971,14 +982,30 @@ def get_trade_gate(
     # Build attribution map: symbol_clean → config count
     count_map = _build_symbol_config_count(project_root)
 
-    # Get all closed non-orphan trades, optionally filtered by timestamp
+    # Get all closed non-orphan trades
     closed = get_closed_trades(db_path)
     if closed.empty or "pnl" not in closed.columns:
         return {"rows": [], "summary": {"n_meeting_min": 0, "n_total": 0}}
 
-    # Apply since= timestamp filter (parity with forward_test_report._live_stats)
+    # Apply since= timestamp filter:
+    # - When cohort_symbols is provided: filter ONLY those symbols by since=.
+    #   Non-cohort symbols retain all historical trades so the gate panel is
+    #   never empty when historical trades predate the manifest's added date.
+    # - When cohort_symbols is None: apply globally (legacy / direct CLI usage).
     if since is not None and "timestamp" in closed.columns:
-        closed = closed[closed["timestamp"] >= since]
+        if cohort_symbols is not None:
+            # Normalise: strip exchange suffix to match DB symbol format
+            cohort_norm = {s.replace("/", "").replace(":", "").upper() for s in cohort_symbols}
+            # Build symbol column for comparison (same normalisation)
+            sym_col = closed["symbol"].str.replace("/", "", regex=False).str.replace(":", "", regex=False).str.upper()
+            is_cohort = sym_col.isin(cohort_norm)
+            # Cohort rows: filter by since=; non-cohort rows: keep all
+            cohort_mask = is_cohort & (closed["timestamp"] >= since)
+            non_cohort_mask = ~is_cohort
+            closed = closed[cohort_mask | non_cohort_mask]
+        else:
+            # Legacy: global filter (used by forward_test_report CLI callers)
+            closed = closed[closed["timestamp"] >= since]
     if closed.empty:
         return {"rows": [], "summary": {"n_meeting_min": 0, "n_total": 0}}
 

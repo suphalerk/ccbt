@@ -387,3 +387,158 @@ class TestConfigCountPropagation:
                 )
         finally:
             _reset(app)
+
+
+# ---------------------------------------------------------------------------
+# Regression: live-shaped DB (all trades before manifest['added']) must NOT
+# return an empty gate panel.
+#
+# The bug: since=manifest['added'] was applied globally so a DB whose trades
+# all predate the manifest date returned n_total=0 and an empty panel — a
+# trader opening the dashboard today sees "No trade data available yet".
+#
+# The fix: since= must be scoped to cohort symbols only (symbols listed in the
+# manifest).  Non-cohort symbols always use the full trade history.
+# ---------------------------------------------------------------------------
+
+def _create_pre_manifest_db(tmp_path: Path, manifest_added: str = "2026-06-07") -> str:
+    """DB that mirrors real production state:
+    - 277 closed trades across 12+ symbols
+    - ALL trades have timestamps BEFORE manifest_added (2026-03-23 → 2026-06-05)
+    - 12 symbols have >1 config deployed → MIXED verdict
+    - None of the symbols are in the forward_test_cohort
+
+    Under the broken behaviour (global since=), this returns n_total=0.
+    Under the fixed behaviour (cohort-scoped since=), this returns n_total=12+.
+    """
+    db = str(tmp_path / "trades_prelive.db")
+    conn = sqlite3.connect(db)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute(
+        """CREATE TABLE trades (
+            id INTEGER PRIMARY KEY,
+            symbol TEXT, side TEXT, status TEXT, close_reason TEXT,
+            pnl REAL, pnl_pct REAL, timestamp TEXT,
+            entry_price REAL, exit_price REAL, size REAL, stop_loss REAL,
+            ai_decision TEXT, ai_confidence REAL, ai_reasoning TEXT,
+            ai_override INTEGER, duration_seconds INTEGER, strategy TEXT
+        )"""
+    )
+    conn.execute(
+        """CREATE TABLE bot_health (
+            symbol TEXT PRIMARY KEY, strategy TEXT, mode TEXT, status TEXT,
+            last_heartbeat TEXT, position_side TEXT, position_size REAL,
+            position_entry REAL, error_count INTEGER, loop_count INTEGER,
+            total_trades INTEGER, total_pnl REAL, updated_at TEXT
+        )"""
+    )
+    conn.execute(
+        """CREATE TABLE ai_calibration (
+            id INTEGER PRIMARY KEY, timestamp TEXT, symbol TEXT, side TEXT,
+            entry_price REAL, stated_confidence REAL, position_size_modifier REAL,
+            sl_adjustment REAL, tp_adjustment REAL, market_regime TEXT,
+            reasoning TEXT, risk_flags TEXT, should_skip INTEGER,
+            outcome TEXT, pnl REAL, was_correct INTEGER
+        )"""
+    )
+
+    # Simulate 12 portfolio symbols with trades entirely before manifest date
+    symbols = [
+        "AVAXUSDT", "BTCUSDT", "ETHUSDT", "SOLUSDT", "NEARUSDT",
+        "ATOMUSDT", "LINKUSDT", "DOTUSDT", "FILUSDT", "FETUSDT",
+        "XRPUSDT", "BNBUSDT",
+    ]
+    trades = []
+    row_id = 1
+    for sym in symbols:
+        # 20 trades per symbol, all dated 2026-03-23 to 2026-06-05 (before manifest)
+        for i in range(20):
+            day = 23 + (i % 7)
+            month = 3 + (i // 7)
+            if month > 5:
+                month = 5
+                day = min(day, 28)
+            ts = f"2026-{month:02d}-{day:02d}T{(i % 24):02d}:00:00"
+            pnl = 5.0 if i % 3 != 0 else -3.0
+            trades.append((
+                row_id, sym, "long", "closed", "take_profit" if pnl > 0 else "stop_loss",
+                pnl, 0.1, ts, 100.0, 102.0, 1.0, 98.0,
+                "LONG", 0.75, "setup", 0, 3600, "ichimoku",
+            ))
+            row_id += 1
+
+    conn.executemany(
+        """INSERT INTO trades
+           (id,symbol,side,status,close_reason,pnl,pnl_pct,timestamp,
+            entry_price,exit_price,size,stop_loss,ai_decision,ai_confidence,
+            ai_reasoning,ai_override,duration_seconds,strategy)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        trades,
+    )
+    conn.commit()
+    conn.close()
+    return db
+
+
+class TestLiveShapedDB:
+    """Regression: all trades pre-manifest → gate panel must NOT be empty.
+
+    This is the exact production failure: a real DB with 277 trades spanning
+    2026-03-23..2026-06-05 returned n_total=0 when since=2026-06-07 was applied
+    globally.  The fix scopes since= to cohort symbols only.
+    """
+
+    def test_all_pre_manifest_trades_not_empty(self, tmp_path: Path) -> None:
+        """n_total must be > 0 when all trades predate manifest['added']."""
+        db = _create_pre_manifest_db(tmp_path)
+        client, app = _get_client(db)
+        try:
+            resp = client.get("/api/trade-gate")
+            assert resp.status_code == 200, f"Unexpected status: {resp.status_code}"
+            data = resp.json()
+            summary = data.get("summary", {})
+            n_total = summary.get("n_total", 0)
+            assert n_total > 0, (
+                "REGRESSION: /api/trade-gate returned n_total=0 for a DB where all "
+                "trades predate the manifest's 'added' date. The global since= filter "
+                "is incorrectly emptying the panel. Fix: scope since= to cohort symbols only."
+            )
+        finally:
+            _reset(app)
+
+    def test_mixed_symbols_present_in_pre_manifest_db(self, tmp_path: Path) -> None:
+        """MIXED rows must appear in the gate panel for pre-manifest-date trade DBs.
+
+        Patches _build_symbol_config_count to simulate 12 multi-config symbols.
+        Without the fix, the panel is empty so MIXED count = 0.
+        """
+        db = _create_pre_manifest_db(tmp_path)
+        client, app = _get_client(db)
+        try:
+            import dashboard.queries as qmod
+
+            # Patch: all 12 symbols appear to have 2+ configs (→ MIXED verdict)
+            orig = qmod._build_symbol_config_count
+            def fake_build(project_root):
+                return {
+                    "AVAXUSDT": 2, "BTCUSDT": 2, "ETHUSDT": 2, "SOLUSDT": 2,
+                    "NEARUSDT": 2, "ATOMUSDT": 2, "LINKUSDT": 2, "DOTUSDT": 2,
+                    "FILUSDT": 2, "FETUSDT": 2, "XRPUSDT": 2, "BNBUSDT": 2,
+                }
+            qmod._build_symbol_config_count = fake_build
+            try:
+                resp = client.get("/api/trade-gate")
+                data = resp.json()
+                mixed_rows = [r for r in data.get("rows", []) if r.get("verdict") == "MIXED"]
+                assert len(mixed_rows) >= 1, (
+                    "REGRESSION: no MIXED rows visible when all trades predate manifest date. "
+                    "The global since= filter is hiding all MIXED attribution warnings."
+                )
+                assert len(mixed_rows) == 12, (
+                    f"Expected 12 MIXED rows (one per multi-config symbol), got {len(mixed_rows)}. "
+                    f"Rows: {[r['symbol'] for r in data.get('rows', [])]}"
+                )
+            finally:
+                qmod._build_symbol_config_count = orig
+        finally:
+            _reset(app)

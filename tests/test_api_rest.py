@@ -844,29 +844,41 @@ class TestTradeGate:
             _reset_overrides(app)
 
     def test_parity_with_get_trade_gate(self, tmp_path):
-        """API n_total must match get_trade_gate() when both use the same since= filter.
+        """API n_total must match get_trade_gate() when both use the same (since=, cohort_symbols=).
 
-        The endpoint loads since= from research/forward_test_cohort.json (parity with
-        forward_test_report CLI). The oracle here must pass the same since= so both
-        sides of the comparison are filtered identically.
+        The endpoint loads since= AND cohort_symbols from research/forward_test_cohort.json,
+        then scopes since= to cohort symbols only.  The oracle must use the same args so
+        both sides of the comparison are filtered identically.
         """
         import json as _json
         db = _create_test_db(tmp_path)
         client, app = _get_client(db)
         try:
             from dashboard.queries import get_trade_gate
-            # Read the same since= the endpoint will use
+            # Read the same since= and cohort_symbols the endpoint will use
             manifest_path = Path(__file__).resolve().parent.parent / "research" / "forward_test_cohort.json"
             try:
-                since = _json.loads(manifest_path.read_text()).get("added") or None
+                manifest = _json.loads(manifest_path.read_text())
+                since = manifest.get("added") or None
+                candidates = manifest.get("candidates", [])
+                cohort_symbols: Optional[set] = {
+                    c["coin"].upper()
+                    for c in candidates
+                    if isinstance(c, dict) and c.get("coin")
+                } or None
             except Exception:
                 since = None
-            # Use tmp_path as project_root (no live configs) and match the endpoint's since=
-            qs = get_trade_gate(db_path=db, project_root=tmp_path, since=since)
+                cohort_symbols = None
+            # Use tmp_path as project_root (no live configs) and match the endpoint's args
+            qs = get_trade_gate(
+                db_path=db, project_root=tmp_path,
+                since=since, cohort_symbols=cohort_symbols,
+            )
             api_data = client.get("/api/trade-gate").json()
             assert api_data["summary"]["n_total"] == qs["summary"]["n_total"], (
                 f"API n_total={api_data['summary']['n_total']}, "
-                f"queries n_total={qs['summary']['n_total']} (since={since!r})"
+                f"queries n_total={qs['summary']['n_total']} "
+                f"(since={since!r}, cohort_symbols={cohort_symbols!r})"
             )
         finally:
             _reset_overrides(app)

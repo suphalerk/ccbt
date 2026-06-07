@@ -747,14 +747,32 @@ class TestP9CloseReasons:
 class TestP10TradeGate:
     """Trade gate endpoint must match get_trade_gate() summary counts.
 
-    The endpoint loads since= from research/forward_test_cohort.json (parity with
-    the forward_test_report CLI). The oracle for parity tests must therefore use the
-    same since= filter so both sides of the comparison are on equal footing.
+    The endpoint loads since= from research/forward_test_cohort.json and scopes it
+    to cohort symbols only (non-cohort symbols use full history).  The oracle must
+    use the same (since=, cohort_symbols=) pair so both sides are on equal footing.
     """
 
     @staticmethod
+    def _manifest_params() -> tuple:
+        """Read since= and cohort_symbols from the real cohort manifest."""
+        import json as _json
+        manifest_path = REPO / "research" / "forward_test_cohort.json"
+        try:
+            m = _json.loads(manifest_path.read_text())
+            since = m.get("added") or None
+            candidates = m.get("candidates", [])
+            cohort_symbols = {
+                c["coin"].upper()
+                for c in candidates
+                if isinstance(c, dict) and c.get("coin")
+            }
+            return since, cohort_symbols if cohort_symbols else None
+        except Exception:
+            return None, None
+
+    @staticmethod
     def _manifest_since() -> Optional[str]:
-        """Read since= from the real cohort manifest (same path the router uses)."""
+        """Read since= from the real cohort manifest (kept for test_real_r_key tests)."""
         import json as _json
         manifest_path = REPO / "research" / "forward_test_cohort.json"
         try:
@@ -764,37 +782,44 @@ class TestP10TradeGate:
             return None
 
     def test_n_total_matches_queries(self, tmp_path: Path) -> None:
-        """n_total from the endpoint must match the since-filtered query (same since= as manifest)."""
+        """n_total from the endpoint must match the cohort-scoped query (same args as router)."""
         db = _create_rich_db(tmp_path)
         client, app = _get_client(db)
         try:
             from dashboard.queries import get_trade_gate
-            since = self._manifest_since()
-            qs = get_trade_gate(db_path=db, project_root=REPO, since=since)
+            since, cohort_symbols = self._manifest_params()
+            # Oracle uses the same (since=, cohort_symbols=) as the router
+            qs = get_trade_gate(
+                db_path=db, project_root=REPO,
+                since=since, cohort_symbols=cohort_symbols,
+            )
             api = client.get("/api/trade-gate").json()
             qs_n_total = qs.get("summary", {}).get("n_total", 0)
             api_n_total = api["summary"]["n_total"]
             assert api_n_total == qs_n_total, (
                 f"trade-gate n_total: api={api_n_total} qs={qs_n_total} "
-                f"(since={since!r})"
+                f"(since={since!r}, cohort_symbols={cohort_symbols!r})"
             )
         finally:
             _reset(app)
 
     def test_n_meeting_min_matches_queries(self, tmp_path: Path) -> None:
-        """n_meeting_min from the endpoint must match the since-filtered query."""
+        """n_meeting_min from the endpoint must match the cohort-scoped query."""
         db = _create_rich_db(tmp_path)
         client, app = _get_client(db)
         try:
             from dashboard.queries import get_trade_gate
-            since = self._manifest_since()
-            qs = get_trade_gate(db_path=db, project_root=REPO, since=since)
+            since, cohort_symbols = self._manifest_params()
+            qs = get_trade_gate(
+                db_path=db, project_root=REPO,
+                since=since, cohort_symbols=cohort_symbols,
+            )
             api = client.get("/api/trade-gate").json()
             qs_n_min = qs.get("summary", {}).get("n_meeting_min", 0)
             api_n_min = api["summary"]["n_meeting_min"]
             assert api_n_min == qs_n_min, (
                 f"trade-gate n_meeting_min: api={api_n_min} qs={qs_n_min} "
-                f"(since={since!r})"
+                f"(since={since!r}, cohort_symbols={cohort_symbols!r})"
             )
         finally:
             _reset(app)
@@ -820,8 +845,11 @@ class TestP10TradeGate:
         client, app = _get_client(db)
         try:
             from dashboard.queries import get_trade_gate
-            since = self._manifest_since()
-            qs = get_trade_gate(db_path=db, project_root=REPO, since=since)
+            since, cohort_symbols = self._manifest_params()
+            qs = get_trade_gate(
+                db_path=db, project_root=REPO,
+                since=since, cohort_symbols=cohort_symbols,
+            )
             api = client.get("/api/trade-gate").json()
             # Build lookup: symbol → config_count from the query result
             qs_by_sym = {r["symbol"]: r for r in qs.get("rows", [])}
@@ -850,8 +878,11 @@ class TestP10TradeGate:
         client, app = _get_client(db)
         try:
             from dashboard.queries import get_trade_gate
-            since = self._manifest_since()
-            qs = get_trade_gate(db_path=db, project_root=REPO, since=since)
+            since, cohort_symbols = self._manifest_params()
+            qs = get_trade_gate(
+                db_path=db, project_root=REPO,
+                since=since, cohort_symbols=cohort_symbols,
+            )
             # The key must be present in the raw queries.py dict
             for r in qs.get("rows", []):
                 assert "real_r" in r, (
