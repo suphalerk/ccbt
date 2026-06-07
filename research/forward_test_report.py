@@ -21,16 +21,11 @@ REPO = Path(__file__).resolve().parent.parent
 MANIFEST = REPO / "research" / "forward_test_cohort.json"
 DB = REPO / "trades.db"
 
-
-def classify(trades: int, pf: float, min_trades: int, graduate_pf: float) -> str:
-    """Decide a candidate's fate from its live sample (pure, testable)."""
-    if trades < min_trades:
-        return "KEEP_TESTING"
-    if pf >= graduate_pf:
-        return "READY_TO_AUDIT"
-    if pf < 1.0:
-        return "DROP"
-    return "MARGINAL"
+# classify lives in api/classify.py (canonical); re-exported here for backward compat.
+import sys as _sys
+if str(REPO) not in _sys.path:
+    _sys.path.insert(0, str(REPO))
+from api.classify import classify  # noqa: E402 (re-export)
 
 
 def _live_stats(con: sqlite3.Connection, symbol: str, since: str) -> tuple[int, float, float]:

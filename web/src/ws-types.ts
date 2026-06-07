@@ -1,0 +1,61 @@
+/**
+ * WebSocket message envelope types (not covered by OpenAPI).
+ * Mirrors api/models.py WSSnapshotPayload, WSLogPayload, WSHeartbeat.
+ *
+ * Source of truth: api/models.py — keep in sync.
+ */
+
+export interface PortfolioSummary {
+  total_trades: number
+  closed_trades: number
+  win_rate_pct: number
+  profit_factor: number
+  total_pnl: number
+  best_bot: string | null
+  worst_bot: string | null
+  active_bots: number
+}
+
+export interface BotRow {
+  symbol: string
+  strategy: string | null
+  timeframe: string | null
+  status: string | null
+  position_side: string | null
+  position_size: number | null
+  unrealized_pnl: number | null
+  total_pnl: number
+  win_rate_pct: number
+  profit_factor: number
+  trade_count: number
+  last_updated: string | null
+  mode: string | null
+}
+
+export interface LogLine {
+  timestamp: string | null
+  level: string | null
+  message: string
+  raw: string
+}
+
+export interface WSSnapshotPayload {
+  type: 'snapshot'
+  portfolio?: PortfolioSummary | null
+  bots?: BotRow[] | null
+  timestamp?: string | null
+}
+
+export interface WSLogPayload {
+  type: 'log'
+  lines: LogLine[]
+  timestamp?: string | null
+}
+
+export interface WSHeartbeat {
+  type: 'heartbeat'
+  timestamp?: string | null
+}
+
+/** Union type for all WS message envelopes */
+export type WSEnvelope = WSSnapshotPayload | WSLogPayload | WSHeartbeat

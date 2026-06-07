@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+/* CCBT Dashboard v2 — base styles */
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+#root {
+  min-height: 100svh;
+}
