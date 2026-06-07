@@ -1,0 +1,23 @@
+---
+name: ao-fleet-qa
+description: Awesome Oscillator (AO) fleet QA — 18 config_*_awesome.json ship on 1H but edge was research-validated on 4H; per-coin 1h vs 4h re-verify
+metadata:
+  type: project
+---
+
+AO fleet QA (Jun 2026): all 18 `config_*usdt_awesome.json` ship with timeframe_signal=timeframe_trend=1h, but the AO edge was research-validated on **4H** (Round 10: VVV/SAND 4H PF ~2.8). Sampled AO-1H bots mostly PF < 1.2 — the 1H edge is largely gone. Task: per-coin backtest AO on 1h AND 4h (resample 1h->4h) on 2yr data and decide SWITCH_TO_4H / FORWARD_TEST_4H / KEEP_1H / RETIRE.
+
+**Why:** AO configs shipped on the wrong timeframe vs where research found the edge.
+**How to apply:** SWITCH_TO_4H requires trades>=15 AND OOS>=60% IS (walk-forward). Tiny-sample huge-PF IS half (e.g. 7 trades PF 5) that collapses OOS = overfit, REJECT. PENGU/VIRTUAL have only ~1.25yr data (caveat). See [[verification_method]].
+
+**CFX verdict = RETIRE (confirmed):** 1H trades=43 PF=0.55 WR=25.6% Sharpe=-1.19 — decisively losing. 4H full trades=15 PF=1.29 (<1.3 gate) WR=46.7%. 4H walk-forward IS PF=5.15 (7tr,71%WR) -> OOS PF=0.50 (8tr,25%WR), ratio 10% (90% degradation). Edge entirely front-loaded mid-2024; all recent trades (late-2025/2026) lose. Full 2yr data present (17549 1h / 4388 4h bars). Neither TF deployable.
+
+**BCH verdict = RETIRE (confirmed, exact reproduction of proposed numbers):** 1H trades=51 PF=0.542 WR=23.5% Sharpe=-1.26; WF IS PF=0.53 -> OOS PF=0.40 (both halves lose). 4H full trades=11 (<15 gate) PF=0.613 WR=36.4%; WF IS PF=1.145 (6tr,50%WR) -> OOS PF=0.141 (5tr,20%WR), ratio 0.12 collapse. Both TFs full-PF < 1.0 -> fails FORWARD_TEST_4H; 4H fails SWITCH (trades & OOS). Same pattern as CFX: tiny-sample IS edge that implodes OOS. Full 2yr data (17548 1h / 4387 4h bars, clean).
+
+**ENJ verdict = FORWARD_TEST_4H (confirmed, 2026-06-07):** not in live portfolio (no capital at risk). 1H (as configured): PF 0.93, 44 tr, WR 34.1%, Sharpe -0.13 — net-negative; WF OOS PF 0.93<1.0 so walk_forward_ok=false (correct, though OOS/IS ratio is 85%). 4H (resampled temp cfg): PF 1.95, 12 tr, WR 41.7%, DD 1.2%, Sharpe 0.79; WF IS PF 3.15 (6tr) / OOS PF 1.98 (5tr) = 63% ratio, OOS>1.0. Adversarial stress on 4H: fees at ~2.5-3x -> PF 1.95->1.84 (robust); SL/TP/trail neighbor sweep all PF 1.44-2.69 (plateau, not a knife-edge curve-fit); hours-off 18tr PF 1.52, regime-off PF 1.42. Edge is GENUINE but 12<15 trades fails the deploy/SWITCH gate => FORWARD_TEST_4H, not SWITCH_TO_4H. Unlike CFX/BCH (OOS collapse), ENJ 4H OOS holds. All numbers reproduce exactly.
+
+**DASH verdict = FORWARD_TEST_4H (confirmed, 2026-06-07, exact reproduction):** not in live portfolio. 1H (as shipped): trades=41 PF=0.98 WR=36.6% Sharpe=-0.02; WF IS PF=1.42 (30tr) -> OOS PF=0.33 (11tr), ratio 23% — dead, OOS-negative, retire 1H. 4H full trades=11 (<15 gate) PF=1.18 WR=36.4% DD=2.7% Sharpe=0.18; WF IS PF=1.38 (6tr) -> OOS PF=1.43 (5tr), ratio 103% — both halves positive, walk-forward STABLE; holds PF 1.15 under 2x fees. Unlike CFX/BCH (4H OOS collapse), DASH 4H is genuine + stable + fee-robust but too thin (11 tr, PF<1.3) to SWITCH and too positive to RETIRE -> forward-test on testnet to reach trades>=15 / PF>=1.3. Not an overfit trap (modest PF, not huge-PF/tiny-count) but WF halves rest on 5-6 trades.
+
+**PENGU verdict = FORWARD_TEST_4H (confirmed, 2026-06-07, exact reproduction; ~1.25yr data caveat):** not in live portfolio. Data 2024-12-17..2026-03-21 = 11005 1h / 2752 4h bars (recent listing, structurally thin). 1H (as shipped): trades=25 PF=0.81 WR=32% Sharpe=-0.36 — losing; WF IS PF=0.78 -> OOS PF=0.60, BOTH halves sub-1.0 so the 0.77 OOS/IS ratio is meaningless (proposed correctly flags walk_forward_ok=false). 4H full trades=7 (<15 gate) PF=4.00 WR=57.1% DD=1.3% Sharpe=1.56; WF IS PF=12.0 (4tr,75%WR) -> OOS PF=1.51 (3tr), ratio 0.13 collapse. 4H PF holds at 2x fees (3.91), so not a fee artifact — but a TINY-SAMPLE artifact (4-trade IS half at PF 12 = classic overfit red flag). 4H edge is correctly-signed and consistent with Round 10 4H thesis (unlike CFX/BCH where 4H also fails) so not RETIRE; 1H is a loser so not KEEP_1H; 7 trades + WF collapse fails SWITCH_TO_4H => FORWARD_TEST_4H. Thin 4H count is partly structural (only ~1.25yr history) — forward-test is the only path to a valid sample. AGREE with proposed recommendation. overfit_risk HIGH for the 4H headline PF.
+
+Repro script pattern: load 1h csv, `resample("4h").agg(ohlcv)`, BacktestEngine(cfg).run(sig_df, trend_df) with both = same TF df. Engine returns metrics obj (.total_trades/.profit_factor/.win_rate/.sharpe_ratio/.max_drawdown). AO is look-ahead safe: uses prev_row for zero-cross + engine iloc[candle_idx-2].
