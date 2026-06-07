@@ -546,35 +546,51 @@ class TestCandlePersistNonFatal:
 
 @engine_required
 class TestCooldownReasonClassification:
-    """trail_stop and breakeven must use after_close cooldown, not after_sl."""
+    """All stop exits (loss, trail, breakeven) must use after_sl cooldown.
 
-    def test_trail_stop_not_in_is_sl_set(self):
-        """engine.py is_sl classification must NOT include 'trail_stop'."""
-        engine_path = REPO / "bot" / "engine.py"
-        source = engine_path.read_text()
+    Only TP exits use the shorter after_close cooldown.
 
-        # Find the is_sl assignment
-        for line in source.splitlines():
-            if "is_sl" in line and "in (" in line:
-                assert "trail_stop" not in line, (
-                    f"'trail_stop' must not be in is_sl set; line: {line}"
-                )
-                break
+    Rationale: before _infer_close_reason was introduced, ALL stop exits
+    were labelled 'sl' and always selected the longer after_sl candle count.
+    Adding trail_stop/breakeven to the is_sl set preserves that entry timing
+    (decision-invariant).  Excluding them would make Gold H1 re-enter 4 candles
+    sooner after a profitable trailing stop — a decision change, not telemetry.
+    """
 
-    def test_breakeven_not_in_is_sl_set(self):
-        """engine.py is_sl classification must NOT include 'breakeven'.
+    def test_trail_stop_in_is_sl_set(self):
+        """engine.py is_sl classification must include 'trail_stop'.
 
-        The original bug was breakeven *masking* stop_loss; the fix must ensure
-        genuine losses are reclassified as stop_loss, NOT that breakeven is
-        added to is_sl (which would give false SL-length cooldowns on true BE exits).
+        A trailing-stop exit is still a stop exit (stop moved into profit and
+        hit).  It warrants the same re-entry caution as a hard stop loss.
+        Excluding it would shorten the gold H1 cooldown by 4 h on every
+        profitable trailing stop — an entry-timing decision change.
         """
         engine_path = REPO / "bot" / "engine.py"
         source = engine_path.read_text()
 
         for line in source.splitlines():
             if "is_sl" in line and "in (" in line:
-                assert "breakeven" not in line, (
-                    f"'breakeven' must not be in is_sl set; line: {line}"
+                assert "trail_stop" in line, (
+                    f"'trail_stop' must be in is_sl set; line: {line}"
+                )
+                break
+
+    def test_breakeven_in_is_sl_set(self):
+        """engine.py is_sl classification must include 'breakeven'.
+
+        A breakeven exit is a stop exit (stop moved to entry and hit).  It
+        warrants the same cooldown as a hard stop.  The original bug was
+        breakeven *masking* stop_loss in label classification — the fix for
+        that is the pnl-sign gate in _infer_close_reason, not excluding
+        breakeven from is_sl.
+        """
+        engine_path = REPO / "bot" / "engine.py"
+        source = engine_path.read_text()
+
+        for line in source.splitlines():
+            if "is_sl" in line and "in (" in line:
+                assert "breakeven" in line, (
+                    f"'breakeven' must be in is_sl set; line: {line}"
                 )
                 break
 

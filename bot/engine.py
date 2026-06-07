@@ -1153,9 +1153,14 @@ class TradingEngine:
         if not already_open_side and trade_side_label in self._last_trade_close:
             lc = self._last_trade_close[trade_side_label]
             candle_secs = _candle_seconds(config["timeframe_signal"])
-            # Bug #2 fix: check both "sl" and "stop_loss" for SL reason
+            # All stop exits use the after_sl cooldown: includes legacy "sl",
+            # "stop_loss" (hard loss), "trail_stop" (ratcheted-stop profit), and
+            # "breakeven" (stop moved to entry).  Only TP exits use after_close.
+            # This preserves pre-taxonomy entry timing: before _infer_close_reason
+            # was introduced all stop exits were labelled "sl" and always selected
+            # the longer after_sl candle count.
             lc_reason = lc.get("reason", "close")
-            is_sl = lc_reason in ("sl", "stop_loss")
+            is_sl = lc_reason in ("sl", "stop_loss", "trail_stop", "breakeven")
             cooldown_candles = config.get(
                 "cooldown_candles_after_sl" if is_sl else "cooldown_candles_after_close",
                 4,
