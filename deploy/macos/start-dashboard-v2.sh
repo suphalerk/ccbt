@@ -34,7 +34,13 @@ CCBT_DASH_POLL_S="${CCBT_DASH_POLL_S:-3}"
 # Note: the allowlist .env parsing below runs AFTER this check.  If the token
 # is set in .env rather than the launchd environment, set it via:
 #   launchctl setenv CCBT_DASH_TOKEN "$(openssl rand -hex 32)"
-# then reload the service so this pre-flight sees it.
+# IMPORTANT: 'launchctl setenv' updates the launchd session environment but
+# uvicorn (and therefore FastAPI) reads CCBT_DASH_TOKEN once at import time.
+# A simple 'launchctl stop/start' does NOT pick up the new value because the
+# parent launchd session re-exports the FROZEN old value.  Always use:
+#   launchctl kickstart -k gui/$(id -u)/com.ccbt.dashboard-v2
+# ('kickstart -k' kills the running job and starts a fresh one in the updated
+# launchd environment, so the new token is visible in os.environ at startup.)
 # ---------------------------------------------------------------------------
 if [[ "${CCBT_DASH_HOST:-127.0.0.1}" != "127.0.0.1" && "${CCBT_DASH_HOST:-127.0.0.1}" != "localhost" ]]; then
     if [[ -z "${CCBT_DASH_TOKEN:-}" ]]; then
@@ -73,6 +79,9 @@ if [[ -f "$ENV_FILE" ]]; then
             _value="${_value%\"}"
             _value="${_value#\'}"
             _value="${_value%\'}"
+            # Strip inline comments: ' # ...' or ' #...' (space then hash)
+            # e.g.  CCBT_DASH_PORT=8601  # dashboard port  -> 8601
+            _value="${_value%%[[:space:]]#*}"
             export "$_key"="$_value"
         fi
     done < "$ENV_FILE"
