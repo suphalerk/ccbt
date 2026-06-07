@@ -155,4 +155,5 @@ exec uvicorn api.main:app \
     --host "$CCBT_DASH_HOST" \
     --port "$CCBT_DASH_PORT" \
     --loop uvloop \
-    --log-level info
+    --log-level info \
+    --no-access-log

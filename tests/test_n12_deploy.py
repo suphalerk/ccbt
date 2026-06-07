@@ -197,6 +197,22 @@ class TestStartScript:
             "The current allowlist omits it, so FastAPI token validation always sees ''."
         )
 
+    def test_uvicorn_no_access_log_flag(self) -> None:
+        """The uvicorn exec line must include --no-access-log.
+
+        The WebSocket URL contains a ?token=<secret> query parameter.  Without
+        --no-access-log, uvicorn writes the full URL — including the token — to
+        stdout on every WS connect and disconnect.  On a Mac Mini that output is
+        captured by launchd and written to the log file in plain text, leaking
+        the session token to anyone with read access to the log.
+        """
+        txt = _script_text()
+        assert "--no-access-log" in txt, (
+            "start-dashboard-v2.sh uvicorn exec line must include --no-access-log.\n"
+            "Without it, every WS connect logs the full ?token= URL to the\n"
+            "launchd log file, leaking the session token in plain text."
+        )
+
 
 # ---------------------------------------------------------------------------
 # com.ccbt.dashboard-v2.plist tests
@@ -356,6 +372,18 @@ class TestNginxWsSnippet:
         for secret in forbidden:
             assert secret not in txt, f"nginx snippet must not reference secret {secret!r}"
 
+    def test_no_access_log_off_on_ws(self) -> None:
+        """The /ws location must have 'access_log off' — /ws?token= would leak the
+        token to the access log on every connect otherwise."""
+        txt = _nginx_text()
+        ws_block = _extract_location_block(txt, r"location\s+/ws\b")
+        assert ws_block, "Could not locate 'location /ws' block"
+        assert "access_log off" in ws_block, (
+            "The /ws location must set 'access_log off'. "
+            "The WS URL includes ?token=<secret> — writing it to the access log on every "
+            "connect would leak the token to the launchd/system log file."
+        )
+
 
 # ---------------------------------------------------------------------------
 # FastAPI serves web/dist integration smoke test
@@ -496,6 +524,60 @@ class TestNginxDeploymentTopology:
             "/v2 location must rewrite the /v2 prefix away before proxying.\n"
             "FastAPI's spa_catch_all serves paths relative to web/dist/ with no\n"
             "prefix, so nginx must strip /v2 before forwarding."
+        )
+
+    def test_api_location_exists(self) -> None:
+        """nginx must have a root-level /api/ location block.
+
+        The Vite SPA makes REST calls to root-absolute paths like /api/bots.
+        Without this block those requests hit nginx root and either 404 or
+        fall through to the legacy Streamlit proxy (which returns HTML, not JSON).
+        """
+        txt = _nginx_text()
+        assert re.search(r"location\s+/api/", txt), (
+            "deploy/nginx-ws-v2.conf must have a 'location /api/' block.\n"
+            "The SPA fetches /api/bots, /api/health, /api/portfolio at root.\n"
+            "Without this block they 404 or fall through to legacy Streamlit."
+        )
+
+    def test_api_location_proxies_to_v2_backend(self) -> None:
+        """/api/ location must proxy to ccbt_v2_backend (port 8601)."""
+        txt = _nginx_text()
+        api_block = _extract_location_block(txt, r"location\s+/api/")
+        assert api_block, (
+            "Could not locate 'location /api/' block — add it to nginx-ws-v2.conf"
+        )
+        assert "ccbt_v2_backend" in api_block or "8601" in api_block, (
+            "/api/ location must proxy_pass to ccbt_v2_backend (port 8601)."
+        )
+
+    def test_api_location_has_auth_basic(self) -> None:
+        """/api/ location must carry auth_basic — same gate as /v2 and /assets/.
+
+        Without auth_basic, unauthenticated clients can call any REST endpoint
+        directly (e.g. GET /api/bots) bypassing the nginx password gate.
+        """
+        txt = _nginx_text()
+        api_block = _extract_location_block(txt, r"location\s+/api/")
+        assert api_block, "Could not locate 'location /api/' block"
+        assert "auth_basic" in api_block, (
+            "/api/ location must include 'auth_basic' — otherwise REST endpoints\n"
+            "are reachable without a password by any client that knows the URL."
+        )
+
+    def test_api_location_no_immutable_cache_control(self) -> None:
+        """/api/ location must NOT set immutable Cache-Control.
+
+        API responses carry live trading state and must never be cached.
+        The /assets/ location uses 'immutable' (correct for hashed bundles);
+        /api/ must NOT (it returns live data).
+        """
+        txt = _nginx_text()
+        api_block = _extract_location_block(txt, r"location\s+/api/")
+        assert api_block, "Could not locate 'location /api/' block"
+        assert "immutable" not in api_block, (
+            "/api/ location must NOT set Cache-Control immutable — "
+            "API responses carry live trading state and must not be cached."
         )
 
     def test_fastapi_serves_assets_at_root_no_prefix(self) -> None:
