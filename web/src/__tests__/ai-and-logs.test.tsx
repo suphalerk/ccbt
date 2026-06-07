@@ -64,7 +64,25 @@ function makeCalibrationResponse(rowCount = 2): AICalibrationResponse {
       influence_factor: 0.75,
     })
   }
-  return { rows }
+  // Aggregate must always be provided — server pre-computes it, no TS fallback
+  const totalDecisions = rows.reduce((s, r) => s + r.total_decisions, 0)
+  const decidedTrades  = rows.reduce((s, r) => s + r.correct, 0)
+  // weighted accuracy: sum(accuracy_pct * total_decisions) / sum(total_decisions)
+  const weightedAcc    = totalDecisions > 0
+    ? rows.reduce((s, r) => s + r.accuracy_pct * r.total_decisions, 0) / totalDecisions
+    : 0
+  const avgInfluence   = rows.length > 0
+    ? rows.reduce((s, r) => s + r.influence_factor, 0) / rows.length
+    : 1.0
+  return {
+    rows,
+    aggregate: {
+      total_decisions: totalDecisions,
+      decided_trades:  decidedTrades,
+      weighted_accuracy_pct: Math.round(weightedAcc * 10) / 10,
+      avg_influence_factor: Math.round(avgInfluence * 100) / 100,
+    },
+  }
 }
 
 function makeLogsResponse(entries?: Array<{ level: string; message: string }>): LogsResponse {
@@ -147,6 +165,39 @@ describe('AIAnalyticsPage — metric cards', () => {
 
     const accEl = await screen.findByTestId('ai-accuracy-pct')
     expect(accEl.textContent).toContain('70')
+  })
+
+  it('MINOR: metric cards render from server aggregate, not TS-computed fallback', async () => {
+    // Regression: computeAggStats() used a different formula than server weighted_accuracy_pct.
+    // Dashboard must consume the server aggregate field directly; there is no TS fallback.
+    // If aggregate is missing from the response, cards must show "unavailable" (not a computed guess).
+    vi.mocked(api.aiCalibration).mockResolvedValue(makeCalibrationResponse(2))
+
+    render(<AIAnalyticsPage />, { wrapper: makeWrapper() })
+
+    // With aggregate present, server values are rendered
+    const totalEl = await screen.findByTestId('ai-total-decisions')
+    // Must show the server-provided total (30), not a TS-computed value
+    expect(totalEl.textContent).toContain('30')
+    // Must NOT show 'unavailable' when aggregate is present
+    expect(totalEl.textContent).not.toContain('unavailable')
+  })
+
+  it('MINOR: metric cards show unavailable when server omits aggregate', async () => {
+    // When server does not return aggregate (old server, dev server, error), cards must
+    // show "unavailable" rather than computing a potentially wrong value in the browser.
+    vi.mocked(api.aiCalibration).mockResolvedValue({
+      rows: [
+        { symbol: 'BTCUSDT', total_decisions: 20, correct: 14, accuracy_pct: 70.0, influence_factor: 1.25 },
+      ],
+      // No aggregate field — server didn't provide it
+    })
+
+    render(<AIAnalyticsPage />, { wrapper: makeWrapper() })
+
+    const totalEl = await screen.findByTestId('ai-total-decisions')
+    // Must NOT compute "20" from the rows — must show unavailable
+    expect(totalEl.textContent).toContain('unavailable')
   })
 })
 

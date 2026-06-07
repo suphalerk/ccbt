@@ -289,6 +289,7 @@ async def heatmap(
                 hour=_safe_int(row.get("hour_bucket")),
                 dow=_safe_int(row.get("dow")),
                 pnl=round(_safe_float_required(row.get("total_pnl")), 2),
+                avg_pnl=round(_safe_float_required(row.get("avg_pnl")), 2),
                 trade_count=_safe_int(row.get("trades")),
                 win_rate_pct=round(wr * 100, 1),
             ))

@@ -276,7 +276,8 @@ class CalendarResponse(BaseModel):
 class HeatmapCell(BaseModel):
     hour: int  # 0-23 UTC
     dow: int  # 0=Sunday, 6=Saturday (SQLite strftime %w)
-    pnl: float
+    pnl: float        # total_pnl (kept for backward compat)
+    avg_pnl: float    # avg_pnl — true expectancy per trade (use this for colouring/display)
     trade_count: int
     win_rate_pct: float
 

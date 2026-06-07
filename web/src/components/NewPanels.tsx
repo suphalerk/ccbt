@@ -276,7 +276,7 @@ export function TradeGateTable() {
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Trades</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">WR%</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">PF</th>
-                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Reward/$Avg-Loss</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500" title="Avg win ÷ avg loss — dimensionless R-multiple (not $)">Avg Win/Avg Loss (R)</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Verdict</th>
               </tr>
             </thead>
@@ -295,7 +295,7 @@ export function TradeGateTable() {
                 const rewardDisplay =
                   row.reward_to_avgloss === null
                     ? '—'
-                    : `$${row.reward_to_avgloss.toFixed(2)}`
+                    : `${row.reward_to_avgloss.toFixed(2)}R`
 
                 return (
                   <tr
@@ -654,9 +654,10 @@ export function ExpectancyHeatmap({ symbol }: { symbol?: string | null } = {}) {
 
   function cellColourClass(c: typeof cells[0] | undefined): string {
     if (!c || c.trade_count < MIN_SAMPLES) return 'bg-slate-700/40 text-slate-600'
-    // Colour by PnL sign
-    if (c.pnl > 0) return 'bg-emerald-900/40 text-emerald-300 border border-emerald-800/40'
-    if (c.pnl < 0) return 'bg-red-900/40 text-red-300 border border-red-800/40'
+    // Colour by avg_pnl sign (true expectancy per trade, not total)
+    const avgPnl = c.avg_pnl ?? 0
+    if (avgPnl > 0) return 'bg-emerald-900/40 text-emerald-300 border border-emerald-800/40'
+    if (avgPnl < 0) return 'bg-red-900/40 text-red-300 border border-red-800/40'
     return 'bg-slate-700/40 text-slate-400'
   }
 
@@ -746,14 +747,14 @@ export function ExpectancyHeatmap({ symbol }: { symbol?: string | null } = {}) {
                       title={
                         isMasked
                           ? `${c?.trade_count ?? 0} trades (masked — need ≥${MIN_SAMPLES})`
-                          : `PnL: ${c?.pnl.toFixed(2)} · ${c?.trade_count} trades`
+                          : `Avg PnL/trade: ${(c?.avg_pnl ?? 0).toFixed(2)} · ${c?.trade_count} trades`
                       }
                     >
                       {c && (
                         <>
                           {!isMasked && (
                             <span className="tabular-nums font-medium">
-                              {c.pnl >= 0 ? '+' : ''}{c.pnl.toFixed(1)}
+                              {(c.avg_pnl ?? 0) >= 0 ? '+' : ''}{(c.avg_pnl ?? 0).toFixed(1)}
                             </span>
                           )}
                           <span className="opacity-70">{c.trade_count}</span>

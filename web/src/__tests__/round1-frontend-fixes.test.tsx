@@ -244,7 +244,7 @@ describe('ExpectancyHeatmap — DOW label mapping (BLOCKER #4)', () => {
       symbol: null,
       bucket_hours: 4,
       cells: [
-        { hour: 0, dow: 0, pnl: 10.0, trade_count: 25, win_rate_pct: 60 },
+        { hour: 0, dow: 0, pnl: 10.0, avg_pnl: 0.4, trade_count: 25, win_rate_pct: 60 },
       ],
     } as HeatmapResponse)
 
@@ -263,7 +263,7 @@ describe('ExpectancyHeatmap — DOW label mapping (BLOCKER #4)', () => {
       symbol: null,
       bucket_hours: 4,
       cells: [
-        { hour: 0, dow: 6, pnl: 5.0, trade_count: 25, win_rate_pct: 55 },
+        { hour: 0, dow: 6, pnl: 5.0, avg_pnl: 0.2, trade_count: 25, win_rate_pct: 55 },
       ],
     } as HeatmapResponse)
 

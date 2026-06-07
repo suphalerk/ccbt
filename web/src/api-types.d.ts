@@ -443,8 +443,10 @@ export interface components {
       hour: number;
       /** Dow */
       dow: number;
-      /** Pnl */
+      /** Pnl - total_pnl for the cell (kept for backward compat) */
       pnl: number;
+      /** Avg Pnl - average pnl per trade (true expectancy; use for colouring/display) */
+      avg_pnl: number;
       /** Trade Count */
       trade_count: number;
       /** Win Rate Pct */

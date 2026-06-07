@@ -71,39 +71,12 @@ function MetricCard({ label, value, testId, valueClass = 'text-slate-100' }: Met
 }
 
 // ============================================================================
-// Aggregate stats from calibration rows
+// Aggregate stats — server-only (no financial math in TS)
 // ============================================================================
 
-interface AggStats {
-  totalDecisions: number
-  decidedCount: number
-  avgAccuracy: number
-  avgInfluence: number
-  correctCount: number
-}
-
-function computeAggStats(rows: AICalibrationResponse['rows']): AggStats {
-  if (rows.length === 0) {
-    return { totalDecisions: 0, decidedCount: 0, avgAccuracy: 0, avgInfluence: 1.0, correctCount: 0 }
-  }
-  const totalDecisions = rows.reduce((s, r) => s + r.total_decisions, 0)
-  const correctCount   = rows.reduce((s, r) => s + r.correct, 0)
-  const decidedCount   = rows.reduce((s, r) => {
-    // Decided = rows where outcome is known; we use correct as a proxy
-    // (total_decisions includes should_skip; for display we show total)
-    return s + r.total_decisions
-  }, 0)
-  // Weighted average accuracy (weighted by total_decisions)
-  const weightedAcc = rows.reduce((s, r) => s + r.accuracy_pct * r.total_decisions, 0) / totalDecisions
-  const avgInfluence = rows.reduce((s, r) => s + r.influence_factor, 0) / rows.length
-  return {
-    totalDecisions,
-    decidedCount,
-    avgAccuracy: Math.round(weightedAcc * 10) / 10,
-    avgInfluence: Math.round(avgInfluence * 100) / 100,
-    correctCount,
-  }
-}
+// All aggregate statistics are pre-computed by the Python backend (/api/ai/calibration)
+// and consumed directly from data.aggregate.  There is intentionally no client-side
+// fallback formula — mismatched formulae caused confusing discrepancies in past versions.
 
 // ============================================================================
 // Accuracy bar chart
@@ -214,26 +187,11 @@ export function AIAnalyticsPage() {
   })
 
   const rows = data?.rows ?? []
-  // Prefer server-provided aggregate; fall back to browser-computed stats if not present
-  const serverAgg = (data as any)?.aggregate as {
-    total_decisions: number
-    decided_trades: number
-    weighted_accuracy_pct: number
-    avg_influence_factor: number
-  } | null | undefined
-  const browserStats = computeAggStats(rows)
-  const stats = serverAgg
-    ? {
-        totalDecisions: serverAgg.total_decisions,
-        decidedCount: serverAgg.decided_trades,
-        avgAccuracy: Math.round(serverAgg.weighted_accuracy_pct * 10) / 10,
-        avgInfluence: Math.round(serverAgg.avg_influence_factor * 100) / 100,
-        correctCount: browserStats.correctCount,
-      }
-    : browserStats
+  // Server-provided aggregate only — no browser fallback (rule: no financial math in TS)
+  const agg = data?.aggregate ?? null
   // Only show empty state once we have data (not while still loading).
-  // If the server returned an aggregate object, we have data (even if decisions=0).
-  const hasData = rows.length > 0 || serverAgg !== null && serverAgg !== undefined
+  // Rows present = data; aggregate present = data (even if decisions=0).
+  const hasData = rows.length > 0 || agg !== null
   const showEmpty = !isLoading && data !== undefined && !hasData
 
   return (
@@ -267,35 +225,37 @@ export function AIAnalyticsPage() {
 
       {hasData && (
         <>
-          {/* Metric cards */}
+          {/* Metric cards — all values from server aggregate */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
             <MetricCard
               label="Total Decisions"
-              value={String(stats.totalDecisions)}
+              value={agg ? String(agg.total_decisions ?? 0) : 'unavailable'}
               testId="ai-total-decisions"
             />
             <MetricCard
               label="Avg Accuracy"
-              value={`${stats.avgAccuracy}%`}
+              value={agg ? `${agg.weighted_accuracy_pct ?? 0}%` : 'unavailable'}
               testId="ai-accuracy-pct"
               valueClass={
-                stats.avgAccuracy >= 65
+                !agg
+                  ? 'text-slate-500'
+                  : (agg.weighted_accuracy_pct ?? 0) >= 65
                   ? 'text-emerald-400'
-                  : stats.avgAccuracy >= 45
+                  : (agg.weighted_accuracy_pct ?? 0) >= 45
                   ? 'text-yellow-400'
                   : 'text-red-400'
               }
             />
             <MetricCard
-              label="Correct"
-              value={String(stats.correctCount)}
+              label="Decided Trades"
+              value={agg ? String(agg.decided_trades ?? 0) : 'unavailable'}
               testId="ai-correct-count"
             />
             <MetricCard
               label="Avg Influence"
-              value={`${stats.avgInfluence.toFixed(2)}×`}
+              value={agg ? `${(agg.avg_influence_factor ?? 1).toFixed(2)}×` : 'unavailable'}
               testId="ai-influence-factor"
-              valueClass={influenceClass(stats.avgInfluence)}
+              valueClass={agg ? influenceClass(agg.avg_influence_factor ?? 1) : 'text-slate-500'}
             />
           </div>
 

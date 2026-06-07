@@ -344,6 +344,38 @@ describe('TradeGateTable', () => {
 
     await screen.findByTestId('gate-empty')
   })
+
+  it('HONESTY: reward_to_avgloss is a dimensionless R-multiple — must NOT render with $ prefix', async () => {
+    // Regression: reward_to_avgloss was rendered as "$2.50" which misleadingly implies a dollar
+    // amount. It is avg_win / avg_loss — a dimensionless ratio (real_r alias).  Must render as "2.50R".
+    vi.mocked(api.tradeGate).mockResolvedValue(
+      makeGateResponse({
+        rows: [
+          {
+            symbol: 'BTCUSDT',
+            config_count: 1,
+            trade_count: 20,
+            profit_factor: 2.0,
+            win_rate_pct: 60,
+            reward_to_avgloss: 2.5,
+            real_r: 2.5,
+            verdict: 'KEEP_TESTING',
+            meets_min_trades: true,
+          },
+        ],
+      })
+    )
+
+    const Wrapper = makeWrapper()
+    render(<TradeGateTable />, { wrapper: Wrapper })
+    await act(async () => {})
+
+    const row = await screen.findByTestId('gate-row-BTCUSDT')
+    // Must NOT contain "$2.50" — dollar prefix is wrong for a ratio
+    expect(row.textContent).not.toMatch(/\$2\.5/)
+    // Must contain an R indicator (e.g. "2.50R")
+    expect(row.textContent).toMatch(/2\.50R|2\.5R/)
+  })
 })
 
 // ============================================================================
@@ -562,9 +594,9 @@ describe('ExpectancyHeatmap', () => {
       bucket_hours: 4,
       cells: [
         // Low-sample cell (< 20) — must be grey
-        { hour: 0, dow: 1, pnl: 50.0, trade_count: 5, win_rate_pct: 60 },
+        { hour: 0, dow: 1, pnl: 50.0, avg_pnl: 10.0, trade_count: 5, win_rate_pct: 60 },
         // High-sample cell (>= 20) — should be coloured
-        { hour: 4, dow: 2, pnl: 80.0, trade_count: 25, win_rate_pct: 65 },
+        { hour: 4, dow: 2, pnl: 80.0, avg_pnl: 3.2, trade_count: 25, win_rate_pct: 65 },
       ],
     } as HeatmapResponse)
 
@@ -579,9 +611,42 @@ describe('ExpectancyHeatmap', () => {
     expect(lowCell.className).not.toMatch(/emerald/)
     expect(lowCell.className).not.toMatch(/\bred-[0-9]/)
 
-    // High-sample cell should be coloured (emerald for positive pnl)
+    // High-sample cell should be coloured by avg_pnl (emerald for positive avg_pnl)
     const highCell = await screen.findByTestId('heatmap-cell-4-2')
     expect(highCell.className).toMatch(/emerald|green/)
+  })
+
+  it('HONESTY: cell value and colour are based on avg_pnl (not total_pnl)', async () => {
+    // Regression: ExpectancyHeatmap previously coloured by total_pnl (metrics.py:291).
+    // avg_pnl is the true expectancy per trade; a cell with large total_pnl but
+    // many losses still has a negative avg_pnl and must render red.
+    vi.mocked(api.heatmap).mockResolvedValue({
+      symbol: null,
+      bucket_hours: 4,
+      cells: [
+        // Positive total_pnl but NEGATIVE avg_pnl (many losing trades dragging average down)
+        { hour: 12, dow: 3, pnl: 5.0, avg_pnl: -2.5, trade_count: 25, win_rate_pct: 30 },
+        // Positive avg_pnl
+        { hour: 16, dow: 4, pnl: 100.0, avg_pnl: 4.0, trade_count: 25, win_rate_pct: 70 },
+      ],
+    } as HeatmapResponse)
+
+    const Wrapper = makeWrapper()
+    render(<ExpectancyHeatmap />, { wrapper: Wrapper })
+    await act(async () => {})
+
+    // Cell with negative avg_pnl must be red (not green, even though total_pnl is positive)
+    const negCell = await screen.findByTestId('heatmap-cell-12-3')
+    expect(negCell.className).toMatch(/red/)
+    expect(negCell.className).not.toMatch(/emerald|green/)
+    // Cell display value must show the avg_pnl value (-2.5), not total_pnl (5.0)
+    expect(negCell.textContent).toContain('-2.5')
+
+    // Cell with positive avg_pnl must be green
+    const posCell = await screen.findByTestId('heatmap-cell-16-4')
+    expect(posCell.className).toMatch(/emerald|green/)
+    // Cell display value must show avg_pnl (4.0), not total_pnl (100.0)
+    expect(posCell.textContent).toContain('+4.0')
   })
 
   it('shows trade count in each cell', async () => {
@@ -589,7 +654,7 @@ describe('ExpectancyHeatmap', () => {
       symbol: null,
       bucket_hours: 4,
       cells: [
-        { hour: 8, dow: 3, pnl: 40.0, trade_count: 12, win_rate_pct: 55 },
+        { hour: 8, dow: 3, pnl: 40.0, avg_pnl: 3.3, trade_count: 12, win_rate_pct: 55 },
       ],
     } as HeatmapResponse)
 
