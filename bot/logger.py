@@ -8,7 +8,9 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
-import pandas as pd
+# pandas is imported lazily inside upsert_candles() so the journal module
+# remains importable in stdlib-only environments (e.g. lightweight health checks).
+# All type annotations that reference pd.* use string forward-references.
 
 # ---------------------------------------------------------------------------
 # bot_ohlcv producer constants
@@ -146,6 +148,7 @@ class TradeJournal:
 
     def _init_db(self) -> None:
         """Create the trades table, bot_health table, and indexes if they don't exist."""
+        self._conn.execute("PRAGMA busy_timeout=5000")
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.execute(
@@ -526,9 +529,11 @@ def upsert_candles(
         return
 
     import math
+    import pandas as pd  # lazy import — keeps journal importable stdlib-only
 
     conn = sqlite3.connect(db_path, check_same_thread=False)
     try:
+        conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
         _ensure_bot_ohlcv_table(conn)
