@@ -14,6 +14,8 @@ import { Sidebar } from './components/Sidebar'
 import { StatusBar } from './components/StatusBar'
 import { PortfolioPage } from './pages/PortfolioPage'
 import { BotDetailPage } from './pages/BotDetailPage'
+import { AIAnalyticsPage } from './pages/AIAnalyticsPage'
+import { LogViewerPage } from './pages/LogViewerPage'
 import { useLiveSnapshot } from './hooks/useLiveSnapshot'
 
 function App() {
@@ -32,6 +34,8 @@ function App() {
           <Routes>
             <Route path="/" element={<PortfolioPage />} />
             <Route path="/bots/:symbol" element={<BotDetailPage />} />
+            <Route path="/ai" element={<AIAnalyticsPage />} />
+            <Route path="/logs" element={<LogViewerPage />} />
           </Routes>
         </main>
       </div>
