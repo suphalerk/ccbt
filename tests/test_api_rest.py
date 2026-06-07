@@ -844,17 +844,29 @@ class TestTradeGate:
             _reset_overrides(app)
 
     def test_parity_with_get_trade_gate(self, tmp_path):
-        """API n_total must match get_trade_gate() row count."""
+        """API n_total must match get_trade_gate() when both use the same since= filter.
+
+        The endpoint loads since= from research/forward_test_cohort.json (parity with
+        forward_test_report CLI). The oracle here must pass the same since= so both
+        sides of the comparison are filtered identically.
+        """
+        import json as _json
         db = _create_test_db(tmp_path)
         client, app = _get_client(db)
         try:
             from dashboard.queries import get_trade_gate
-            # Use a temp project root without config files — avoids noise from live configs
-            qs = get_trade_gate(db_path=db, project_root=tmp_path)
+            # Read the same since= the endpoint will use
+            manifest_path = Path(__file__).resolve().parent.parent / "research" / "forward_test_cohort.json"
+            try:
+                since = _json.loads(manifest_path.read_text()).get("added") or None
+            except Exception:
+                since = None
+            # Use tmp_path as project_root (no live configs) and match the endpoint's since=
+            qs = get_trade_gate(db_path=db, project_root=tmp_path, since=since)
             api_data = client.get("/api/trade-gate").json()
             assert api_data["summary"]["n_total"] == qs["summary"]["n_total"], (
                 f"API n_total={api_data['summary']['n_total']}, "
-                f"queries n_total={qs['summary']['n_total']}"
+                f"queries n_total={qs['summary']['n_total']} (since={since!r})"
             )
         finally:
             _reset_overrides(app)

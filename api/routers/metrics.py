@@ -97,10 +97,25 @@ async def close_reasons(
 
 @router.get("/trade-gate", response_model=TradeGateResponse)
 async def trade_gate(db: str = Depends(get_db_path)) -> TradeGateResponse:
-    """Per-symbol attribution gate (FREE / MIXED) with sample-size guard."""
+    """Per-symbol attribution gate (FREE / MIXED) with sample-size guard.
+
+    Loads research/forward_test_cohort.json to pass since=manifest['added'] to
+    get_trade_gate(), giving parity with the forward_test_report CLI which also
+    filters by that date.
+    """
     from dashboard.queries import get_trade_gate
 
-    result = get_trade_gate(db_path=db, project_root=REPO)
+    # Load since= from the cohort manifest (parity with forward_test_report CLI)
+    since: Optional[str] = None
+    manifest_path = REPO / "research" / "forward_test_cohort.json"
+    try:
+        import json as _json
+        manifest = _json.loads(manifest_path.read_text())
+        since = manifest.get("added") or None
+    except Exception:
+        pass  # manifest missing or malformed — proceed without since= filter
+
+    result = get_trade_gate(db_path=db, project_root=REPO, since=since)
     raw_rows = result.get("rows", [])
     summary_data = result.get("summary", {})
 

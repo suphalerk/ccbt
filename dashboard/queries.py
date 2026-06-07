@@ -1028,6 +1028,7 @@ def get_trade_gate(
         rows_out.append({
             "symbol": symbol,
             "trades": n,
+            "config_count": config_count if config_count > 0 else 1,
             "win_rate": round(win_rate, 4),
             "profit_factor": pf,
             "total_pnl": round(total_pnl, 4),

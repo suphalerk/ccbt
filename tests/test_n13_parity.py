@@ -745,34 +745,56 @@ class TestP9CloseReasons:
 # ---------------------------------------------------------------------------
 
 class TestP10TradeGate:
-    """Trade gate endpoint must match get_trade_gate() summary counts."""
+    """Trade gate endpoint must match get_trade_gate() summary counts.
+
+    The endpoint loads since= from research/forward_test_cohort.json (parity with
+    the forward_test_report CLI). The oracle for parity tests must therefore use the
+    same since= filter so both sides of the comparison are on equal footing.
+    """
+
+    @staticmethod
+    def _manifest_since() -> Optional[str]:
+        """Read since= from the real cohort manifest (same path the router uses)."""
+        import json as _json
+        manifest_path = REPO / "research" / "forward_test_cohort.json"
+        try:
+            m = _json.loads(manifest_path.read_text())
+            return m.get("added") or None
+        except Exception:
+            return None
 
     def test_n_total_matches_queries(self, tmp_path: Path) -> None:
+        """n_total from the endpoint must match the since-filtered query (same since= as manifest)."""
         db = _create_rich_db(tmp_path)
         client, app = _get_client(db)
         try:
             from dashboard.queries import get_trade_gate
-            qs = get_trade_gate(db_path=db, project_root=REPO)
+            since = self._manifest_since()
+            qs = get_trade_gate(db_path=db, project_root=REPO, since=since)
             api = client.get("/api/trade-gate").json()
             qs_n_total = qs.get("summary", {}).get("n_total", 0)
             api_n_total = api["summary"]["n_total"]
             assert api_n_total == qs_n_total, (
-                f"trade-gate n_total: api={api_n_total} qs={qs_n_total}"
+                f"trade-gate n_total: api={api_n_total} qs={qs_n_total} "
+                f"(since={since!r})"
             )
         finally:
             _reset(app)
 
     def test_n_meeting_min_matches_queries(self, tmp_path: Path) -> None:
+        """n_meeting_min from the endpoint must match the since-filtered query."""
         db = _create_rich_db(tmp_path)
         client, app = _get_client(db)
         try:
             from dashboard.queries import get_trade_gate
-            qs = get_trade_gate(db_path=db, project_root=REPO)
+            since = self._manifest_since()
+            qs = get_trade_gate(db_path=db, project_root=REPO, since=since)
             api = client.get("/api/trade-gate").json()
             qs_n_min = qs.get("summary", {}).get("n_meeting_min", 0)
             api_n_min = api["summary"]["n_meeting_min"]
             assert api_n_min == qs_n_min, (
-                f"trade-gate n_meeting_min: api={api_n_min} qs={qs_n_min}"
+                f"trade-gate n_meeting_min: api={api_n_min} qs={qs_n_min} "
+                f"(since={since!r})"
             )
         finally:
             _reset(app)
