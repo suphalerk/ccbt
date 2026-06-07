@@ -78,6 +78,9 @@ streamlit run dashboard/app.py
 # Tests
 pytest tests/ -v
 
+# Check for timeframe drift (strategy on a TF it wasn't validated on)
+python scripts/check_config_timeframes.py --deployed-only
+
 # Single bot (legacy)
 python main.py --config config.json
 YOLO_MODE=1 python main.py --config config_yolo.json
@@ -151,11 +154,14 @@ When adding a new signal type (e.g. `my_new_signal`), ALL of these must be done 
    **⚠️ THIS IS THE MOST COMMONLY MISSED STEP** — backtest engine has its own dispatch in `backtest/engine.py` so backtests pass but live bots never trade
 4. **`backtest/engine.py`**: Add dispatch in the backtest signal loop (for backtesting)
 5. **Config JSON**: Create config with `"signals": {"my_new_signal": {"enabled": true}}` and all required parameters
-6. **Test**: Run one bot with the new config and verify signal generation in logs:
+6. **`research/strategy_meta.json`**: Register the signal type with the timeframe(s) it was research-validated on (`"my_new_signal": {"validated_tf": ["4h"], ...}`). Configs whose `timeframe_signal` isn't in this set are flagged as drift — this is what caught the Awesome Oscillator shipping on 1h when it was only validated on 4h.
+7. **Test**: Run one bot with the new config and verify signal generation in logs:
    ```bash
    python main.py --config config_test_newsignal.json
    # Look for: "signal_generated" with "source": "my_new_signal" in logs
    ```
+
+**Timeframe-drift guard**: `python scripts/check_config_timeframes.py [--deployed-only]` scans every config's enabled signal vs its `validated_tf` in `research/strategy_meta.json`. `start.sh` runs `--deployed-only` as a non-blocking pre-flight. Generators can import `validate_config()` to reject a bad config before writing.
 
 ### Binance Algo Orders — Rules
 - SL/TP are **algo conditional orders** (NOT regular orders) — they live in a separate order book

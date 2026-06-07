@@ -200,7 +200,7 @@ Diagnosed 6 net-losing testnet coins (workflow `losing-coins-diagnosis`, backtes
 
 **ICP** (`dualthrust`/`emaribbon`/`rangebounce`) retired 2026-06-07 — Binance testnet lists ICP as SPOT only, no USDT perp (crashed every restart).
 
-**Cross-coin finding (pending):** all 18 `config_*_awesome.json` ship on 1H but Awesome Oscillator was validated on 4H → systemic edge loss. Audit pending — see docs/plans / memory.
+**Cross-coin finding (resolved 2026-06-07):** all 18 `config_*_awesome.json` shipped on 1H but Awesome Oscillator was validated on 4H → systemic edge loss. Audit applied: DOT/FIL → 4H, 6 retired from live, GALA keeps 1H (its 1H passes). Root-cause guard added: `research/strategy_meta.json` (validated_tf registry) + `scripts/check_config_timeframes.py`. The guard also surfaced the same drift class (not deployed) in **ichi_adx** (apt/enj/ltc/sand/xmr) and **ribbon_ao** (dot/pixel/sui) — both validated 4H but on 1h; clean up if ever deployed.
 
 **Deployed: 59 configs (single process via `main_multi.py`, ~340 MB) through a DigitalOcean SOCKS5 proxy + shared market-data cache.**
 
