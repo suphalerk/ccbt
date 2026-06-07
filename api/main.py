@@ -258,21 +258,22 @@ async def ws_logs(
 # ---------------------------------------------------------------------------
 _dist = REPO / "web" / "dist"
 if _dist.exists():
-    from fastapi.responses import HTMLResponse  # noqa: E402
-    from fastapi.staticfiles import StaticFiles  # noqa: E402
+    import mimetypes as _mimetypes  # noqa: E402
+    from fastapi.responses import FileResponse, HTMLResponse, JSONResponse  # noqa: E402
 
     def _inject_token(html: str, token: Optional[str]) -> str:
         """Prepend a window.__CCBT_TOKEN__ assignment to the HTML <head>.
 
         The token value is JSON-encoded so it is safe to embed in a JS string
-        literal (handles quotes, backslashes, etc.).
+        literal (handles quotes, backslashes, etc.).  The </script> sequence is
+        escaped to prevent injection via a token value that itself contains it.
         """
         import json as _json
         if not token:
             return html
-        snippet = (
-            f"<script>window.__CCBT_TOKEN__={_json.dumps(token)};</script>"
-        )
+        # Escape </script> so a token containing it cannot break out of the tag.
+        safe_token = _json.dumps(token).replace("</", "<\\/")
+        snippet = f"<script>window.__CCBT_TOKEN__={safe_token};</script>"
         # Insert just before </head> so it runs before any module scripts
         if "</head>" in html:
             return html.replace("</head>", f"{snippet}</head>", 1)
@@ -281,21 +282,44 @@ if _dist.exists():
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa_catch_all(full_path: str) -> HTMLResponse:
-        """Serve index.html for all non-API, non-WS paths (SPA deep-link support).
+        """Serve static assets or index.html for SPA deep-links (N3).
 
-        Injects window.__CCBT_TOKEN__ when CCBT_DASH_TOKEN is configured so
-        the frontend WS hook can include ?token= in WebSocket URLs.
+        Priority:
+        1. /api/* and /ws/* paths → 404 JSON (no token in body, to avoid leaking it).
+           These should have been handled by earlier-registered routes; this branch
+           is a safety net for /api/nonexistent and /ws/bogus.
+        2. full_path resolves to a real file under _dist (e.g. assets/*.js) →
+           FileResponse with correct MIME type.  Path traversal is blocked by
+           checking the resolved path is still under _dist.
+        3. Everything else → inject token into index.html for client-side routing.
         """
-        # Let /api/* and /ws routes fall through to their own handlers
-        # (FastAPI resolves named routes first; this only fires for unmatched paths)
+        # --- 1. Guard: no-token 404 for /api/* and /ws/*
+        if full_path.startswith("api") or full_path.startswith("ws"):
+            return JSONResponse(
+                status_code=404,
+                content={"detail": f"Not Found: /{full_path}"},
+            )
+
+        # --- 2. Serve real static files (assets/, favicons, etc.)
+        candidate = (_dist / full_path).resolve()
+        try:
+            # Block path traversal: resolved path must still sit under _dist
+            candidate.relative_to(_dist.resolve())
+            is_under_dist = True
+        except ValueError:
+            is_under_dist = False
+
+        if is_under_dist and candidate.is_file():
+            mime, _ = _mimetypes.guess_type(str(candidate))
+            return FileResponse(str(candidate), media_type=mime or "application/octet-stream")
+
+        # --- 3. SPA catch-all: serve injected index.html
         index = _dist / "index.html"
         if index.exists():
             from api.deps import CCBT_DASH_TOKEN  # noqa: PLC0415
             html = index.read_text(encoding="utf-8")
             html = _inject_token(html, CCBT_DASH_TOKEN)
             return HTMLResponse(content=html, status_code=200)
-        # No SPA bundle — return a 404
-        from fastapi import Response  # noqa: E402
-        return Response(status_code=404, content="SPA bundle not found")
 
-    app.mount("/", StaticFiles(directory=str(_dist), html=True), name="spa")
+        # No SPA bundle at all
+        return JSONResponse(status_code=404, content={"detail": "SPA bundle not found"})

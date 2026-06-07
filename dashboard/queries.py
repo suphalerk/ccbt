@@ -1018,7 +1018,11 @@ def get_trade_gate(
             continue
 
         wins = pnls[pnls > 0]
-        losses = pnls[pnls < 0]
+        # Use <= 0 for losses to match forward_test_report._live_stats(symbol, since)
+        # which uses: gross_l = abs(sum(p for p in pnls if p <= 0))
+        # This ensures PF matches between the CLI report and the dashboard gate panel
+        # when there are zero-pnl trades (e.g. break-even closes).
+        losses = pnls[pnls <= 0]
 
         win_rate = float(len(wins) / n) if n > 0 else 0.0
         gross_profit = float(wins.sum()) if len(wins) > 0 else 0.0
@@ -1036,9 +1040,11 @@ def get_trade_gate(
 
         # reward_to_avgloss = mean(pnl) / mean(abs(losing pnl))
         # null for zero-loss symbols; suppressed for < ~10 trades
+        # Uses <= 0 for losses to match _live_stats parity.
         reward_to_avgloss: Optional[float]
-        if len(losses) > 0:
-            reward_to_avgloss = avg_pnl / float(abs(losses).mean())
+        strict_losses = pnls[pnls < 0]  # For mean-loss calc, only truly negative trades
+        if len(strict_losses) > 0:
+            reward_to_avgloss = avg_pnl / float(abs(strict_losses).mean())
         else:
             reward_to_avgloss = None
 

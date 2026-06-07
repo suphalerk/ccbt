@@ -46,7 +46,11 @@ def sym_clean(symbol: str) -> str:
     Raises:
         ValueError: If the cleaned symbol fails the safety regex.
     """
-    cleaned = symbol.replace("/", "").replace(":", "").upper()
+    # Mirror the exact inline transform used by engine.py (line 410):
+    #   config['symbol'].replace('/', '').replace(':', '')
+    # No .upper() here — engine doesn't apply it either (configs are always uppercase).
+    # The regex below enforces uppercase, so lowercase input correctly raises ValueError.
+    cleaned = symbol.replace("/", "").replace(":", "")
     if not _SYM_RE.match(cleaned):
         raise ValueError(
             f"Invalid symbol: {symbol!r} → cleaned={cleaned!r} "

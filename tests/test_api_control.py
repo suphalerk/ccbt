@@ -147,11 +147,13 @@ class TestSymClean:
         with pytest.raises(ValueError):
             sym_clean("%2e%2e%2fetc%2fpasswd")
 
-    def test_sym_clean_lowercases_to_upper(self):
+    def test_sym_clean_rejects_lowercase(self):
         from bot.mode import sym_clean
-        # sym_clean calls .upper() so lowercase input should succeed
-        result = sym_clean("btcusdt")
-        assert result == "BTCUSDT"
+        # sym_clean mirrors engine.py (no .upper()); the regex enforces uppercase,
+        # so lowercase input must raise ValueError, not silently uppercase it.
+        # Config symbols are always uppercase (engine never needs .upper() either).
+        with pytest.raises(ValueError, match="does not match"):
+            sym_clean("btcusdt")
 
     def test_sym_clean_rejects_too_short(self):
         from bot.mode import sym_clean
