@@ -212,9 +212,16 @@ BOT_DATA_DIR                 — Data directory (default: ./data in Docker, . lo
 **Key selection is automatic**: `use_testnet: true` → testnet keys, `use_testnet: false` → mainnet keys. Bot raises `ValueError` if mainnet keys are missing.
 
 ## Database Schema (trades.db)
-- `trades` — Full trade lifecycle (open → close with PnL, AI decision, close reason)
+- `trades` — Full trade lifecycle (open → close with PnL, AI decision, close reason). `close_reason` is
+  enriched (dashboard-engine-followups): `tp` / `stop_loss` (hard SL, loss) / `trail_stop` (stop that
+  ratcheted into profit — a winning exit) / `breakeven` (pnl≥0 near entry) / `panic` / `graceful_shutdown`
+  / `orphan_reconcile`. Classification is by **pnl sign first** (a loss is never `trail_stop`/`breakeven`).
 - `ai_calibration` — AI decision outcomes for accuracy tracking
 - `bot_health` — Per-bot live status (position, errors, loop count, mode, PnL)
+- `bot_ohlcv` — Recent OHLCV+indicators (ema9/ema21/rsi14) per symbol/timeframe, written by the bot from
+  candles it already fetched (NO extra exchange call); read by the v2 `/api/candles` endpoint. Bounded/upserted.
+- All `trades.db` writers set `PRAGMA busy_timeout=5000` (shared `_apply_pragmas`) — ~59 bots burst-write at
+  the candle boundary, so contended writers wait rather than fail with "database is locked".
 
 ## Deployment
 - **All bots in a single process** via `main_multi.py` (shared ccxt exchange pool); ~59 active configs as of 2026-06-07 (roster lives in `deploy/macos/start.sh`)

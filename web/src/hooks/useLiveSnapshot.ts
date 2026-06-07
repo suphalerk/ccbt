@@ -13,8 +13,8 @@
  */
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import type { WSEnvelope, WSSnapshotPayload, BotRow, PortfolioSummary, WSSnapshotData } from '../ws-types'
-import type { BotListResponse } from '../api/client'
+import type { WSEnvelope, WSSnapshotPayload, BotRow, WSSnapshotData } from '../ws-types'
+import type { BotListResponse, PortfolioSummaryResponse } from '../api/client'
 
 export type WsStatus = 'connecting' | 'connected' | 'reconnecting' | 'closed'
 
@@ -105,7 +105,7 @@ export function useLiveSnapshot(): LiveSnapshotState {
 
         // Hydrate TanStack Query caches
         if (portfolio) {
-          queryClient.setQueryData<PortfolioSummary>(QUERY_KEYS.portfolio, portfolio)
+          queryClient.setQueryData<PortfolioSummaryResponse>(QUERY_KEYS.portfolio, portfolio as PortfolioSummaryResponse)
         }
         // Wrap bots array in BotListResponse shape { bots: [...] } so the cache
         // entry matches what api.listBots() returns and consumers reading
