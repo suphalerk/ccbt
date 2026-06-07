@@ -131,6 +131,72 @@ class TestStartScript:
             "Script must reference CCBT_DASH_TOKEN (required when not behind localhost)"
         )
 
+    def test_abort_not_warn_on_empty_token_nonlocalhost(self) -> None:
+        """When CCBT_DASH_HOST != 127.0.0.1 and CCBT_DASH_TOKEN is unset the script
+        must call 'exit 1' — a WARNING is insufficient because the process starts
+        anyway and exposes the unauthenticated API to network peers.
+
+        We verify the shell source contains a conditional block that:
+          1. Compares CCBT_DASH_HOST against 127.0.0.1 / localhost with != (not just
+             the default-assignment line like CCBT_DASH_HOST="${CCBT_DASH_HOST:-127.0.0.1}"),
+          2. AND contains 'exit 1' within that same guard block (not just in a
+             different pre-flight check).
+        """
+        txt = _script_text()
+
+        # Must have an inequality comparison of CCBT_DASH_HOST against 127.0.0.1/localhost
+        # inside a conditional (i.e. [[ ... != ... ]] or [ ... != ... ]).
+        # The default-assignment form "CCBT_DASH_HOST:-127.0.0.1" must NOT match.
+        has_inequality_guard = bool(
+            re.search(r'\[\[.*CCBT_DASH_HOST.*!=.*127', txt)
+            or re.search(r'\[\[.*127.*!=.*CCBT_DASH_HOST', txt)
+            or re.search(r'\[\[.*CCBT_DASH_HOST.*!=.*localhost', txt, re.IGNORECASE)
+            or re.search(r'\[.*CCBT_DASH_HOST.*!=.*127', txt)
+            or re.search(r'if.*\[.*CCBT_DASH_HOST.*!=.*127', txt)
+        )
+        assert has_inequality_guard, (
+            "start-dashboard-v2.sh must include a conditional [[ $CCBT_DASH_HOST != 127.0.0.1 ]] "
+            "(or similar) guard that aborts with exit 1 when the host is non-localhost and "
+            "CCBT_DASH_TOKEN is empty.  The current code only WARNs and continues."
+        )
+
+        # Within the guard region, exit 1 must appear
+        # (the existing exit 1 calls are for port-bound / venv-missing checks,
+        # not for the token-missing-on-non-localhost case)
+        # Find all if-blocks that reference CCBT_DASH_HOST != 127 AND CCBT_DASH_TOKEN
+        has_token_exit = bool(
+            re.search(
+                r'CCBT_DASH_HOST[^\n]*!=.*\n(?:[^\n]*\n){0,8}.*CCBT_DASH_TOKEN[^\n]*\n(?:[^\n]*\n){0,5}.*exit 1',
+                txt,
+            )
+            or re.search(
+                r'CCBT_DASH_TOKEN[^\n]*\n(?:[^\n]*\n){0,3}.*exit 1',
+                txt,
+            )
+        )
+        assert has_token_exit, (
+            "start-dashboard-v2.sh must call 'exit 1' when CCBT_DASH_TOKEN is empty "
+            "on a non-localhost binding — currently it only emits a WARNING."
+        )
+
+    def test_token_exported_to_fastapi(self) -> None:
+        """CCBT_DASH_TOKEN must be exported so FastAPI can read it from os.environ.
+
+        The allowlist currently exports CCBT_DASH_HOST, CCBT_DASH_PORT,
+        CCBT_DASH_POLL_S — but NOT CCBT_DASH_TOKEN.  Without an explicit
+        'export CCBT_DASH_TOKEN' the variable is present in the parent shell but
+        NOT passed to the uvicorn child process, so FastAPI token validation
+        silently sees an empty string and accepts every request.
+        """
+        txt = _script_text()
+        # Accept "export CCBT_DASH_TOKEN" on its own line, or
+        # "export CCBT_DASH_TOKEN=..." assignment form.
+        has_export = bool(re.search(r"export\s+CCBT_DASH_TOKEN", txt))
+        assert has_export, (
+            "start-dashboard-v2.sh must 'export CCBT_DASH_TOKEN' so uvicorn inherits it. "
+            "The current allowlist omits it, so FastAPI token validation always sees ''."
+        )
+
 
 # ---------------------------------------------------------------------------
 # com.ccbt.dashboard-v2.plist tests
@@ -241,6 +307,47 @@ class TestNginxWsSnippet:
         assert has_auth, (
             "nginx snippet must require basic auth or pass X-Dash-Token "
             "(localhost peer-check is vacuous behind nginx)"
+        )
+
+    def test_ws_block_has_auth_basic(self) -> None:
+        """The /ws location block itself must carry auth_basic — not just the /v2 block.
+
+        A WebSocket upgrade request arrives as an HTTP GET to /ws *before* the
+        Upgrade handshake.  nginx evaluates the enclosing location block for
+        auth_basic — if it's absent there, an unauthenticated browser can open
+        an unlimited number of WS connections bypassing the .htpasswd gate.
+        Passing X-Dash-Token downstream is not a substitute: the token is
+        validated only by the FastAPI app, which the nginx layer never reaches
+        if the connection is dropped upstream first.  auth_basic must appear
+        *inside* the /ws block (not just /v2).
+        """
+        txt = _nginx_text()
+
+        # Extract only the text of the /ws location block.
+        # Strategy: find "location /ws {" then collect lines until the matching "}"
+        in_ws_block = False
+        brace_depth = 0
+        ws_block_lines: list[str] = []
+        for line in txt.splitlines():
+            stripped = line.strip()
+            if not in_ws_block:
+                if re.match(r"location\s+/ws\b", stripped):
+                    in_ws_block = True
+                    brace_depth = stripped.count("{") - stripped.count("}")
+                    ws_block_lines.append(line)
+            else:
+                ws_block_lines.append(line)
+                brace_depth += stripped.count("{") - stripped.count("}")
+                if brace_depth <= 0:
+                    break
+
+        assert ws_block_lines, "Could not locate 'location /ws' block in nginx snippet"
+        ws_block = "\n".join(ws_block_lines)
+
+        assert "auth_basic" in ws_block, (
+            "The /ws location block must contain 'auth_basic' — "
+            "WebSocket upgrade requests must be gated by the same .htpasswd "
+            "as /v2, otherwise any unauthenticated client can open WS connections."
         )
 
     def test_no_forbidden_secrets(self) -> None:

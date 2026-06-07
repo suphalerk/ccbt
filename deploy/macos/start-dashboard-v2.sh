@@ -26,10 +26,24 @@ CCBT_DASH_PORT="${CCBT_DASH_PORT:-8601}"
 CCBT_DASH_POLL_S="${CCBT_DASH_POLL_S:-3}"
 
 # ---------------------------------------------------------------------------
-# CCBT_DASH_TOKEN: required when running behind nginx (localhost peer-check
-# is vacuous; the token is the real auth layer for the VPS path).
+# CCBT_DASH_TOKEN: required when the dashboard is reachable from non-localhost
+# peers (i.e. CCBT_DASH_HOST != 127.0.0.1).  On a VPS the token is the real
+# auth layer forwarded by nginx to FastAPI; on a local Mac Mini it is optional
+# (loopback-only, nginx basic-auth provides the outer gate).
+#
+# Note: the allowlist .env parsing below runs AFTER this check.  If the token
+# is set in .env rather than the launchd environment, set it via:
+#   launchctl setenv CCBT_DASH_TOKEN "$(openssl rand -hex 32)"
+# then reload the service so this pre-flight sees it.
 # ---------------------------------------------------------------------------
-if [[ -z "${CCBT_DASH_TOKEN:-}" ]]; then
+if [[ "${CCBT_DASH_HOST:-127.0.0.1}" != "127.0.0.1" && "${CCBT_DASH_HOST:-127.0.0.1}" != "localhost" ]]; then
+    if [[ -z "${CCBT_DASH_TOKEN:-}" ]]; then
+        echo "ERROR: CCBT_DASH_TOKEN must be set when CCBT_DASH_HOST is not 127.0.0.1." >&2
+        echo "  Generate: openssl rand -hex 32" >&2
+        echo "  Inject:   launchctl setenv CCBT_DASH_TOKEN <value>" >&2
+        exit 1
+    fi
+elif [[ -z "${CCBT_DASH_TOKEN:-}" ]]; then
     echo "WARNING: CCBT_DASH_TOKEN is not set. Required when running behind nginx." >&2
 fi
 
@@ -103,11 +117,16 @@ fi
 source "$VENV/bin/activate"
 
 # ---------------------------------------------------------------------------
-# Export only the safe allowlisted subset to FastAPI
+# Export only the safe allowlisted subset to FastAPI.
+# CCBT_DASH_TOKEN is intentionally included: FastAPI reads it from os.environ
+# for per-request token validation.  Without this export the variable lives
+# only in the parent shell and uvicorn inherits an empty string, causing every
+# token check to silently pass.
 # ---------------------------------------------------------------------------
 export CCBT_DASH_HOST
 export CCBT_DASH_PORT
 export CCBT_DASH_POLL_S
+export CCBT_DASH_TOKEN
 export BOT_DATA_DIR="${BOT_DATA_DIR:-$PROJECT_DIR/data}"
 export PYTHONPATH="$PROJECT_DIR:${PYTHONPATH:-}"
 
