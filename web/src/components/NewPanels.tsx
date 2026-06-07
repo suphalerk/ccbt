@@ -303,7 +303,17 @@ export function TradeGateTable() {
                     data-testid={`gate-row-${row.symbol}`}
                     className={rowClass}
                   >
-                    <td className="px-3 py-2 font-medium text-slate-200">{row.symbol}</td>
+                    <td className="px-3 py-2 font-medium text-slate-200">
+                      <span>{row.symbol}</span>
+                      {row.config_count > 1 && (
+                        <span
+                          className="ml-1 text-[9px] text-purple-400 tabular-nums"
+                          title={`${row.config_count} configs share this netted position`}
+                        >
+                          {row.config_count} cfgs
+                        </span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 tabular-nums text-slate-400">{row.trade_count}</td>
                     <td className="px-3 py-2 tabular-nums text-slate-400">
                       {row.win_rate_pct.toFixed(0)}%

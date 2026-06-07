@@ -272,6 +272,40 @@ describe('TradeGateTable', () => {
     expect(screen.getByText('MIXED')).toBeTruthy()
   })
 
+  it('renders config_count in the row for MIXED symbol (BUG 2 regression)', async () => {
+    // BUG 2: config_count was never emitted by get_trade_gate() rows_out,
+    // so the API always returned config_count=1. Frontend was masking this
+    // because tests had config_count:4 in mock data but never asserted it
+    // was actually rendered in the DOM.
+    vi.mocked(api.tradeGate).mockResolvedValue(
+      makeGateResponse({
+        rows: [
+          {
+            symbol: 'AAVEUSDT',
+            config_count: 3,
+            trade_count: 20,
+            profit_factor: 1.5,
+            win_rate_pct: 55,
+            reward_to_avgloss: 1.5,
+            real_r: null,
+            verdict: 'MIXED',
+            meets_min_trades: true,
+          },
+        ],
+      })
+    )
+
+    const Wrapper = makeWrapper()
+    render(<TradeGateTable />, { wrapper: Wrapper })
+    await act(async () => {})
+
+    const row = await screen.findByTestId('gate-row-AAVEUSDT')
+    // config_count must appear in the row DOM so users can see it is MIXED
+    // because of 3 deployed configs (not because of PnL sign or any other reason).
+    // A row showing config_count=1 when the server says 3 is the bug.
+    expect(row.textContent).toMatch(/3 cfg|3 config|cfgs?: 3/i)
+  })
+
   it('sort order: DROP → MARGINAL → KEEP_TESTING → READY_TO_AUDIT → MIXED', async () => {
     vi.mocked(api.tradeGate).mockResolvedValue(
       makeGateResponse({
