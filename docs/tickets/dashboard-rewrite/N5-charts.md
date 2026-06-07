@@ -26,4 +26,11 @@ Port the portfolio + single-bot charts from Plotly to recharts.
 - Visual + numeric parity with the Streamlit Plotly charts.
 
 ## Result
-_(fill on completion)_
+Done. Commit `662b94b` on `dashboard-rewrite-impl`.
+
+Files added/changed:
+- `web/src/components/Charts.tsx` — EquityCurve (area), PerBotPnl (horizontal bar), DailyPnl (vertical bar); all recharts; dark-theme palette tokens from N3; empty states; zero-baseline reference line on EquityCurve; color-semantic `data-*` attributes for tests.
+- `web/src/__tests__/charts.test.tsx` — 17 vitest+RTL tests written before implementation (TDD); covers render-with-data, empty-state (no crash), color mapping (positive→profit / negative→loss), cumulative series order.
+- `web/src/pages/PortfolioPage.tsx` — integrated EquityCurve, DailyPnl, PerBotPnl sections with TanStack Query fetching `/api/equity` and `/api/daily-pnl`; updates on WS snapshot via cache hydration.
+
+All 75 tests pass. Build clean (TypeScript strict). recharts `ResizeObserver`/width=0 warnings in jsdom are expected and tests still pass.

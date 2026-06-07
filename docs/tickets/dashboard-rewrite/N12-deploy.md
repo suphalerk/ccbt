@@ -43,4 +43,17 @@ colliding with the existing Streamlit service**, and keep the VPS path (nginx + 
   Streamlit; no exchange secrets in env; SOCKS proxy unset; VPS proxy upgrades WS on `/ws`.
 
 ## Result
-_(fill on completion)_
+Done. Commit `0525698` on `dashboard-rewrite-impl`.
+
+Files written (no plist loaded — files only per scope):
+- `deploy/macos/start-dashboard-v2.sh` — uvicorn on `127.0.0.1:8601`; allowlist-only
+  env export (`CCBT_DASH_*` + `BOT_DATA_DIR`); explicit `unset CCBT_SOCKS_PROXY`;
+  manual line-by-line `.env` parse (no `set -a; source`); pre-flight checks for
+  `web/dist/index.html` and port-already-bound (`lsof`); `.venv-dash` activation.
+- `deploy/macos/com.ccbt.dashboard-v2.plist` — distinct label (`com.ccbt.dashboard-v2`),
+  log paths (`dashboard-v2.log`), and EnvironmentVariables allowlist; no exchange
+  secrets; `ThrottleInterval=15`; NOT loaded (N13 cutover).
+- `deploy/nginx-ws-v2.conf` — dedicated `/ws` location with `proxy_read_timeout 0`,
+  separate `ws_v2` rate-limit zone, `X-Dash-Token` forwarded; upstream on `8601`;
+  `/v2` proxy block with `auth_basic` for VPS soak.
+- `tests/test_n12_deploy.py` — 34 tests, all passing.

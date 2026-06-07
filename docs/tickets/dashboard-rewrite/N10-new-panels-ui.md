@@ -43,4 +43,22 @@ Render the N9 metrics as React panels.
   with per-cell counts + diagnostic label.
 
 ## Result
-_(fill on completion)_
+Done. Commit `76caf68` on `dashboard-rewrite-impl`.
+
+**Files created:**
+- `web/src/components/NewPanels.tsx` — 5 panel components (CloseReasonDonut, TradeGateTable, RiskAtStakeHeader, MonthlyCalendar, ExpectancyHeatmap)
+- `web/src/pages/NewPanelsPage.tsx` — `/panels` route page
+- `web/src/__tests__/new-panels.test.tsx` — 25 vitest+RTL tests
+
+**Files modified:**
+- `web/src/App.tsx` — added `/panels` route
+- `web/src/components/Sidebar.tsx` — added "Analytics" nav link
+- `web/src/api/client.ts` — exported `TradeGateRow` type
+
+**Must-fix compliance:**
+- #6 (donut colour): `pnl_positive` flag from API drives colour — `sl` with positive PnL is green
+- #4 (sample mask): heatmap cells with `trade_count < 20` are grey/uncoloured; gate table leads with "N of M meet the 15-trade min"
+- #3 (verdict vocab): `MIXED` for multi-config symbols; all 5 real verdicts render correctly
+- RiskAtStakeHeader shows absolute $ only (no % gauge — ships degraded, no balance persisted yet)
+
+**Tests:** 9 files, 141 pass (25 new). Build: clean TypeScript compile + Vite production bundle.

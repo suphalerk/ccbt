@@ -30,4 +30,13 @@ Port the AI advisor analytics section and the live log viewer.
 - AI section + logs match Streamlit; logs update live via WS.
 
 ## Result
-_(fill on completion)_
+Done. Commit `e9780a8` on `dashboard-rewrite-impl`.
+
+Files added/changed:
+- `tests/test_n7_ai_and_logs.py` — 16 Python tests (TDD-first): /api/logs level+search filter parity with get_recent_logs(), /api/ai/calibration row schema + accuracy/influence value correctness, symbol set parity.
+- `web/src/__tests__/ai-and-logs.test.tsx` — 22 vitest+RTL tests (TDD-first): AIAnalyticsPage metric cards + empty state + charts; LogViewerPage level filter + search + WS-pushed lines + 500-line cap.
+- `web/src/pages/AIAnalyticsPage.tsx` — metric cards (total decisions, avg accuracy, correct count, avg influence), per-symbol accuracy bar chart, calibration detail table. Empty/loading states.
+- `web/src/pages/LogViewerPage.tsx` — level filter select (ALL/INFO/WARNING/ERROR/CRITICAL), debounced search, monospace colored log lines with level badges, WS-push via onWsLine callback, 500-line cap, newest-first.
+- `web/src/App.tsx` + `web/src/components/Sidebar.tsx` — /ai and /logs routes + nav links.
+
+All 116 web tests pass; all 230 Python tests pass; build clean.
