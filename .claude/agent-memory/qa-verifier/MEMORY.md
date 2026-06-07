@@ -1,0 +1,4 @@
+- [QA verification method](verification_method.md) — how to QA-verify a proposed fix on the 2yr engine (walk-forward, quartiles, fee stress, side split)
+- [TRUMP QA](project_trump_qa.md) — TRUMPUSDT (Jun 2026): Ribbon clean DEPLOY; Ichi short-only real edge but <15 trades; all live trades were OOS
+- [ARC QA](project_arc_qa_2026_06_06.md) — ARCUSDT EMA-15m (Jun 2026): TP retune 5.0->3.0 DEPLOY; keep (not retire); wider SL hurts; walk-forward stable
+- [Shared market-data QA](project_shared_marketdata_qa.md) — cache refactor BLOCKED: stale positions break absence-based SL/TP close detection; tick is candle-aligned not 60s
