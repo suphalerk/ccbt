@@ -1,0 +1,23 @@
+{
+  "_doc": "Single source of truth: signal_type -> timeframe(s) it was research-validated on. A config whose timeframe_signal is NOT in validated_tf is timeframe drift (the AO-1h-vs-4h class bug). Used by scripts/check_config_timeframes.py and config generators. Keep in sync with docs/strategies.md / research history. timeframe_signal is the gate; trend may differ (e.g. EMA 15m signal + 1h trend).",
+  "strategies": {
+    "ema_crossover":       { "validated_tf": ["15m"],        "note": "BTC/WIF flagship; EMA edge is 15m-specific" },
+    "ema_fast_crossover":  { "validated_tf": ["15m"],        "note": "paired with ema_crossover" },
+    "ichimoku_cloud":      { "validated_tf": ["1h", "4h"],   "note": "1H mid-cap, 4H large-cap" },
+    "supertrend":          { "validated_tf": ["1h"],         "note": "MSTR/XAG 1H" },
+    "vol_expansion":       { "validated_tf": ["1h"],         "note": "1000PEPE/WLD 1H" },
+    "dual_thrust":         { "validated_tf": ["1h", "4h"],   "note": "AVAX/ARC 1H; ZEN/DOT 4H" },
+    "range_bounce":        { "validated_tf": ["1h", "4h"],   "note": "R10" },
+    "awesome_oscillator":  { "validated_tf": ["4h"],         "note": "STRICT — validated 4H only (R10 VVV/SAND); 1H has no edge (2026-06-07 audit)" },
+    "zscore_meanrev":      { "validated_tf": ["1h", "4h"],   "note": "R11" },
+    "stoch_mtf":           { "validated_tf": ["1h", "4h"],   "note": "R11" },
+    "ema_ribbon":          { "validated_tf": ["1h", "4h"],   "note": "R11/R12" },
+    "dual_supertrend":     { "validated_tf": ["1h", "4h"],   "note": "R7" },
+    "alligator":           { "validated_tf": ["1h", "4h"],   "note": "R7/R8" },
+    "ema_ichimoku_hybrid": { "validated_tf": ["4h"],         "note": "R8 EMA+Ichi 4H" },
+    "ichi_supertrend":     { "validated_tf": ["4h"],         "note": "R8 Ichi+ST 4H" },
+    "ichi_adx":            { "validated_tf": ["4h"],         "note": "R12 Ichi+ADX 4H" },
+    "ribbon_ao":           { "validated_tf": ["4h"],         "note": "R12 Ribbon+AO 4H" },
+    "zscore_stoch":        { "validated_tf": ["1h", "4h"],   "note": "R12 combo" }
+  }
+}

@@ -59,6 +59,12 @@ if [[ -n "$CCBT_SOCKS_PROXY" ]]; then
     fi
 fi
 
+# Pre-flight: warn (do not block) on timeframe drift in deployed configs — a
+# strategy running on a TF it was never validated on (the AO 1h-vs-4h bug).
+# Non-blocking on purpose: the registry may not cover every strategy yet.
+"$PYTHON" "$PROJECT_DIR/scripts/check_config_timeframes.py" --deployed-only \
+    || echo "WARNING: timeframe drift in a deployed config (see above) — review strategy_meta.json" >&2
+
 # 96 walk-forward audited bots (updated 2026-03-24)
 AUDITED_CONFIGS="config.json config_1000bonkusdt_dualthrust.json config_1000pepeusdt_volexp.json config_1000shibusdt_emaribbon.json config_aaveusdt_dualthrust.json config_aaveusdt_rangebounce.json config_aaveusdt_zscore.json config_adausdt_stochmtf.json config_aktusdt_zscore.json config_ankrusdt_dualthrust.json config_aptusdt_rangebounce.json config_arbusdt_stochmtf.json config_arcusdt_ema.json config_atomusdt_dualthrust.json config_atomusdt_stochmtf.json config_axsusdt_dualthrust.json config_axsusdt_emaribbon.json config_axsusdt_rangebounce.json config_axsusdt_stochmtf.json config_banusdt_zscore.json config_berausdt_emaribbon.json config_berausdt_ichi.json config_bnbusdt_zscore.json config_dotusdt_awesome.json config_dotusdt_dualthrust.json config_dotusdt_rangebounce.json config_enjusdt_dualthrust.json config_fartcoinusdt_dualthrust.json config_filusdt_awesome.json config_filusdt_dualthrust.json config_filusdt_rangebounce.json config_injusdt_emaribbon.json config_injusdt_zscore.json config_ipusdt_dualthrust.json config_ipusdt_ichi.json config_kasusdt_emaribbon.json config_ondousdt_ichi4h.json config_ondousdt_rangebounce.json config_phausdt_dualthrust.json config_pippinusdt_dualthrust.json config_pippinusdt_emaribbon.json config_pixelusdt_dualthrust.json config_pixelusdt_zscore.json config_polusdt_ichi4htrail.json config_polyxusdt_zscore.json config_sandusdt_rangebounce.json config_suiusdt_dualthrust.json config_suiusdt_rangebounce.json config_taousdt_zscore.json config_trumpusdt_emaribbon.json config_uniusdt_dualthrust.json config_wif.json config_xaiusdt_rangebounce.json config_xrpusdt_dualthrust.json"
 
