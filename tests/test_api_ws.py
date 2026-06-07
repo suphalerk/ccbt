@@ -364,31 +364,78 @@ class TestCoalescing:
             broadcasts.append(msg)
 
         async def run_test() -> None:
+            from api.ws import snapshot_registry
+
             # Simulate: 3 watched sources dirty at the same time
             # The detector should produce ONE broadcast, not 3
             detector._snapshot_broadcast = fake_broadcast  # type: ignore[attr-defined]
 
-            # Directly trigger _check_and_broadcast with multiple changes
-            # by writing to DB and touching mode/heartbeat files
-            rw = sqlite3.connect(db_path)
-            rw.execute("INSERT INTO trades (symbol, pnl) VALUES ('COIN1', 1.0)")
-            rw.commit()
-            rw.close()
+            # Register a fake client so snapshot_registry.count() > 0; the guard
+            # added by the first-tick nit skips broadcasts when no clients are present
+            # (correct behaviour), but this test exercises the "clients connected" path.
+            class _FakeWS:
+                async def send_json(self, msg: Any) -> None:
+                    pass
+            fake_ws = _FakeWS()
+            snapshot_registry.add(fake_ws)
 
-            # Touch mode and heartbeat files (simulate bot activity)
-            (tmp_path / "mode_BTCUSDT.json").write_text('{"mode":"NORMAL"}')
-            (tmp_path / "heartbeat_BTCUSDT").write_bytes(b"")
+            try:
+                # Tick 1 — establishes baseline (no broadcast even with clients, because
+                # first tick only sets _last_state; broadcast happens on detected changes)
+                await detector._tick()
+                broadcasts.clear()  # discard any first-tick broadcast
 
-            # Run one tick — all changes should be coalesced into one broadcast
+                # Introduce multiple dirty sources between tick 1 and tick 2
+                rw = sqlite3.connect(db_path)
+                rw.execute("INSERT INTO trades (symbol, pnl) VALUES ('COIN1', 1.0)")
+                rw.commit()
+                rw.close()
+
+                # Touch mode and heartbeat files (simulate bot activity)
+                (tmp_path / "mode_BTCUSDT.json").write_text('{"mode":"NORMAL"}')
+                (tmp_path / "heartbeat_BTCUSDT").write_bytes(b"")
+
+                # Tick 2 — detects all three dirty sources and produces ONE broadcast
+                await detector._tick()
+
+                assert len(broadcasts) <= 1, (
+                    f"Expected at most 1 broadcast per tick (coalesced), got {len(broadcasts)}"
+                )
+                # At least one broadcast since something changed
+                assert len(broadcasts) >= 1, (
+                    "Expected at least 1 broadcast after changes were detected"
+                )
+            finally:
+                snapshot_registry.remove(fake_ws)
+
+        asyncio.get_event_loop().run_until_complete(run_test())
+
+    def test_no_broadcast_when_no_clients(self, tmp_path: Any) -> None:
+        """First-tick guard: no broadcast when snapshot_registry has zero clients."""
+        from api.ws import ChangeDetector, snapshot_registry
+
+        db_path = _create_wal_db(tmp_path)
+        detector = ChangeDetector(
+            db_path=db_path, data_dir=str(tmp_path), poll_interval=0.05
+        )
+
+        broadcasts: List[Any] = []
+
+        async def fake_broadcast(msg: Dict[str, Any]) -> None:
+            broadcasts.append(msg)
+
+        async def run_test() -> None:
+            detector._snapshot_broadcast = fake_broadcast  # type: ignore[attr-defined]
+            # No client registered — snapshot_registry.count() == 0
+            assert snapshot_registry.count() == 0
+
+            # Tick 1: initialise baseline, no broadcast (guard kicks in)
             await detector._tick()
-
-            assert len(broadcasts) <= 1, (
-                f"Expected at most 1 broadcast per tick (coalesced), got {len(broadcasts)}"
+            assert len(broadcasts) == 0, (
+                "First tick must not broadcast when no clients are connected"
             )
-            # At least one broadcast since something changed
-            assert len(broadcasts) >= 1, (
-                "Expected at least 1 broadcast after changes were detected"
-            )
+            # Baseline must still be set so next ticks can detect changes
+            assert detector._last_state is not None
 
         asyncio.get_event_loop().run_until_complete(run_test())
 

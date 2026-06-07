@@ -368,10 +368,13 @@ class ChangeDetector:
         current_state = self._snapshot_state()
 
         if self._last_state is None:
-            # First tick — initialise baseline and broadcast immediately (initial snapshot)
+            # First tick — set baseline unconditionally so change detection starts
+            # from a real reference point, but only broadcast if there are clients
+            # (docstring: skip broadcast when no clients).
             self._last_state = current_state
-            snapshot = self._build_snapshot()
-            await self._snapshot_broadcast(snapshot)
+            if snapshot_registry.count() > 0:
+                snapshot = self._build_snapshot()
+                await self._snapshot_broadcast(snapshot)
             return
 
         changed = self._state_changed(self._last_state, current_state)
