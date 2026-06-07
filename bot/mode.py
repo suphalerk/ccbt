@@ -9,6 +9,7 @@ File path:   {data_dir}/mode_{symbol_clean}.json
 import json
 import logging
 import os
+import re
 import tempfile
 from enum import Enum
 from typing import Optional
@@ -16,6 +17,42 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 _VALID_MODES = {"normal", "graceful_stop", "tp_only", "panic"}
+
+# Strict pattern: uppercase alphanumeric, 2–20 chars.
+# Matches every deployed symbol (e.g. BTCUSDT, 1000BONKUSDT, XAUUSDT).
+# Deliberately rejects path components (dots, slashes, percent-encoding).
+_SYM_RE = re.compile(r"^[A-Z0-9]{2,20}$")
+
+
+def sym_clean(symbol: str) -> str:
+    """Canonical sanitised symbol string for path / mode-file construction.
+
+    Strips slashes and colons so that ccxt symbols like ``BTC/USDT:USDT``
+    are normalised to ``BTCUSDTUSDT`` — exactly the same transformation the
+    engine applies inline::
+
+        config['symbol'].replace('/', '').replace(':', '')
+
+    Then validates against ``^[A-Z0-9]{2,20}$`` to reject path-traversal
+    payloads before any file-system operation.
+
+    Args:
+        symbol: Raw symbol string (ccxt or plain, e.g. ``BTC/USDT:USDT`` or
+            ``BTCUSDT``).
+
+    Returns:
+        Cleaned, uppercase, filesystem-safe symbol string.
+
+    Raises:
+        ValueError: If the cleaned symbol fails the safety regex.
+    """
+    cleaned = symbol.replace("/", "").replace(":", "").upper()
+    if not _SYM_RE.match(cleaned):
+        raise ValueError(
+            f"Invalid symbol: {symbol!r} → cleaned={cleaned!r} "
+            f"does not match {_SYM_RE.pattern}"
+        )
+    return cleaned
 
 
 class BotMode(Enum):

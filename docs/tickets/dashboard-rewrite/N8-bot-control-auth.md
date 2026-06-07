@@ -53,4 +53,17 @@ This is the only state-changing surface; it must be authenticated and guarded.
   debounce; no unauthenticated state change; no path-traversal write; no exchange secrets in env.
 
 ## Result
-_(fill on completion)_
+Implemented and all tests pass (39 N8 tests + 222 total dashboard tests).
+
+**`bot/mode.py`** — `sym_clean(symbol)` added: strips `/` and `:`, uppercases, validates `^[A-Z0-9]{2,20}$`. Byte-for-byte identical to engine's inline `replace('/','').replace(':','')` for every deployed symbol. OANDA `XAU_USD` raises `ValueError` (expected — not a Binance perp).
+
+**`api/deps.py`** — Re-exports `sym_clean` from `bot/mode` (single source of truth). Added `get_roster()` (computed from `config_*.json` at call-time, skips non-deployed/OANDA configs, frozenset of valid sym_clean'd symbols). Added `assert_startup_safety(host, token)` (raises RuntimeError if non-localhost and token absent).
+
+**`api/routers/control.py`** — Full implementation:
+- `_validate_symbol()` — calls `sym_clean()` + roster allowlist check → 400 if either fails
+- `_validate_mode()` — enum validation → 422 for unknown modes
+- `POST /api/bots/{symbol}/mode` — validates symbol + mode, writes mode file atomically via `bot.mode.write_bot_mode()`
+- `POST /api/bots/mode/bulk` — applies to roster only (empty `symbols` = all roster); PANIC debounce via `_last_bulk_panic_ts` (process-global monotonic clock, default 30s) → 429 on rapid repeat
+- Single-bot PANIC not debounced (only bulk)
+
+**`tests/test_api_control.py`** — 39 tests: sym_clean parity, roster loading, valid mode writes, invalid mode 422, path-traversal 400/405, unknown symbol 400, auth (401/200), bulk roster-only filter, bulk all-roster on empty list, PANIC debounce 429, startup safety assertion.
