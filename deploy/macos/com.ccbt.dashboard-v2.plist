@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ccbt.dashboard-v2</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/iceai/Work/ccbt/deploy/macos/start-dashboard-v2.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/iceai/Work/ccbt</string>
+
+    <!-- Run automatically at login -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart on non-zero exit (crashes) but not on clean shutdown -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!-- Wait 15 seconds before restarting after a crash (slightly longer than bot) -->
+    <key>ThrottleInterval</key>
+    <integer>15</integer>
+
+    <!-- Environment variables — only the safe allowlist, no exchange secrets -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CCBT_DASH_HOST</key>
+        <string>127.0.0.1</string>
+        <key>CCBT_DASH_PORT</key>
+        <string>8601</string>
+        <key>CCBT_DASH_POLL_S</key>
+        <string>3</string>
+        <!-- CCBT_DASH_TOKEN: set via launchctl setenv or the start script reads from .env -->
+    </dict>
+
+    <!-- Log output — v2-specific paths (distinct from legacy dashboard logs) -->
+    <key>StandardOutPath</key>
+    <string>/Users/iceai/Library/Logs/ccbt/dashboard-v2.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/iceai/Library/Logs/ccbt/dashboard-v2-error.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <!-- NOTE: Do NOT load this plist until the N13 cutover.
+         To load after cutover:
+           launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ccbt.dashboard-v2.plist
+         To restart:
+           launchctl kickstart -k gui/$(id -u)/com.ccbt.dashboard-v2
+         To unload old Streamlit dashboard at cutover:
+           launchctl bootout gui/$(id -u)/com.ccbt.dashboard
+    -->
+</dict>
+</plist>
