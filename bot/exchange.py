@@ -521,8 +521,42 @@ class BybitClient:
 
         logger.info("orders_cancelled", extra={"symbol": symbol})
 
+    @staticmethod
+    def _is_reduce_only_rejection(exc: Exception) -> bool:
+        """Return True if *exc* is a Binance -2022 ReduceOnly rejection.
+
+        Binance raises ccxt.InvalidOrder with a message that contains either
+        the error code "-2022" or the text "ReduceOnly" (or both).  We match
+        case-insensitively to handle any message-format variation without
+        over-catching other InvalidOrder types (e.g. -2021 "Order would
+        immediately trigger").
+        """
+        msg = str(exc).lower()
+        return isinstance(exc, ccxt.InvalidOrder) and (
+            "-2022" in msg or "reduceonly" in msg
+        )
+
     def close_all_positions(self, symbol: Optional[str] = None) -> None:
         """Close all open positions for a symbol.
+
+        Robust close path for one-way (dualSidePosition=False) accounts:
+
+        1.  Try a reduceOnly market order (safe: can never flip into an
+            opposite position on exchanges that honour reduceOnly).
+        2.  On Binance -2022 "ReduceOnly Order is rejected" (or any
+            InvalidOrder whose message contains "-2022" or "ReduceOnly"):
+            a.  Re-fetch the live position to get the authoritative qty from
+                ``info['positionAmt']`` (avoids stale ``contracts`` field).
+            b.  Detect hedge-mode accounts (``positionSide != 'BOTH'``):
+                log a warning and skip the fallback — a positionSide-less
+                plain market order would over-shoot to the wrong side.
+            c.  Otherwise place a plain market order (no reduceOnly) for
+                ``abs(positionAmt)`` with exchange-amount-precision applied.
+        3.  After each close (primary or fallback) re-verify the position is
+            flat and log which path was taken.
+        4.  Non-reduceOnly errors (InsufficientFunds, -2021, etc.) are NOT
+            caught here — they propagate to the caller (engine PANIC /
+            _shutdown) as before so the caller can log and alert.
 
         Args:
             symbol: Trading pair. Defaults to configured symbol.
@@ -533,8 +567,17 @@ class BybitClient:
             # Use normalized comparison since symbol formats may differ
             pos_sym = pos.get("symbol", "").replace("/", "").replace(":USDT", "").upper()
             cfg_sym = symbol.replace("/", "").replace(":USDT", "").upper()
-            if pos_sym == cfg_sym and float(pos["contracts"]) > 0:
-                side = "sell" if pos["side"] == "long" else "buy"
+            if pos_sym != cfg_sym:
+                continue
+            if float(pos.get("contracts", 0)) <= 0:
+                continue
+
+            side = "sell" if pos["side"] == "long" else "buy"
+
+            # ----------------------------------------------------------------
+            # Attempt 1 — reduceOnly (preferred; safe on exchanges that honour it)
+            # ----------------------------------------------------------------
+            try:
                 self._retry(
                     self.exchange.create_order,
                     symbol,
@@ -544,6 +587,116 @@ class BybitClient:
                     None,
                     {"reduceOnly": True},
                 )
+                logger.info(
+                    "position_closed",
+                    extra={"symbol": symbol, "side": side, "method": "reduceOnly"},
+                )
+                continue  # success — move to next position
+
+            except Exception as exc:
+                if not self._is_reduce_only_rejection(exc):
+                    # Not a reduceOnly rejection — propagate unmodified.
+                    raise
+
+                logger.warning(
+                    "reduce_only_rejected_fallback",
+                    extra={
+                        "symbol": symbol,
+                        "error": str(exc),
+                        "action": "falling_back_to_plain_market",
+                    },
+                )
+
+            # ----------------------------------------------------------------
+            # Attempt 2 — plain market order (one-way accounts only)
+            # Re-fetch position to get authoritative qty from positionAmt.
+            # ----------------------------------------------------------------
+            live_positions = self.get_positions()
+            live_pos = next(
+                (
+                    p
+                    for p in live_positions
+                    if p.get("symbol", "").replace("/", "").replace(":USDT", "").upper()
+                    == cfg_sym
+                ),
+                None,
+            )
+
+            if live_pos is None:
+                # Position already closed by the time we re-fetched — nothing to do.
+                logger.info(
+                    "position_already_flat",
+                    extra={"symbol": symbol, "note": "position gone before fallback"},
+                )
+                continue
+
+            # Hedge-mode guard: if positionSide != 'BOTH', a plain market order
+            # without positionSide would be ambiguous and could flip the position.
+            position_side = live_pos.get("info", {}).get("positionSide", "BOTH")
+            if position_side not in ("BOTH", "", None):
+                logger.warning(
+                    "hedge_mode_close_not_supported",
+                    extra={
+                        "symbol": symbol,
+                        "positionSide": position_side,
+                        "action": "skipping_fallback_manual_close_required",
+                        "note": (
+                            "Hedge-mode (dualSidePosition=True) detected. "
+                            "Plain market fallback requires positionSide param "
+                            "which is not implemented. Close the position manually."
+                        ),
+                    },
+                )
+                continue
+
+            # Use abs(positionAmt) — authoritative, precision-applied.
+            raw_amt = abs(float(live_pos.get("info", {}).get("positionAmt", 0)))
+            if raw_amt <= 0:
+                logger.info(
+                    "position_already_flat",
+                    extra={"symbol": symbol, "note": "positionAmt is 0 before fallback"},
+                )
+                continue
+
+            close_qty = float(
+                self.exchange.amount_to_precision(symbol, raw_amt)
+            )
+            fallback_side = "sell" if live_pos["side"] == "long" else "buy"
+
+            self._retry(
+                self.exchange.create_order,
+                symbol,
+                "market",
+                fallback_side,
+                close_qty,
+                None,
+                {},  # NO reduceOnly
+            )
+
+            # ----------------------------------------------------------------
+            # Post-close verification
+            # ----------------------------------------------------------------
+            verify_positions = self.get_positions()
+            still_open = any(
+                p.get("symbol", "").replace("/", "").replace(":USDT", "").upper() == cfg_sym
+                for p in verify_positions
+            )
+            if still_open:
+                logger.error(
+                    "position_not_flat_after_close",
+                    extra={"symbol": symbol, "method": "plain_market_fallback"},
+                )
+            else:
+                logger.info(
+                    "position_closed",
+                    extra={
+                        "symbol": symbol,
+                        "side": fallback_side,
+                        "qty": close_qty,
+                        "method": "plain_market_fallback",
+                    },
+                )
+
         logger.info("positions_closed", extra={"symbol": symbol})
 
     def get_positions(self) -> list:
