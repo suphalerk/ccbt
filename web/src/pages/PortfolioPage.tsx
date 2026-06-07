@@ -164,6 +164,19 @@ function BotPill({ bot }: { bot: BotRow }) {
 // ============================================================================
 
 function BotGrid({ bots }: { bots: BotRow[] }) {
+  // Group by strategy. useMemo MUST run before any early return — a conditional
+  // hook crashes ("Rendered more hooks than during the previous render") on the
+  // 0->N WS-hydration transition (the live bot-grid populate path).
+  const groups = useMemo(() => {
+    const map = new Map<string, BotRow[]>()
+    for (const bot of bots) {
+      const key = bot.strategy ?? '(unknown)'
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(bot)
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b))
+  }, [bots])
+
   if (bots.length === 0) {
     return (
       <div
@@ -174,17 +187,6 @@ function BotGrid({ bots }: { bots: BotRow[] }) {
       </div>
     )
   }
-
-  // Group by strategy — useMemo safe here (component-level)
-  const groups = useMemo(() => {
-    const map = new Map<string, BotRow[]>()
-    for (const bot of bots) {
-      const key = bot.strategy ?? '(unknown)'
-      if (!map.has(key)) map.set(key, [])
-      map.get(key)!.push(bot)
-    }
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b))
-  }, [bots])
 
   return (
     <div className="space-y-4">
