@@ -34,7 +34,7 @@
           "portfolio"
         ],
         "summary": "List Bots",
-        "description": "List all bots with summary stats.",
+        "description": "List all bots with per-symbol summary stats.",
         "operationId": "list_bots_api_bots_get",
         "responses": {
           "200": {
@@ -56,7 +56,7 @@
           "portfolio"
         ],
         "summary": "Bot Detail",
-        "description": "Detail for a single bot.",
+        "description": "Detail for a single bot \u2014 stats + recent trades.",
         "operationId": "bot_detail_api_bots__symbol__get",
         "parameters": [
           {
@@ -261,7 +261,7 @@
           "portfolio"
         ],
         "summary": "Ai Calibration",
-        "description": "AI advisor calibration stats.",
+        "description": "AI advisor calibration stats per symbol.",
         "operationId": "ai_calibration_api_ai_calibration_get",
         "responses": {
           "200": {
@@ -283,7 +283,7 @@
           "portfolio"
         ],
         "summary": "Get Logs",
-        "description": "Recent log lines, optionally filtered.",
+        "description": "Recent log lines, optionally filtered by level/search.",
         "operationId": "get_logs_api_logs_get",
         "parameters": [
           {
@@ -361,7 +361,7 @@
           "metrics"
         ],
         "summary": "Close Reasons",
-        "description": "Close-reason breakdown with PnL sign colouring.",
+        "description": "Close-reason breakdown with total PnL and sign colouring.",
         "operationId": "close_reasons_api_close_reasons_get",
         "parameters": [
           {
@@ -433,7 +433,7 @@
           "metrics"
         ],
         "summary": "Open Risk",
-        "description": "Open position risk (SL distance, % risk, unprotected flag).",
+        "description": "Open position risk (SL distance, unprotected flag).",
         "operationId": "open_risk_api_risk_get",
         "parameters": [
           {
@@ -567,7 +567,7 @@
           "metrics"
         ],
         "summary": "Heatmap",
-        "description": "Hour-of-day \u00d7 day-of-week PnL heatmap (UTC bucketing).",
+        "description": "Hour-of-day x day-of-week PnL heatmap (UTC bucketing).",
         "operationId": "heatmap_api_heatmap_get",
         "parameters": [
           {
