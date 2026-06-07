@@ -158,10 +158,20 @@ class AICalibrationRow(BaseModel):
     influence_factor: float
 
 
+class AICalibrationAggregate(BaseModel):
+    """Portfolio-level AI calibration aggregate (weighted across all symbols)."""
+
+    total_decisions: int = 0
+    decided_trades: int = 0
+    weighted_accuracy_pct: float = 0.0  # accuracy across all decided trades
+    avg_influence_factor: float = 1.0   # portfolio-level influence multiplier
+
+
 class AICalibrationResponse(BaseModel):
     """GET /api/ai/calibration"""
 
     rows: List[AICalibrationRow]
+    aggregate: Optional[AICalibrationAggregate] = None
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +243,7 @@ class OpenRiskRow(BaseModel):
     entry_price: Optional[float]
     stop_loss: Optional[float]
     position_size: Optional[float]
-    risk_pct: Optional[float]
+    stop_distance_pct: Optional[float]  # abs(entry - stop_loss) / entry * 100
     unprotected: bool
 
 
@@ -243,6 +253,8 @@ class OpenRiskResponse(BaseModel):
     symbol: Optional[str]
     rows: List[OpenRiskRow]
     unprotected_count: int
+    notional: float = 0.0            # sum of abs(entry_price * size) for all open positions
+    max_sl_loss: float = 0.0         # sum of abs(entry - stop_loss) * size for protected positions
 
 
 class CalendarCell(BaseModel):

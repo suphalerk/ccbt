@@ -140,8 +140,8 @@ async def open_risk(
     symbol: Optional[str] = Query(default=None),
     db: str = Depends(get_db_path),
 ) -> OpenRiskResponse:
-    """Open position risk (SL distance, unprotected flag)."""
-    from dashboard.queries import get_open_trades
+    """Open position risk (SL distance, unprotected flag, aggregate notional/max_sl_loss)."""
+    from dashboard.queries import get_open_risk, get_open_trades
 
     df = get_open_trades(db_path=db, symbol=symbol)
     rows: List[OpenRiskRow] = []
@@ -158,10 +158,10 @@ async def open_risk(
             if is_unprotected:
                 unprotected += 1
 
-            # Risk pct: abs(entry - stop_loss) / entry
-            risk_pct: Optional[float] = None
+            # Stop distance pct: abs(entry - stop_loss) / entry * 100
+            stop_distance_pct: Optional[float] = None
             if entry and sl and entry > 0:
-                risk_pct = round(abs(entry - sl) / entry * 100, 2)
+                stop_distance_pct = round(abs(entry - sl) / entry * 100, 2)
 
             rows.append(OpenRiskRow(
                 symbol=str(row.get("symbol") or ""),
@@ -169,11 +169,19 @@ async def open_risk(
                 entry_price=entry,
                 stop_loss=sl,
                 position_size=size,
-                risk_pct=risk_pct,
+                stop_distance_pct=stop_distance_pct,
                 unprotected=is_unprotected,
             ))
 
-    return OpenRiskResponse(symbol=symbol, rows=rows, unprotected_count=unprotected)
+    # Aggregate values from get_open_risk (avoids re-deriving financial math here)
+    agg = get_open_risk(db_path=db, symbol=symbol)
+    return OpenRiskResponse(
+        symbol=symbol,
+        rows=rows,
+        unprotected_count=unprotected,
+        notional=_safe_float_required(agg.get("notional"), 0.0),
+        max_sl_loss=_safe_float_required(agg.get("max_sl_loss"), 0.0),
+    )
 
 
 # ---------------------------------------------------------------------------

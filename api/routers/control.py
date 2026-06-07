@@ -177,13 +177,28 @@ async def set_bulk_mode(
     data_dir = _get_data_dir()
     roster = get_roster()
 
-    # Determine target symbols
+    # Determine target symbols — sym_clean each item before roster check
+    # to normalise ccxt symbols (BTC/USDT:USDT → BTCUSDTUSDT) and prevent
+    # roster misses from format differences.
     if body.symbols:
-        # Only apply to symbols explicitly requested AND in the roster
-        target_symbols = [s for s in body.symbols if s in roster]
+        accepted: list[str] = []
+        rejected: list[str] = []
+        for raw in body.symbols:
+            try:
+                cleaned_sym = sym_clean(raw)
+            except ValueError:
+                rejected.append(raw)
+                continue
+            if cleaned_sym in roster:
+                accepted.append(cleaned_sym)
+            else:
+                rejected.append(raw)
+        target_symbols = accepted
+        non_roster_raw = rejected
     else:
         # Empty list = all roster bots
         target_symbols = sorted(roster)
+        non_roster_raw = []
 
     # PANIC debounce (bulk only)
     if bot_mode is BotMode.PANIC:
@@ -199,11 +214,6 @@ async def set_bulk_mode(
         _last_bulk_panic_ts = now
 
     results: List[ModeResponse] = []
-    non_roster = (
-        set(body.symbols) - set(target_symbols)
-        if body.symbols
-        else set()
-    )
 
     for cleaned in target_symbols:
         try:
@@ -227,7 +237,7 @@ async def set_bulk_mode(
             )
 
     # Include rejected non-roster symbols in the response
-    for sym in sorted(non_roster):
+    for sym in sorted(non_roster_raw):
         results.append(
             ModeResponse(
                 symbol=sym,

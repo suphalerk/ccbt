@@ -19,9 +19,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.deps import assert_startup_safety
 from api.routers import candles, control, metrics, portfolio
 
 REPO = Path(__file__).resolve().parent.parent
@@ -35,6 +36,12 @@ REPO = Path(__file__).resolve().parent.parent
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # type: ignore[type-arg]
     """Start the ChangeDetector background task on startup; clean up on shutdown."""
     from api.ws import create_detector, snapshot_registry, log_registry
+
+    # Safety gate: refuse to start on a non-loopback interface without a token.
+    # Behind nginx the localhost peer-check is vacuous; the token provides real protection.
+    host = os.getenv("CCBT_DASH_HOST", "127.0.0.1")
+    from api.deps import CCBT_DASH_TOKEN
+    assert_startup_safety(host=host, token=CCBT_DASH_TOKEN)
 
     data_dir = os.getenv("BOT_DATA_DIR", str(REPO / "data"))
     db_path_env = os.getenv("BOT_DATA_DIR", "")
@@ -116,8 +123,23 @@ async def health() -> HealthResponse:
 from api.ws import snapshot_registry  # noqa: E402
 
 
+def _check_ws_token(token: Optional[str]) -> bool:
+    """Return True if the WS connection is authorised.
+
+    When CCBT_DASH_TOKEN is unset, all connections are allowed (local dev).
+    When set, the supplied token must match exactly.
+    """
+    from api.deps import CCBT_DASH_TOKEN
+    if not CCBT_DASH_TOKEN:
+        return True  # No token configured — open access (local dev)
+    return token == CCBT_DASH_TOKEN
+
+
 @app.websocket("/ws")
-async def ws_snapshots(websocket: WebSocket) -> None:
+async def ws_snapshots(
+    websocket: WebSocket,
+    token: Optional[str] = Query(default=None),
+) -> None:
     """Low-frequency snapshot channel (portfolio + bots, every ~3s). N2.
 
     Protocol:
@@ -126,8 +148,16 @@ async def ws_snapshots(websocket: WebSocket) -> None:
     - On change: exactly one snapshot broadcast per tick (coalesced).
     - Envelope: {type: 'snapshot'|'heartbeat', ts: ISO8601, data: {...}}
     - Client auto-reconnects with backoff (N3 hook).
+    - Auth: pass ?token=<CCBT_DASH_TOKEN> query param when token is set.
     """
     await websocket.accept()
+
+    if not _check_ws_token(token):
+        ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        await websocket.send_json({"type": "error", "ts": ts, "data": {"detail": "Unauthorised"}})
+        await websocket.close(code=4403)
+        return
+
     snapshot_registry.add(websocket)
 
     # Send an immediate initial snapshot so the UI doesn't wait for the first tick
@@ -170,13 +200,24 @@ from api.ws import log_registry as _log_registry  # noqa: E402
 
 
 @app.websocket("/ws/logs")
-async def ws_logs(websocket: WebSocket) -> None:
+async def ws_logs(
+    websocket: WebSocket,
+    token: Optional[str] = Query(default=None),
+) -> None:
     """High-frequency log tail channel (separate from /ws — backpressure isolated). N7.
 
     Slow log consumers cannot stall /ws snapshot delivery because each channel
     uses its own ConnectionRegistry.  N7 wires up the actual log-tail producer.
+    Auth: pass ?token=<CCBT_DASH_TOKEN> query param when token is set.
     """
     await websocket.accept()
+
+    if not _check_ws_token(token):
+        ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        await websocket.send_json({"type": "error", "ts": ts, "data": {"detail": "Unauthorised"}})
+        await websocket.close(code=4403)
+        return
+
     _log_registry.add(websocket)
 
     ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -198,10 +239,32 @@ async def ws_logs(websocket: WebSocket) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Serve Vite SPA static files (N3 — only if web/dist exists)
+# SPA deep-link catch-all (N3) — must be registered AFTER all /api and /ws routes.
+#
+# When the Vite SPA navigates to /dashboard/bot/BTCUSDT directly, the browser
+# requests that path from the server.  FastAPI's static-file mount (html=True)
+# would serve index.html for paths that match files, but deep-links to
+# client-side routes don't have corresponding files in web/dist — causing 404s.
+#
+# A plain GET catch-all route registered before the StaticFiles mount intercepts
+# all non-/api non-/ws paths and always returns index.html, letting the SPA
+# router take over.  Only active when web/dist exists.
 # ---------------------------------------------------------------------------
 _dist = REPO / "web" / "dist"
 if _dist.exists():
+    from fastapi.responses import FileResponse  # noqa: E402
     from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa_catch_all(full_path: str) -> FileResponse:
+        """Serve index.html for all non-API, non-WS paths (SPA deep-link support)."""
+        # Let /api/* and /ws routes fall through to their own handlers
+        # (FastAPI resolves named routes first; this only fires for unmatched paths)
+        index = _dist / "index.html"
+        if index.exists():
+            return FileResponse(str(index))
+        # No SPA bundle — return a 404
+        from fastapi import Response  # noqa: E402
+        return Response(status_code=404, content="SPA bundle not found")
 
     app.mount("/", StaticFiles(directory=str(_dist), html=True), name="spa")

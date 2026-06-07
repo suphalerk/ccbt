@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Query
 
 from api.deps import get_db_path
 from api.models import (
+    AICalibrationAggregate,
     AICalibrationRow,
     AICalibrationResponse,
     BotDetailResponse,
@@ -270,12 +271,9 @@ async def equity_curve(
 
     df = get_equity_curve(db_path=db, symbol=symbol)
     points: List[EquityPoint] = []
-    if not df.empty and "timestamp" in df.columns:
-        running_equity = 0.0
+    if not df.empty and "timestamp" in df.columns and "cumulative_pnl" in df.columns:
         for _, row in df.iterrows():
-            pnl = _safe_float_required(row.get("pnl"))
-            running_equity += pnl
-            cum_pnl = _safe_float_required(row.get("cumulative_pnl"), running_equity)
+            cum_pnl = _safe_float_required(row.get("cumulative_pnl"), 0.0)
             points.append(EquityPoint(
                 timestamp=str(row.get("timestamp") or ""),
                 equity=round(cum_pnl, 2),
@@ -321,8 +319,12 @@ async def daily_pnl(
 
 @router.get("/ai/calibration", response_model=AICalibrationResponse)
 async def ai_calibration(db: str = Depends(get_db_path)) -> AICalibrationResponse:
-    """AI advisor calibration stats per symbol."""
-    from dashboard.queries import get_calibration_data
+    """AI advisor calibration stats per symbol + portfolio-level aggregate.
+
+    Uses get_calibration_stats() for the influence ladder to avoid re-deriving
+    the same logic in the router.
+    """
+    from dashboard.queries import get_calibration_data, get_calibration_stats
 
     df = get_calibration_data(db_path=db)
     rows: List[AICalibrationRow] = []
@@ -335,6 +337,7 @@ async def ai_calibration(db: str = Depends(get_db_path)) -> AICalibrationRespons
             correct = int(decided["was_correct"].sum()) if "was_correct" in decided.columns and len(decided) > 0 else 0
             accuracy = correct / len(decided) if len(decided) > 0 else 0.0
             acc = accuracy
+            # Influence ladder — same thresholds as get_calibration_stats
             if acc < 0.45:
                 influence = 0.5
             elif acc < 0.55:
@@ -352,7 +355,16 @@ async def ai_calibration(db: str = Depends(get_db_path)) -> AICalibrationRespons
                 influence_factor=influence,
             ))
 
-    return AICalibrationResponse(rows=rows)
+    # Portfolio-level aggregate from get_calibration_stats (canonical source)
+    agg_stats = get_calibration_stats(db_path=db)
+    aggregate = AICalibrationAggregate(
+        total_decisions=int(agg_stats.get("total_decisions", 0)),
+        decided_trades=int(agg_stats.get("decided_trades", 0)),
+        weighted_accuracy_pct=round(float(agg_stats.get("accuracy", 0.0)) * 100, 1),
+        avg_influence_factor=float(agg_stats.get("influence_multiplier", 1.0)),
+    )
+
+    return AICalibrationResponse(rows=rows, aggregate=aggregate)
 
 
 # ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import time
 from datetime import datetime
@@ -757,8 +758,46 @@ def get_per_bot_summary(db_path: Optional[str] = None) -> pd.DataFrame:
 # N9 — New Metrics Data Layer
 # ---------------------------------------------------------------------------
 
+#: Pattern to extract AUDITED_CONFIGS and FORWARD_TEST_CONFIGS from start.sh.
+_STARTSH_CONFIG_RE = re.compile(
+    r'^(?:AUDITED_CONFIGS|FORWARD_TEST_CONFIGS)="([^"]*)"',
+    re.MULTILINE,
+)
+
+_START_SH_PATH = Path(__file__).resolve().parent.parent / "deploy" / "macos" / "start.sh"
+
+
+def _parse_deployed_configs_from_startsh(project_root: Path) -> set:
+    """Extract the set of config filenames from deploy/macos/start.sh.
+
+    Reads the AUDITED_CONFIGS and FORWARD_TEST_CONFIGS shell variables.
+    Falls back to an empty set if the file is missing or unparseable.
+
+    Args:
+        project_root: Project root — used to locate deploy/macos/start.sh.
+
+    Returns:
+        Set of config filenames (e.g. {'config.json', 'config_axsusdt_dualthrust.json'}).
+    """
+    start_sh = project_root / "deploy" / "macos" / "start.sh"
+    if not start_sh.exists():
+        return set()
+    try:
+        text = start_sh.read_text()
+    except OSError:
+        return set()
+
+    filenames: set = set()
+    for m in _STARTSH_CONFIG_RE.finditer(text):
+        for fname in m.group(1).split():
+            fname = fname.strip()
+            if fname:
+                filenames.add(fname)
+    return filenames
+
+
 #: Config filenames that are skipped (non-deployed, retired, or alternative exchange).
-#: Must stay in sync with the set in get_bot_statuses.
+#: Used as fallback when deploy/macos/start.sh is absent (e.g. test fixtures).
 _SKIP_CONFIGS: set = {
     "config_aggressive.json", "config_sniper.json", "config_yolo.json",
     "config_max.json",
@@ -777,23 +816,38 @@ _SKIP_CONFIGS: set = {
 
 
 def _build_symbol_config_count(project_root: Path) -> Dict[str, int]:
-    """Count how many deployed config_*.json files map to each symbol_clean.
+    """Count how many deployed config files map to each symbol_clean.
 
-    This is the authoritative attribution map for get_trade_gate — it counts
-    ALL config files per symbol_clean (not deduped like get_bot_statuses) so
-    that symbols traded by multiple strategies (e.g. AXS with 4 configs) show
-    the real count.
+    Primary source: deploy/macos/start.sh (AUDITED_CONFIGS + FORWARD_TEST_CONFIGS).
+    This ensures retired configs that still exist on disk do not inflate counts.
+
+    Fallback (when start.sh is absent, e.g. in test fixture directories):
+    disk-glob of config_*.json minus _SKIP_CONFIGS — same behaviour as the
+    original implementation.
+
+    Symbols traded by multiple strategies (e.g. AXS with 4 configs) get
+    count > 1 and therefore receive verdict = "MIXED" in get_trade_gate.
 
     Args:
-        project_root: The project root directory that contains config_*.json files.
+        project_root: The project root directory containing config_*.json files
+            and (for production) deploy/macos/start.sh.
 
     Returns:
-        Dict mapping symbol_clean (e.g. "AXSUSDTUSDT") to the number of
+        Dict mapping symbol_clean (e.g. "AXSUSDT") to the number of
         deployed config files that reference that symbol.
     """
+    deployed = _parse_deployed_configs_from_startsh(project_root)
+
+    # Fall back to disk glob when start.sh is absent (test fixtures / CI)
+    if not deployed:
+        for cfg_path in sorted(project_root.glob("config*.json")):
+            if cfg_path.name not in _SKIP_CONFIGS:
+                deployed.add(cfg_path.name)
+
     count_map: Dict[str, int] = {}
-    for cfg_path in sorted(project_root.glob("config*.json")):
-        if cfg_path.name in _SKIP_CONFIGS:
+    for fname in sorted(deployed):
+        cfg_path = project_root / fname
+        if not cfg_path.exists():
             continue
         try:
             with open(cfg_path) as f:
@@ -864,13 +918,18 @@ def get_trade_gate(
     min_trades: int = 15,
     graduate_pf: Optional[float] = None,
     project_root: Optional[Path] = None,
+    since: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Compute per-symbol forward-test gate verdicts.
 
     Attribution guard: symbols traded by > 1 deployed config file get
     verdict = "MIXED" (the blended DB rows are not attributable to a single
     strategy). Single-config symbols get classified by classify() from
-    research.forward_test_report.
+    api.classify.
+
+    The ``since`` parameter mirrors the forward_test_report CLI's
+    ``_live_stats(symbol, since=manifest['added'])`` filter so that the gate
+    verdict matches what the CLI reports.
 
     graduate_pf defaults to the value in research/forward_test_cohort.json
     if not provided (same source as the forward_test_report CLI).
@@ -882,6 +941,9 @@ def get_trade_gate(
             Defaults to the manifest value (currently 1.3).
         project_root: Project root directory used to count config files.
             Defaults to the project root inferred from this file's location.
+        since: ISO date string (e.g. "2026-06-07").  When set, only trades
+            with ``timestamp >= since`` are counted — same filter as the
+            forward_test_report CLI's ``_live_stats(symbol, since=...)``.
 
     Returns:
         Dict with:
@@ -903,15 +965,21 @@ def get_trade_gate(
         except Exception:
             graduate_pf = 1.3
 
-    # Import classify from research.forward_test_report (N9 must not depend on N0)
-    from research.forward_test_report import classify  # noqa: PLC0415
+    # Import classify (canonical location in api/classify.py)
+    from api.classify import classify  # noqa: PLC0415
 
     # Build attribution map: symbol_clean → config count
     count_map = _build_symbol_config_count(project_root)
 
-    # Get all closed non-orphan trades
+    # Get all closed non-orphan trades, optionally filtered by timestamp
     closed = get_closed_trades(db_path)
     if closed.empty or "pnl" not in closed.columns:
+        return {"rows": [], "summary": {"n_meeting_min": 0, "n_total": 0}}
+
+    # Apply since= timestamp filter (parity with forward_test_report._live_stats)
+    if since is not None and "timestamp" in closed.columns:
+        closed = closed[closed["timestamp"] >= since]
+    if closed.empty:
         return {"rows": [], "summary": {"n_meeting_min": 0, "n_total": 0}}
 
     rows_out: List[Dict[str, Any]] = []

@@ -49,11 +49,14 @@ _LOG_FILENAME = "trading_bot.log"
 
 
 class ConnectionRegistry:
-    """Holds a set of live WebSocket connections with safe add/remove/broadcast."""
+    """Holds a set of live WebSocket connections with safe add/remove/broadcast.
+
+    asyncio is single-threaded so plain list operations are safe without a lock.
+    The previously present asyncio.Lock was dead code (never acquired).
+    """
 
     def __init__(self) -> None:
         self._clients: List[Any] = []  # list of WebSocket objects
-        self._lock = asyncio.Lock()
 
     def add(self, ws: Any) -> None:
         """Register a new WebSocket connection (called from the WS handler)."""

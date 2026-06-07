@@ -35,6 +35,7 @@ def _read_candles(
     try:
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA query_only=1")  # belt-and-suspenders: refuse writes even if mode=ro
     except sqlite3.OperationalError:
         # DB does not exist
         return CandlesResponse(available=False, symbol=symbol, timeframe=None, candles=[])
