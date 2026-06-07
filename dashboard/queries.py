@@ -19,17 +19,30 @@ else:
 
 
 def _get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
-    """Get a SQLite connection with row factory enabled.
+    """Get a read-only SQLite connection with row factory enabled.
+
+    Opens with mode=ro (URI parameter) and sets PRAGMA query_only=1 so the
+    dashboard process can never write to or lock the live trades.db.
 
     Args:
         db_path: Path to the database file. Defaults to trades.db in project root.
 
     Returns:
-        sqlite3.Connection with Row factory.
+        sqlite3.Connection with Row factory, opened read-only.
     """
     path = db_path or str(DEFAULT_DB_PATH)
-    conn = sqlite3.connect(path)
+    # Use URI mode to request read-only access; falls back to plain connect if
+    # the file doesn't exist yet so callers get a sensible error, not a URI one.
+    uri = "file:{}?mode=ro".format(path.replace("?", "%3F"))
+    try:
+        conn = sqlite3.connect(uri, uri=True)
+    except sqlite3.OperationalError:
+        # File doesn't exist or not a valid DB yet — open normally so callers
+        # that call db_exists() first get an empty result rather than a crash.
+        conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
+    # Belt-and-suspenders: refuse all writes even if mode=ro wasn't honoured
+    conn.execute("PRAGMA query_only=1")
     return conn
 
 
@@ -724,7 +737,7 @@ def get_per_bot_summary(db_path: Optional[str] = None) -> pd.DataFrame:
                 ROUND(SUM(pnl), 2) as total_pnl,
                 MAX(timestamp) as last_trade
             FROM trades
-            WHERE status = 'closed'
+            WHERE status = 'closed' AND COALESCE(close_reason, '') != 'orphan_reconcile'
             GROUP BY symbol
             ORDER BY total_pnl DESC
             """,
