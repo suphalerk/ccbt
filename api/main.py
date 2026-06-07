@@ -249,20 +249,51 @@ async def ws_logs(
 # A plain GET catch-all route registered before the StaticFiles mount intercepts
 # all non-/api non-/ws paths and always returns index.html, letting the SPA
 # router take over.  Only active when web/dist exists.
+#
+# Token injection: when CCBT_DASH_TOKEN is set, a <script> block is prepended
+# to the <head> tag that writes window.__CCBT_TOKEN__ = "<token>" so the
+# browser's buildWsUrl() can include ?token= in WS URLs.  Without this the
+# live WS channel is silently dead behind any token-gated deployment (nginx
+# basic-auth outer gate + FastAPI token inner gate).
 # ---------------------------------------------------------------------------
 _dist = REPO / "web" / "dist"
 if _dist.exists():
-    from fastapi.responses import FileResponse  # noqa: E402
+    from fastapi.responses import HTMLResponse  # noqa: E402
     from fastapi.staticfiles import StaticFiles  # noqa: E402
 
+    def _inject_token(html: str, token: Optional[str]) -> str:
+        """Prepend a window.__CCBT_TOKEN__ assignment to the HTML <head>.
+
+        The token value is JSON-encoded so it is safe to embed in a JS string
+        literal (handles quotes, backslashes, etc.).
+        """
+        import json as _json
+        if not token:
+            return html
+        snippet = (
+            f"<script>window.__CCBT_TOKEN__={_json.dumps(token)};</script>"
+        )
+        # Insert just before </head> so it runs before any module scripts
+        if "</head>" in html:
+            return html.replace("</head>", f"{snippet}</head>", 1)
+        # Fallback: prepend to body (no </head> found — minimal HTML)
+        return snippet + html
+
     @app.get("/{full_path:path}", include_in_schema=False)
-    async def spa_catch_all(full_path: str) -> FileResponse:
-        """Serve index.html for all non-API, non-WS paths (SPA deep-link support)."""
+    async def spa_catch_all(full_path: str) -> HTMLResponse:
+        """Serve index.html for all non-API, non-WS paths (SPA deep-link support).
+
+        Injects window.__CCBT_TOKEN__ when CCBT_DASH_TOKEN is configured so
+        the frontend WS hook can include ?token= in WebSocket URLs.
+        """
         # Let /api/* and /ws routes fall through to their own handlers
         # (FastAPI resolves named routes first; this only fires for unmatched paths)
         index = _dist / "index.html"
         if index.exists():
-            return FileResponse(str(index))
+            from api.deps import CCBT_DASH_TOKEN  # noqa: PLC0415
+            html = index.read_text(encoding="utf-8")
+            html = _inject_token(html, CCBT_DASH_TOKEN)
+            return HTMLResponse(content=html, status_code=200)
         # No SPA bundle — return a 404
         from fastapi import Response  # noqa: E402
         return Response(status_code=404, content="SPA bundle not found")

@@ -687,3 +687,100 @@ class TestWSTokenAuth:
                     )
         finally:
             _deps.CCBT_DASH_TOKEN = _orig
+
+
+# ---------------------------------------------------------------------------
+# 12. Token delivery — index.html must inject window.__CCBT_TOKEN__
+#
+# When CCBT_DASH_TOKEN is set and the SPA bundle exists, GET / must return
+# an HTML response containing:
+#   window.__CCBT_TOKEN__ = "<token>";
+# so that the browser's buildWsUrl() can include ?token= in WS URLs.
+#
+# Without this injection the live channel is silently dead behind any
+# token-gated deploy (nginx basic-auth outer gate + FastAPI token inner gate).
+#
+# TDD: these tests MUST fail on the current spa_catch_all (which serves raw
+# index.html without injection). They pass after the injection is added.
+# ---------------------------------------------------------------------------
+
+class TestTokenInjection:
+    """GET / must inject window.__CCBT_TOKEN__ when CCBT_DASH_TOKEN is configured."""
+
+    def test_index_html_contains_token_when_token_set(self, tmp_path) -> None:
+        """When CCBT_DASH_TOKEN is set, GET / HTML must contain window.__CCBT_TOKEN__."""
+        import api.deps as _deps
+        from fastapi.testclient import TestClient
+        from api.main import app
+
+        dist = Path("/Users/iceai/Work/ccbt/web/dist")
+        dist.mkdir(parents=True, exist_ok=True)
+        index = dist / "index.html"
+        _original_content = index.read_bytes() if index.exists() else None
+
+        # Write a minimal index.html without injection so the test is predictable
+        minimal_html = (
+            b"<!doctype html><html><head><title>CCBT</title></head>"
+            b"<body><div id=\"root\"></div></body></html>"
+        )
+        index.write_bytes(minimal_html)
+
+        _orig_token = _deps.CCBT_DASH_TOKEN
+        try:
+            _deps.CCBT_DASH_TOKEN = "inject-test-secret"  # type: ignore[assignment]
+            with TestClient(app, raise_server_exceptions=True) as client:
+                resp = client.get("/")
+                assert resp.status_code == 200, f"GET / returned {resp.status_code}"
+                body = resp.text
+                assert "__CCBT_TOKEN__" in body, (
+                    "index.html response does NOT contain window.__CCBT_TOKEN__. "
+                    "Token injection is missing — the WS channel will be rejected "
+                    "behind a token-gated deploy (nginx + FastAPI)."
+                )
+                assert "inject-test-secret" in body, (
+                    "index.html contains __CCBT_TOKEN__ placeholder but not the "
+                    "actual token value. Injection is broken."
+                )
+        finally:
+            _deps.CCBT_DASH_TOKEN = _orig_token
+            # Restore original index.html
+            if _original_content is not None:
+                index.write_bytes(_original_content)
+            elif index.exists():
+                index.unlink()
+
+    def test_index_html_no_secret_when_token_not_configured(self, tmp_path) -> None:
+        """When CCBT_DASH_TOKEN is NOT set, GET / must not expose any token value."""
+        import api.deps as _deps
+        from fastapi.testclient import TestClient
+        from api.main import app
+
+        dist = Path("/Users/iceai/Work/ccbt/web/dist")
+        dist.mkdir(parents=True, exist_ok=True)
+        index = dist / "index.html"
+        _original_content = index.read_bytes() if index.exists() else None
+
+        minimal_html = (
+            b"<!doctype html><html><head><title>CCBT</title></head>"
+            b"<body><div id=\"root\"></div></body></html>"
+        )
+        index.write_bytes(minimal_html)
+
+        _orig_token = _deps.CCBT_DASH_TOKEN
+        try:
+            _deps.CCBT_DASH_TOKEN = None  # type: ignore[assignment]
+            with TestClient(app, raise_server_exceptions=True) as client:
+                resp = client.get("/")
+                assert resp.status_code == 200
+                # When no token is configured, the response must not contain a secret value
+                # (it may contain "__CCBT_TOKEN__" as a placeholder set to "" or null,
+                # but must not contain any non-empty secret string)
+                body = resp.text
+                # No real secret value should be present
+                assert "inject-test-secret" not in body
+        finally:
+            _deps.CCBT_DASH_TOKEN = _orig_token
+            if _original_content is not None:
+                index.write_bytes(_original_content)
+            elif index.exists():
+                index.unlink()
