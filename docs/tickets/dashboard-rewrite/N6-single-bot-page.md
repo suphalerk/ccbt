@@ -38,4 +38,29 @@ proxy), and a sync ccxt call **blocks the async event loop** (stalls all WS/REST
   from the dashboard process**.
 
 ## Result
-_(fill on completion)_
+Implemented 2026-06-07. Commit: `e4afeb8 dashboard-rewrite N6`.
+
+**Python (api/):**
+- `api/routers/candles.py` — `/api/candles` endpoint reading from `bot_ohlcv` table
+  (persisted by bot). Returns `{available:false}` when table absent/empty.
+  Never imports ccxt. Symbol filter, timeframe auto-detection, limit param, ascending ts.
+- `api/models.py` — `CandleBar` + `CandlesResponse` Pydantic models
+- `api/main.py` — candles router registered
+- `openapi.json` regenerated (17 paths)
+
+**React (web/):**
+- `web/src/pages/BotDetailPage.tsx` — full drilldown replacing stub:
+  - Performance stats (total PnL, WR, PF, trade count) with data-testid
+  - Candle chart via lightweight-charts v5 (`addSeries(CandlestickSeries)`)
+    with EMA9 (yellow) + EMA21 (orange) lines
+  - RSI subchart below candles
+  - Unavailable state (`data-testid="candles-unavailable"`) shown when no persisted OHLCV
+  - Exit markers at `timestamp` (close time, per ticket spec — NOT entry time)
+  - Trade log table: duration, ai_decision, close_reason columns; `signal_source` absent
+  - Risk monitor: position side/size/unrealized PnL, status dot, strategy/timeframe
+  - Mode badge (STOP/TP/PANIC) in header
+- `web/src/api/client.ts` — `api.candles()` method + `CandlesResponse` type export
+- `web/src/api-types.d.ts` — `CandleBar` + `CandlesResponse` schemas + `/api/candles` operation
+
+**Tests:** 11 Python + 19 React tests. All 219 Python (dashboard) + 94 React tests pass.
+`npm run build` clean.
