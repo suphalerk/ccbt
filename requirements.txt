@@ -10,3 +10,8 @@ streamlit>=1.30.0
 plotly>=5.18.0
 oandapyV20>=0.7.2
 PySocks>=1.7.1
+# Dashboard v2 (requires Python 3.10+ — use .venv-dash for isolation on macOS)
+fastapi>=0.100.0
+uvicorn[standard]>=0.20.0
+pydantic>=2.0.0
+httpx>=0.24.0

@@ -28,5 +28,9 @@
 - [project_final_backtest_2026_03_22.md](project_final_backtest_2026_03_22.md) — Final portfolio with 6 weak-coin upgrades: $200→$3,421 (+1610%), 12.4% max DD (vs 23% before)
 - [project_round13_combined_2026_03_23.md](project_round13_combined_2026_03_23.md) — R13: 125+11 bots combined; $200→$1,449 (+624%), DD 12.9%; BAN/1000PEPE dualthrust rejected (PF<1.1)
 
+- [project_dashboard_round1_fixes_2026_06_07.md](project_dashboard_round1_fixes_2026_06_07.md) — Round 1: 4 blockers fixed (roster from start.sh, gate since=, lifespan safety, WS token); 292 tests pass
+- [project_dashboard_round2_nits_2026_06_07.md](project_dashboard_round2_nits_2026_06_07.md) — Round 2: segment-exact SPA guard, Cache-Control no-store, WS snapshot parity tests (13 tests)
+
 ## Feedback
 - [feedback_review_style.md](feedback_review_style.md) — How thorough code reviews should be structured
+- [feedback_dashboard_parity_testing.md](feedback_dashboard_parity_testing.md) — queries.py semantics: orphan exclusion scope, win_rate already %, daily_pnl column, SPA %2F routing gap

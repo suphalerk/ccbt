@@ -3,3 +3,5 @@
 - [ARC QA](project_arc_qa_2026_06_06.md) — ARCUSDT EMA-15m (Jun 2026): TP retune 5.0->3.0 DEPLOY; keep (not retire); wider SL hurts; walk-forward stable
 - [Shared market-data QA](project_shared_marketdata_qa.md) — cache refactor BLOCKED: stale positions break absence-based SL/TP close detection; tick is candle-aligned not 60s
 - [AO fleet QA](project_ao_fleet_qa.md) — Awesome Osc 1h-vs-4h re-verify (18 configs on wrong TF); CFX/BCH=RETIRE (OOS collapse); ENJ/DASH=FORWARD_TEST_4H (4H stable, <15tr)
+- [Dashboard-rewrite QA](project_dashboard_rewrite_qa.md) — Round 1 fix verify: 5/6 blockers truly fixed; #3 gate-window only half-fixed (endpoint omits since=, parity test compares wrong pair); SPA catch-all 404 leak; roster vs start.sh divergence
+- [Dashboard-rewrite QA round1 re-verify](project_dashboard_rewrite_qa_round1_verify.md) — Residual #1 (WS bots clobber) TRULY FIXED; pre-existing conditional-hook in BotGrid; py parity test only compares symbol sets not values

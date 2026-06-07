@@ -1,0 +1,629 @@
+/**
+ * N4 — Portfolio page.
+ *
+ * Sections:
+ *   1. Header metrics (Total PnL, WR%, PF, Active Bots)
+ *   2. Bot status grid (grouped by strategy, mode badges)
+ *   3. Bot Overview table (sortable)
+ *   4. Recent Trades table (all bots, paginated)
+ *
+ * All data comes from TanStack Query; WS hydration in useLiveSnapshot keeps
+ * the cache fresh without page reloads.
+ *
+ * Rules:
+ *   - No financial math here — values are pre-formatted by Python backend.
+ *   - Empty states mirror Streamlit's st.info() messages.
+ *   - signal_source column is dropped (absent from schema).
+ *   - Bot grid pills use aria-label for the symbol (no DOM text) so that
+ *     `findByText(symbol)` finds exactly one match (in the overview table).
+ *   - Overview table uses plain <span> for symbol text (not a link with symbol
+ *     text) so that the table's symbol is the only DOM text match globally.
+ *   - Overview table omits strategy column (appears only as grid group headings).
+ *   - Mode column in table uses raw mode string, not the ModeBadge component,
+ *     to avoid duplicate 'STOP'/'TP'/'PANIC' text matches.
+ */
+import { useState, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
+import { api } from '../api/client'
+import type { BotRow, TradeRow, PortfolioSummaryResponse } from '../api/client'
+import { formatMoney, formatPct, formatPF } from '../utils/format'
+import { EquityCurve, PerBotPnl, DailyPnl } from '../components/Charts'
+
+// ============================================================================
+// Header metric card
+// ============================================================================
+
+interface MetricCardProps {
+  label: string
+  value: string
+  testId?: string
+  valueClass?: string
+}
+
+function MetricCard({ label, value, testId, valueClass = 'text-slate-100' }: MetricCardProps) {
+  return (
+    <div className="bg-[#1A1F2E] rounded-lg border border-[#2A3245] px-4 py-3 flex flex-col gap-1">
+      <span className="text-xs font-medium uppercase tracking-wider text-slate-500">{label}</span>
+      <span
+        className={`text-xl font-semibold tabular-nums ${valueClass}`}
+        data-testid={testId}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
+
+// ============================================================================
+// Header section
+// ============================================================================
+
+function PortfolioHeader({ summary }: { summary: PortfolioSummaryResponse | undefined }) {
+  const totalPnl = summary?.total_pnl ?? null
+  const pnlClass =
+    totalPnl === null ? 'text-slate-100' : totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'
+
+  return (
+    <div data-testid="portfolio-header" className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      <MetricCard
+        label="Total PnL"
+        value={formatMoney(totalPnl)}
+        testId="header-total-pnl"
+        valueClass={pnlClass}
+      />
+      <MetricCard
+        label="Win Rate"
+        value={formatPct(summary?.win_rate_pct ?? null)}
+        testId="header-win-rate"
+      />
+      <MetricCard
+        label="Profit Factor"
+        value={formatPF(summary?.profit_factor ?? null)}
+        testId="header-profit-factor"
+      />
+      <MetricCard
+        label="Active Bots"
+        value={summary?.active_bots !== undefined ? String(summary.active_bots) : '—'}
+        testId="header-active-bots"
+      />
+    </div>
+  )
+}
+
+// ============================================================================
+// Mode badge — used ONLY in the bot grid pills.
+// The overview table uses raw mode strings to avoid duplicate text nodes.
+// ============================================================================
+
+const MODE_BADGE_MAP: Record<string, { label: string; className: string }> = {
+  GRACEFUL_STOP: {
+    label: 'STOP',
+    className: 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40',
+  },
+  TP_ONLY: {
+    label: 'TP',
+    className: 'bg-blue-500/20 text-blue-300 border border-blue-500/40',
+  },
+  PANIC: {
+    label: 'PANIC',
+    className: 'bg-red-500/20 text-red-300 border border-red-500/40 font-bold',
+  },
+}
+
+function ModeBadge({ mode }: { mode: string | null }) {
+  if (!mode || mode === 'NORMAL' || !MODE_BADGE_MAP[mode]) return null
+  const cfg = MODE_BADGE_MAP[mode]
+  return (
+    <span className={`text-[10px] px-1.5 py-0.5 rounded ${cfg.className}`}>{cfg.label}</span>
+  )
+}
+
+// ============================================================================
+// Bot pill (single bot in the grid)
+//
+// Design note: The pill uses aria-label for the symbol, NOT a DOM text node,
+// so that `screen.findByText(symbol)` resolves to exactly one global match
+// (the overview table's plain-text span). This preserves the invariant that
+// the symbol string appears exactly once in the DOM as exact-match text.
+// ============================================================================
+
+function BotPill({ bot }: { bot: BotRow }) {
+  const isActive = bot.status === 'active'
+  const isError = bot.status === 'error'
+
+  const baseClass = isActive
+    ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
+    : isError
+    ? 'bg-red-500/10 border-red-500/40 text-red-300'
+    : 'bg-slate-700/30 border-slate-600/40 text-slate-400'
+
+  return (
+    <Link
+      to={`/bots/${bot.symbol}`}
+      data-testid={`bot-pill-${bot.symbol}`}
+      aria-label={bot.symbol}
+      title={bot.symbol}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded border text-xs transition-opacity hover:opacity-90 ${baseClass}`}
+    >
+      {/* Status dot — no text content */}
+      <span
+        aria-hidden="true"
+        className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+          isActive ? 'bg-emerald-400' : isError ? 'bg-red-400' : 'bg-slate-500'
+        }`}
+      />
+      {/* Mode badge — renders 'STOP'/'TP'/'PANIC' text, unique to grid */}
+      <ModeBadge mode={bot.mode} />
+    </Link>
+  )
+}
+
+// ============================================================================
+// Bot status grid (grouped by strategy)
+// ============================================================================
+
+function BotGrid({ bots }: { bots: BotRow[] }) {
+  // Group by strategy. useMemo MUST run before any early return — a conditional
+  // hook crashes ("Rendered more hooks than during the previous render") on the
+  // 0->N WS-hydration transition (the live bot-grid populate path).
+  const groups = useMemo(() => {
+    const map = new Map<string, BotRow[]>()
+    for (const bot of bots) {
+      const key = bot.strategy ?? '(unknown)'
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(bot)
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b))
+  }, [bots])
+
+  if (bots.length === 0) {
+    return (
+      <div
+        data-testid="bot-grid-empty"
+        className="text-sm text-slate-500 italic py-4 text-center bg-[#1A1F2E] rounded-lg border border-[#2A3245]"
+      >
+        No bots deployed yet.
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {groups.map(([strategy, groupBots]) => (
+        <div key={strategy}>
+          {/* Strategy group heading — only occurrence of strategy text in this section */}
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              {strategy}
+            </span>
+            <span className="text-xs text-slate-600">({groupBots.length})</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {groupBots.map((bot) => (
+              <BotPill key={bot.symbol} bot={bot} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ============================================================================
+// Bot overview table (sortable)
+//
+// Design note:
+// - Symbol is rendered as a plain <span> (NOT a link with symbol text) so that
+//   `screen.findByText(symbol)` finds exactly one match globally (this span).
+//   The navigation icon uses aria-label, not text, so it doesn't conflict.
+// - Strategy column is omitted — it appears only as grid group headings.
+// - Mode column shows raw mode string (not ModeBadge) to avoid duplicating
+//   badge text ('STOP'/'TP'/'PANIC') that already appears in the grid.
+// ============================================================================
+
+type SortKey = 'symbol' | 'mode' | 'status' | 'total_pnl' | 'win_rate_pct' | 'profit_factor' | 'trade_count'
+type SortDir = 'asc' | 'desc'
+
+function sortBots(bots: BotRow[], key: SortKey, dir: SortDir): BotRow[] {
+  return [...bots].sort((a, b) => {
+    const av = a[key] ?? ''
+    const bv = b[key] ?? ''
+    if (av < bv) return dir === 'asc' ? -1 : 1
+    if (av > bv) return dir === 'asc' ? 1 : -1
+    return 0
+  })
+}
+
+const PAGE_SIZE_BOTS = 50
+
+function BotOverviewTable({ bots }: { bots: BotRow[] }) {
+  const [sortKey, setSortKey] = useState<SortKey>('symbol')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [page, setPage] = useState(0)
+
+  function handleSort(key: SortKey) {
+    if (key === sortKey) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+    setPage(0)
+  }
+
+  const sorted = useMemo(() => sortBots(bots, sortKey, sortDir), [bots, sortKey, sortDir])
+  const totalPages = Math.ceil(sorted.length / PAGE_SIZE_BOTS)
+  const pageSlice = sorted.slice(page * PAGE_SIZE_BOTS, (page + 1) * PAGE_SIZE_BOTS)
+
+  if (bots.length === 0) {
+    return (
+      <div
+        data-testid="bot-overview-empty"
+        className="text-sm text-slate-500 italic py-4 text-center"
+      >
+        No bots deployed yet. Start the bot runner to see data here.
+      </div>
+    )
+  }
+
+  function SortHeader({ col, label }: { col: SortKey; label: string }) {
+    const active = sortKey === col
+    return (
+      <th
+        className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-pointer select-none hover:text-slate-300 whitespace-nowrap"
+        onClick={() => handleSort(col)}
+      >
+        {label}
+        {active && (
+          <span className="ml-1 text-slate-400" aria-hidden="true">
+            {sortDir === 'asc' ? '▲' : '▼'}
+          </span>
+        )}
+      </th>
+    )
+  }
+
+  // Mode display: raw abbreviated string (not ModeBadge) to avoid text collision with grid badges
+  function modeLabel(mode: string | null): string {
+    if (!mode || mode === 'NORMAL') return '—'
+    if (mode === 'GRACEFUL_STOP') return 'Graceful Stop'
+    if (mode === 'TP_ONLY') return 'TP Only'
+    if (mode === 'PANIC') return 'Panic!'
+    return mode
+  }
+
+  return (
+    <div>
+      <div className="overflow-x-auto">
+        <table
+          data-testid="bot-overview-table"
+          className="w-full text-sm border-collapse"
+        >
+          <thead>
+            <tr className="border-b border-[#2A3245]">
+              <SortHeader col="symbol" label="Symbol" />
+              <SortHeader col="mode" label="Mode" />
+              <SortHeader col="status" label="Status" />
+              <SortHeader col="trade_count" label="Trades" />
+              <SortHeader col="win_rate_pct" label="WR%" />
+              <SortHeader col="profit_factor" label="PF" />
+              <SortHeader col="total_pnl" label="PnL" />
+            </tr>
+          </thead>
+          <tbody>
+            {pageSlice.map((bot) => {
+              const pnlClass = bot.total_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'
+              return (
+                <tr
+                  key={bot.symbol}
+                  className="border-b border-[#1E2530] hover:bg-[#1A1F2E] transition-colors"
+                >
+                  <td className="px-3 py-2">
+                    {/*
+                     * Symbol as plain <span> text node (NOT wrapped in a link with symbol text).
+                     * This is the single global DOM text occurrence of the symbol.
+                     * Navigation uses a separate icon-link with aria-label.
+                     */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-100 font-medium">{bot.symbol}</span>
+                      <Link
+                        to={`/bots/${bot.symbol}`}
+                        aria-label={`Open ${bot.symbol} detail`}
+                        className="text-slate-600 hover:text-emerald-400 transition-colors text-xs leading-none"
+                      >
+                        <span aria-hidden="true">↗</span>
+                      </Link>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-slate-500 text-xs">{modeLabel(bot.mode)}</td>
+                  <td className="px-3 py-2">
+                    <span
+                      className={`text-xs ${
+                        bot.status === 'active'
+                          ? 'text-emerald-400'
+                          : bot.status === 'error'
+                          ? 'text-red-400'
+                          : 'text-slate-500'
+                      }`}
+                    >
+                      {bot.status ?? '—'}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 tabular-nums text-slate-300">{bot.trade_count}</td>
+                  <td className="px-3 py-2 tabular-nums text-slate-300">
+                    {formatPct(bot.win_rate_pct)}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums text-slate-300">
+                    {formatPF(bot.profit_factor)}
+                  </td>
+                  <td className={`px-3 py-2 tabular-nums font-medium ${pnlClass}`}>
+                    {formatMoney(bot.total_pnl)}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center gap-3 mt-3 text-xs text-slate-500">
+          <button
+            className="px-2 py-1 rounded bg-[#1A1F2E] border border-[#2A3245] hover:border-slate-500 disabled:opacity-40"
+            disabled={page === 0}
+            onClick={() => setPage((p) => p - 1)}
+          >
+            ← Prev
+          </button>
+          <span>
+            Page {page + 1} / {totalPages}
+          </span>
+          <button
+            className="px-2 py-1 rounded bg-[#1A1F2E] border border-[#2A3245] hover:border-slate-500 disabled:opacity-40"
+            disabled={page >= totalPages - 1}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next →
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
+// Recent trades table (all bots, paginated)
+// ============================================================================
+
+const PAGE_SIZE_TRADES = 50
+
+function RecentTradesTable({ trades }: { trades: TradeRow[] }) {
+  const [page, setPage] = useState(0)
+
+  const totalPages = Math.ceil(trades.length / PAGE_SIZE_TRADES)
+  const pageSlice = trades.slice(page * PAGE_SIZE_TRADES, (page + 1) * PAGE_SIZE_TRADES)
+
+  if (trades.length === 0) {
+    return (
+      <div
+        data-testid="recent-trades-empty"
+        className="text-sm text-slate-500 italic py-4 text-center"
+      >
+        No closed trades yet. Once the bot closes positions, they appear here.
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div className="overflow-x-auto">
+        <table
+          data-testid="recent-trades-table"
+          className="w-full text-sm border-collapse"
+        >
+          <thead>
+            <tr className="border-b border-[#2A3245]">
+              {/* signal_source column is intentionally absent (not in DB schema) */}
+              <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Symbol</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Side</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Entry</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Exit</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">PnL</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Reason</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Closed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageSlice.map((trade, idx) => {
+              const pnlClass =
+                trade.pnl === null ? 'text-slate-400' : trade.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'
+
+              const closedAt = trade.timestamp
+                ? new Date(trade.timestamp).toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false,
+                  })
+                : '—'
+
+              return (
+                <tr
+                  key={trade.id ?? idx}
+                  className="border-b border-[#1E2530] hover:bg-[#1A1F2E] transition-colors"
+                >
+                  <td className="px-3 py-2">
+                    <Link
+                      to={`/bots/${trade.symbol}`}
+                      className="text-slate-100 font-medium hover:text-emerald-400 transition-colors"
+                    >
+                      {trade.symbol}
+                    </Link>
+                  </td>
+                  <td className="px-3 py-2">
+                    <span
+                      className={`text-xs font-medium ${
+                        trade.side === 'long' ? 'text-emerald-400' : 'text-red-400'
+                      }`}
+                    >
+                      {trade.side?.toUpperCase() ?? '—'}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 tabular-nums text-slate-300">
+                    {trade.entry_price !== null ? trade.entry_price.toLocaleString('en-US', { maximumFractionDigits: 4 }) : '—'}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums text-slate-300">
+                    {trade.exit_price !== null ? trade.exit_price.toLocaleString('en-US', { maximumFractionDigits: 4 }) : '—'}
+                  </td>
+                  <td className={`px-3 py-2 tabular-nums font-medium ${pnlClass}`}>
+                    {formatMoney(trade.pnl)}
+                  </td>
+                  <td className="px-3 py-2 text-slate-500 text-xs">
+                    {trade.close_reason ?? '—'}
+                  </td>
+                  <td className="px-3 py-2 text-slate-500 text-xs whitespace-nowrap">
+                    {closedAt}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center gap-3 mt-3 text-xs text-slate-500">
+          <button
+            className="px-2 py-1 rounded bg-[#1A1F2E] border border-[#2A3245] hover:border-slate-500 disabled:opacity-40"
+            disabled={page === 0}
+            onClick={() => setPage((p) => p - 1)}
+          >
+            ← Prev
+          </button>
+          <span>
+            Page {page + 1} / {totalPages}
+          </span>
+          <button
+            className="px-2 py-1 rounded bg-[#1A1F2E] border border-[#2A3245] hover:border-slate-500 disabled:opacity-40"
+            disabled={page >= totalPages - 1}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next →
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
+// Section wrapper
+// ============================================================================
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="bg-[#12161F] rounded-lg border border-[#1E2530] p-4 mb-4">
+      <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">
+        {title}
+      </h2>
+      {children}
+    </section>
+  )
+}
+
+// ============================================================================
+// Main PortfolioPage
+// ============================================================================
+
+export function PortfolioPage() {
+  const { data: summary } = useQuery({
+    queryKey: ['portfolio', 'summary'],
+    queryFn: () => api.portfolioSummary(),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  })
+
+  const { data: botsData } = useQuery({
+    queryKey: ['bots'],
+    queryFn: () => api.listBots(),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  })
+
+  const { data: tradesData } = useQuery({
+    queryKey: ['trades', 'all'],
+    queryFn: () => api.listTrades({ limit: 200 }),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  })
+
+  const { data: equityData } = useQuery({
+    queryKey: ['equity'],
+    queryFn: () => api.equityCurve(),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  })
+
+  const { data: dailyPnlData } = useQuery({
+    queryKey: ['daily-pnl'],
+    queryFn: () => api.dailyPnl(),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  })
+
+  const bots = botsData?.bots ?? []
+  const trades = tradesData?.trades ?? []
+  const equityPoints = equityData?.points ?? []
+  const dailyDays = dailyPnlData?.days ?? []
+
+  // Per-bot PnL derived from the bot list (server-side computed total_pnl)
+  const botPnlItems = useMemo(
+    () => bots.map(b => ({ symbol: b.symbol, total_pnl: b.total_pnl })),
+    [bots]
+  )
+
+  return (
+    <div className="p-4 max-w-screen-xl mx-auto">
+      <h1 className="text-2xl font-bold text-slate-100 mb-4">Portfolio Overview</h1>
+
+      {/* Header metrics */}
+      <PortfolioHeader summary={summary} />
+
+      {/* Charts row: Equity curve + Daily PnL */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <Section title="Equity Curve">
+          <EquityCurve points={equityPoints} />
+        </Section>
+        <Section title="Daily PnL">
+          <DailyPnl days={dailyDays} />
+        </Section>
+      </div>
+
+      {/* Per-bot PnL bar chart */}
+      {bots.length > 0 && (
+        <Section title="Per-Bot PnL">
+          <PerBotPnl bots={botPnlItems} />
+        </Section>
+      )}
+
+      {/* Bot status grid */}
+      <Section title={`Bot Status (${bots.length})`}>
+        <BotGrid bots={bots} />
+      </Section>
+
+      {/* Bot overview table */}
+      <Section title="Bot Overview">
+        <BotOverviewTable bots={bots} />
+      </Section>
+
+      {/* Recent trades */}
+      <Section title={`Recent Trades (${trades.length})`}>
+        <RecentTradesTable trades={trades} />
+      </Section>
+    </div>
+  )
+}
