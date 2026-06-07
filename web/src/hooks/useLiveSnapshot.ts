@@ -13,7 +13,7 @@
  */
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import type { WSEnvelope, WSSnapshotPayload, BotRow, PortfolioSummary } from '../ws-types'
+import type { WSEnvelope, WSSnapshotPayload, BotRow, PortfolioSummary, WSSnapshotData } from '../ws-types'
 
 export type WsStatus = 'connecting' | 'connected' | 'reconnecting' | 'closed'
 
@@ -34,7 +34,7 @@ const MAX_BACKOFF_MS = 30_000
 const CLEAN_CLOSE_CODE = 1000
 
 function buildWsUrl(): string {
-  if (typeof window === 'undefined') return 'ws://localhost:8502/ws'
+  if (typeof window === 'undefined') return 'ws://localhost:8501/ws'
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const host = window.location.host
   return `${protocol}//${host}/ws`
@@ -82,15 +82,24 @@ export function useLiveSnapshot(): LiveSnapshotState {
 
       if (envelope.type === 'snapshot') {
         const snap = envelope as WSSnapshotPayload
+
+        // api/ws.py sends nested shape: {type, ts, data:{portfolio, bots}}
+        // Fall back to legacy flat shape for backward compat.
+        const data: WSSnapshotData | null | undefined = snap.data
+        const portfolio = data?.portfolio ?? snap.portfolio ?? null
+        const bots = data?.bots ?? snap.bots ?? null
+        // Timestamp: prefer "ts" (py field), fall back to legacy "timestamp"
+        const ts = snap.ts ?? snap.timestamp ?? null
+
         setSnapshot(snap)
-        setLastUpdated(snap.timestamp ?? null)
+        setLastUpdated(ts)
 
         // Hydrate TanStack Query caches
-        if (snap.portfolio) {
-          queryClient.setQueryData<PortfolioSummary>(QUERY_KEYS.portfolio, snap.portfolio)
+        if (portfolio) {
+          queryClient.setQueryData<PortfolioSummary>(QUERY_KEYS.portfolio, portfolio)
         }
-        if (snap.bots) {
-          queryClient.setQueryData<BotRow[]>(QUERY_KEYS.bots, snap.bots)
+        if (bots) {
+          queryClient.setQueryData<BotRow[]>(QUERY_KEYS.bots, bots)
         }
       }
     }

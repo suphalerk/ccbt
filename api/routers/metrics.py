@@ -215,11 +215,19 @@ async def calendar_pnl(
         pnl_col = "daily_pnl" if "daily_pnl" in filtered.columns else "pnl"
         tc_col = "trades" if "trades" in filtered.columns else "trade_count"
 
+        wr_col = "win_rate" if "win_rate" in filtered.columns else None
+
         for _, row in filtered.iterrows():
+            raw_wr = row.get(wr_col) if wr_col else None
+            wr_val = float(raw_wr) if raw_wr is not None else 0.0
+            # win_rate from queries.py is in [0,1]; convert to percentage
+            if wr_val <= 1.0:
+                wr_val = round(wr_val * 100, 1)
             cells.append(CalendarCell(
                 date=str(row.get("date") or ""),
                 pnl=round(_safe_float_required(row.get(pnl_col)), 2),
                 trade_count=_safe_int(row.get(tc_col)),
+                win_rate_pct=round(wr_val, 1),
             ))
 
     return CalendarResponse(symbol=symbol, year=y, month=m, cells=cells)

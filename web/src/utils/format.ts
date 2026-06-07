@@ -17,6 +17,7 @@ type Nullable<T> = T | null | undefined
  */
 export function formatMoney(value: Nullable<number>): string {
   if (value === null || value === undefined) return '—'
+  if (!isFinite(value)) return '—'
   const abs = Math.abs(value)
   const sign = value < 0 ? '-' : ''
   return `${sign}$${abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`

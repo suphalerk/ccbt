@@ -214,9 +214,26 @@ export function AIAnalyticsPage() {
   })
 
   const rows = data?.rows ?? []
-  const stats = computeAggStats(rows)
-  // Only show empty state once we have data (not while still loading)
-  const hasData = rows.length > 0
+  // Prefer server-provided aggregate; fall back to browser-computed stats if not present
+  const serverAgg = (data as any)?.aggregate as {
+    total_decisions: number
+    decided_trades: number
+    weighted_accuracy_pct: number
+    avg_influence_factor: number
+  } | null | undefined
+  const browserStats = computeAggStats(rows)
+  const stats = serverAgg
+    ? {
+        totalDecisions: serverAgg.total_decisions,
+        decidedCount: serverAgg.decided_trades,
+        avgAccuracy: Math.round(serverAgg.weighted_accuracy_pct * 10) / 10,
+        avgInfluence: Math.round(serverAgg.avg_influence_factor * 100) / 100,
+        correctCount: browserStats.correctCount,
+      }
+    : browserStats
+  // Only show empty state once we have data (not while still loading).
+  // If the server returned an aggregate object, we have data (even if decisions=0).
+  const hasData = rows.length > 0 || serverAgg !== null && serverAgg !== undefined
   const showEmpty = !isLoading && data !== undefined && !hasData
 
   return (

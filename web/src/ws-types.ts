@@ -39,10 +39,25 @@ export interface LogLine {
   raw: string
 }
 
-export interface WSSnapshotPayload {
-  type: 'snapshot'
+/**
+ * The real envelope shape from api/ws.py:
+ *   { type: "snapshot", ts: "<ISO>", data: { portfolio: {...}, bots: [...] } }
+ */
+export interface WSSnapshotData {
   portfolio?: PortfolioSummary | null
   bots?: BotRow[] | null
+}
+
+export interface WSSnapshotPayload {
+  type: 'snapshot'
+  /** ISO timestamp from api/ws.py (field name is "ts", not "timestamp") */
+  ts?: string | null
+  data?: WSSnapshotData | null
+  /** @deprecated legacy flat shape — use data.portfolio / data.bots + ts */
+  portfolio?: PortfolioSummary | null
+  /** @deprecated legacy flat shape */
+  bots?: BotRow[] | null
+  /** @deprecated legacy field — use ts */
   timestamp?: string | null
 }
 

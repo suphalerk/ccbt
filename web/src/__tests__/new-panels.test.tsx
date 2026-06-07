@@ -342,8 +342,8 @@ describe('RiskAtStakeHeader', () => {
       makeRiskResponse({
         unprotected_count: 2,
         rows: [
-          { symbol: 'BTCUSDT', side: 'long', entry_price: 50000, stop_loss: null, position_size: 0.01, risk_pct: null, unprotected: true },
-          { symbol: 'ETHUSDT', side: 'long', entry_price: 3000, stop_loss: null, position_size: 0.1, risk_pct: null, unprotected: true },
+          { symbol: 'BTCUSDT', side: 'long', entry_price: 50000, stop_loss: null, position_size: 0.01, stop_distance_pct: null, unprotected: true },
+          { symbol: 'ETHUSDT', side: 'long', entry_price: 3000, stop_loss: null, position_size: 0.1, stop_distance_pct: null, unprotected: true },
         ],
       })
     )
@@ -360,7 +360,7 @@ describe('RiskAtStakeHeader', () => {
     vi.mocked(api.openRisk).mockResolvedValue(
       makeRiskResponse({
         rows: [
-          { symbol: 'BTCUSDT', side: 'long', entry_price: 50000, stop_loss: 49000, position_size: 0.01, risk_pct: null, unprotected: false },
+          { symbol: 'BTCUSDT', side: 'long', entry_price: 50000, stop_loss: 49000, position_size: 0.01, stop_distance_pct: null, unprotected: false },
         ],
       })
     )
@@ -377,8 +377,8 @@ describe('RiskAtStakeHeader', () => {
     vi.mocked(api.openRisk).mockResolvedValue(
       makeRiskResponse({
         rows: [
-          { symbol: 'BTCUSDT', side: 'long', entry_price: 50000, stop_loss: 49000, position_size: 0.01, risk_pct: null, unprotected: false },
-          { symbol: 'ETHUSDT', side: 'short', entry_price: 3000, stop_loss: 3100, position_size: 0.1, risk_pct: null, unprotected: false },
+          { symbol: 'BTCUSDT', side: 'long', entry_price: 50000, stop_loss: 49000, position_size: 0.01, stop_distance_pct: null, unprotected: false },
+          { symbol: 'ETHUSDT', side: 'short', entry_price: 3000, stop_loss: 3100, position_size: 0.1, stop_distance_pct: null, unprotected: false },
         ],
         unprotected_count: 0,
       })

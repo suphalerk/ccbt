@@ -261,6 +261,7 @@ class CalendarCell(BaseModel):
     date: str  # YYYY-MM-DD
     pnl: float
     trade_count: int
+    win_rate_pct: float = 0.0  # 0-100
 
 
 class CalendarResponse(BaseModel):

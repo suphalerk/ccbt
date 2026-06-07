@@ -2,7 +2,6 @@
   "openapi": "3.1.0",
   "info": {
     "title": "CCBT Dashboard API",
-    "description": "FastAPI backend for the CCBT crypto trading bot dashboard (v2).",
     "version": "2.0.0"
   },
   "paths": {
@@ -261,7 +260,7 @@
           "portfolio"
         ],
         "summary": "Ai Calibration",
-        "description": "AI advisor calibration stats per symbol.",
+        "description": "AI advisor calibration stats per symbol + portfolio-level aggregate.\n\nUses get_calibration_stats() for the influence ladder to avoid re-deriving\nthe same logic in the router.",
         "operationId": "ai_calibration_api_ai_calibration_get",
         "responses": {
           "200": {
@@ -433,7 +432,7 @@
           "metrics"
         ],
         "summary": "Open Risk",
-        "description": "Open position risk (SL distance, unprotected flag).",
+        "description": "Open position risk (SL distance, unprotected flag, aggregate notional/max_sl_loss).",
         "operationId": "open_risk_api_risk_get",
         "parameters": [
           {
@@ -855,6 +854,33 @@
   },
   "components": {
     "schemas": {
+      "AICalibrationAggregate": {
+        "properties": {
+          "total_decisions": {
+            "type": "integer",
+            "title": "Total Decisions",
+            "default": 0
+          },
+          "decided_trades": {
+            "type": "integer",
+            "title": "Decided Trades",
+            "default": 0
+          },
+          "weighted_accuracy_pct": {
+            "type": "number",
+            "title": "Weighted Accuracy Pct",
+            "default": 0.0
+          },
+          "avg_influence_factor": {
+            "type": "number",
+            "title": "Avg Influence Factor",
+            "default": 1.0
+          }
+        },
+        "type": "object",
+        "title": "AICalibrationAggregate",
+        "description": "Portfolio-level AI calibration aggregate (weighted across all symbols)."
+      },
       "AICalibrationResponse": {
         "properties": {
           "rows": {
@@ -863,6 +889,16 @@
             },
             "type": "array",
             "title": "Rows"
+          },
+          "aggregate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AICalibrationAggregate"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1140,6 +1176,11 @@
           "trade_count": {
             "type": "integer",
             "title": "Trade Count"
+          },
+          "win_rate_pct": {
+            "type": "number",
+            "title": "Win Rate Pct",
+            "default": 0.0
           }
         },
         "type": "object",
@@ -1720,6 +1761,16 @@
           "unprotected_count": {
             "type": "integer",
             "title": "Unprotected Count"
+          },
+          "notional": {
+            "type": "number",
+            "title": "Notional",
+            "default": 0.0
+          },
+          "max_sl_loss": {
+            "type": "number",
+            "title": "Max Sl Loss",
+            "default": 0.0
           }
         },
         "type": "object",
@@ -1781,7 +1832,7 @@
             ],
             "title": "Position Size"
           },
-          "risk_pct": {
+          "stop_distance_pct": {
             "anyOf": [
               {
                 "type": "number"
@@ -1790,7 +1841,7 @@
                 "type": "null"
               }
             ],
-            "title": "Risk Pct"
+            "title": "Stop Distance Pct"
           },
           "unprotected": {
             "type": "boolean",
@@ -1804,7 +1855,7 @@
           "entry_price",
           "stop_loss",
           "position_size",
-          "risk_pct",
+          "stop_distance_pct",
           "unprotected"
         ],
         "title": "OpenRiskRow"

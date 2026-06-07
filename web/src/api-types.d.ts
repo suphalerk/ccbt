@@ -15,14 +15,14 @@ export interface paths {
   "/api/bots": {
     /**
      * List Bots
-     * @description List all bots with summary stats.
+     * @description List all bots with per-symbol summary stats.
      */
     get: operations["list_bots_api_bots_get"];
   };
   "/api/bots/{symbol}": {
     /**
      * Bot Detail
-     * @description Detail for a single bot.
+     * @description Detail for a single bot — stats + recent trades.
      */
     get: operations["bot_detail_api_bots__symbol__get"];
   };
@@ -50,21 +50,24 @@ export interface paths {
   "/api/ai/calibration": {
     /**
      * Ai Calibration
-     * @description AI advisor calibration stats.
+     * @description AI advisor calibration stats per symbol + portfolio-level aggregate.
+     *
+     * Uses get_calibration_stats() for the influence ladder to avoid re-deriving
+     * the same logic in the router.
      */
     get: operations["ai_calibration_api_ai_calibration_get"];
   };
   "/api/logs": {
     /**
      * Get Logs
-     * @description Recent log lines, optionally filtered.
+     * @description Recent log lines, optionally filtered by level/search.
      */
     get: operations["get_logs_api_logs_get"];
   };
   "/api/close-reasons": {
     /**
      * Close Reasons
-     * @description Close-reason breakdown with PnL sign colouring.
+     * @description Close-reason breakdown with total PnL and sign colouring.
      */
     get: operations["close_reasons_api_close_reasons_get"];
   };
@@ -78,7 +81,7 @@ export interface paths {
   "/api/risk": {
     /**
      * Open Risk
-     * @description Open position risk (SL distance, % risk, unprotected flag).
+     * @description Open position risk (SL distance, unprotected flag, aggregate notional/max_sl_loss).
      */
     get: operations["open_risk_api_risk_get"];
   };
@@ -92,7 +95,7 @@ export interface paths {
   "/api/heatmap": {
     /**
      * Heatmap
-     * @description Hour-of-day × day-of-week PnL heatmap (UTC bucketing).
+     * @description Hour-of-day x day-of-week PnL heatmap (UTC bucketing).
      */
     get: operations["heatmap_api_heatmap_get"];
   };
@@ -100,15 +103,54 @@ export interface paths {
     /**
      * Set Bot Mode
      * @description Set mode for a single bot (NORMAL | GRACEFUL_STOP | TP_ONLY | PANIC).
+     *
+     * Args:
+     *     symbol: sym_clean'd symbol in the URL path (e.g. BTCUSDT).
+     *     body: ModeRequest with ``mode`` field and optional ``confirm_panic``.
+     *
+     * Returns:
+     *     ModeResponse indicating acceptance and the resulting mode.
+     *
+     * Raises:
+     *     HTTPException 400: Symbol not in roster or invalid format.
+     *     HTTPException 422: Unknown mode string.
+     *     HTTPException 401: Missing or wrong X-Dash-Token.
      */
     post: operations["set_bot_mode_api_bots__symbol__mode_post"];
   };
   "/api/bots/mode/bulk": {
     /**
      * Set Bulk Mode
-     * @description Set mode for multiple bots in one request.
+     * @description Set mode for multiple (or all) roster bots in one request.
+     *
+     * If ``symbols`` is empty, the mode is applied to every bot in the roster.
+     *
+     * PANIC debounce: a 2nd bulk PANIC within ``CCBT_PANIC_DEBOUNCE_S`` seconds
+     * returns 429 to prevent accidental double-clicks from closing everything twice.
+     *
+     * Args:
+     *     body: BulkModeRequest with ``symbols`` list (empty = all) and ``mode``.
+     *
+     * Returns:
+     *     BulkModeResponse with per-symbol ModeResponse entries.
+     *
+     * Raises:
+     *     HTTPException 422: Unknown mode string.
+     *     HTTPException 429: Rapid duplicate bulk PANIC.
+     *     HTTPException 401: Missing or wrong X-Dash-Token.
      */
     post: operations["set_bulk_mode_api_bots_mode_bulk_post"];
+  };
+  "/api/candles": {
+    /**
+     * Get Candles
+     * @description Persisted OHLCV candles + indicators for a symbol.
+     *
+     * Returns {available: false} when no candles are persisted.
+     * The bot writes to bot_ohlcv whenever it fetches OHLCV from the exchange.
+     * The dashboard NEVER calls the exchange directly.
+     */
+    get: operations["get_candles_api_candles_get"];
   };
   "/api/health": {
     /**
@@ -117,13 +159,6 @@ export interface paths {
      */
     get: operations["health_api_health_get"];
   };
-  "/api/candles": {
-    /**
-     * Get Candles
-     * @description Persisted OHLCV candles + indicators for a symbol.
-     */
-    get: operations["get_candles_api_candles_get"];
-  };
 }
 
 export type webhooks = Record<string, never>;
@@ -131,42 +166,30 @@ export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
     /**
-     * CandleBar
-     * @description One OHLCV candle with indicator snapshots.
+     * AICalibrationAggregate
+     * @description Portfolio-level AI calibration aggregate (weighted across all symbols).
      */
-    CandleBar: {
-      /** Ts - unix epoch ms (open time) */
-      ts: number;
-      /** Open */
-      open: number;
-      /** High */
-      high: number;
-      /** Low */
-      low: number;
-      /** Close */
-      close: number;
-      /** Volume */
-      volume: number;
-      /** Ema9 */
-      ema9: number | null;
-      /** Ema21 */
-      ema21: number | null;
-      /** Rsi14 */
-      rsi14: number | null;
-    };
-    /**
-     * CandlesResponse
-     * @description GET /api/candles?symbol=&timeframe=&limit=
-     */
-    CandlesResponse: {
-      /** Available */
-      available: boolean;
-      /** Symbol */
-      symbol: string | null;
-      /** Timeframe */
-      timeframe: string | null;
-      /** Candles */
-      candles: components["schemas"]["CandleBar"][];
+    AICalibrationAggregate: {
+      /**
+       * Total Decisions
+       * @default 0
+       */
+      total_decisions?: number;
+      /**
+       * Decided Trades
+       * @default 0
+       */
+      decided_trades?: number;
+      /**
+       * Weighted Accuracy Pct
+       * @default 0
+       */
+      weighted_accuracy_pct?: number;
+      /**
+       * Avg Influence Factor
+       * @default 1
+       */
+      avg_influence_factor?: number;
     };
     /**
      * AICalibrationResponse
@@ -175,6 +198,7 @@ export interface components {
     AICalibrationResponse: {
       /** Rows */
       rows: components["schemas"]["AICalibrationRow"][];
+      aggregate?: components["schemas"]["AICalibrationAggregate"] | null;
     };
     /** AICalibrationRow */
     AICalibrationRow: {
@@ -265,6 +289,11 @@ export interface components {
       pnl: number;
       /** Trade Count */
       trade_count: number;
+      /**
+       * Win Rate Pct
+       * @default 0
+       */
+      win_rate_pct?: number;
     };
     /**
      * CalendarResponse
@@ -279,6 +308,49 @@ export interface components {
       month: number;
       /** Cells */
       cells: components["schemas"]["CalendarCell"][];
+    };
+    /**
+     * CandleBar
+     * @description One OHLCV candle with indicator snapshots.
+     */
+    CandleBar: {
+      /** Ts */
+      ts: number;
+      /** Open */
+      open: number;
+      /** High */
+      high: number;
+      /** Low */
+      low: number;
+      /** Close */
+      close: number;
+      /** Volume */
+      volume: number;
+      /** Ema9 */
+      ema9: number | null;
+      /** Ema21 */
+      ema21: number | null;
+      /** Rsi14 */
+      rsi14: number | null;
+    };
+    /**
+     * CandlesResponse
+     * @description GET /api/candles?symbol=&timeframe=&limit=
+     *
+     * When available=False the candles list is empty and the UI shows a fallback.
+     */
+    CandlesResponse: {
+      /** Available */
+      available: boolean;
+      /** Symbol */
+      symbol: string | null;
+      /** Timeframe */
+      timeframe: string | null;
+      /**
+       * Candles
+       * @default []
+       */
+      candles?: components["schemas"]["CandleBar"][];
     };
     /** CloseReasonItem */
     CloseReasonItem: {
@@ -443,6 +515,16 @@ export interface components {
       rows: components["schemas"]["OpenRiskRow"][];
       /** Unprotected Count */
       unprotected_count: number;
+      /**
+       * Notional
+       * @default 0
+       */
+      notional?: number;
+      /**
+       * Max Sl Loss
+       * @default 0
+       */
+      max_sl_loss?: number;
     };
     /** OpenRiskRow */
     OpenRiskRow: {
@@ -456,8 +538,8 @@ export interface components {
       stop_loss: number | null;
       /** Position Size */
       position_size: number | null;
-      /** Risk Pct */
-      risk_pct: number | null;
+      /** Stop Distance Pct */
+      stop_distance_pct: number | null;
       /** Unprotected */
       unprotected: boolean;
     };
@@ -603,7 +685,7 @@ export interface operations {
   };
   /**
    * List Bots
-   * @description List all bots with summary stats.
+   * @description List all bots with per-symbol summary stats.
    */
   list_bots_api_bots_get: {
     responses: {
@@ -617,7 +699,7 @@ export interface operations {
   };
   /**
    * Bot Detail
-   * @description Detail for a single bot.
+   * @description Detail for a single bot — stats + recent trades.
    */
   bot_detail_api_bots__symbol__get: {
     parameters: {
@@ -718,7 +800,10 @@ export interface operations {
   };
   /**
    * Ai Calibration
-   * @description AI advisor calibration stats.
+   * @description AI advisor calibration stats per symbol + portfolio-level aggregate.
+   *
+   * Uses get_calibration_stats() for the influence ladder to avoid re-deriving
+   * the same logic in the router.
    */
   ai_calibration_api_ai_calibration_get: {
     responses: {
@@ -732,7 +817,7 @@ export interface operations {
   };
   /**
    * Get Logs
-   * @description Recent log lines, optionally filtered.
+   * @description Recent log lines, optionally filtered by level/search.
    */
   get_logs_api_logs_get: {
     parameters: {
@@ -759,7 +844,7 @@ export interface operations {
   };
   /**
    * Close Reasons
-   * @description Close-reason breakdown with PnL sign colouring.
+   * @description Close-reason breakdown with total PnL and sign colouring.
    */
   close_reasons_api_close_reasons_get: {
     parameters: {
@@ -798,7 +883,7 @@ export interface operations {
   };
   /**
    * Open Risk
-   * @description Open position risk (SL distance, % risk, unprotected flag).
+   * @description Open position risk (SL distance, unprotected flag, aggregate notional/max_sl_loss).
    */
   open_risk_api_risk_get: {
     parameters: {
@@ -850,7 +935,7 @@ export interface operations {
   };
   /**
    * Heatmap
-   * @description Hour-of-day × day-of-week PnL heatmap (UTC bucketing).
+   * @description Hour-of-day x day-of-week PnL heatmap (UTC bucketing).
    */
   heatmap_api_heatmap_get: {
     parameters: {
@@ -877,6 +962,18 @@ export interface operations {
   /**
    * Set Bot Mode
    * @description Set mode for a single bot (NORMAL | GRACEFUL_STOP | TP_ONLY | PANIC).
+   *
+   * Args:
+   *     symbol: sym_clean'd symbol in the URL path (e.g. BTCUSDT).
+   *     body: ModeRequest with ``mode`` field and optional ``confirm_panic``.
+   *
+   * Returns:
+   *     ModeResponse indicating acceptance and the resulting mode.
+   *
+   * Raises:
+   *     HTTPException 400: Symbol not in roster or invalid format.
+   *     HTTPException 422: Unknown mode string.
+   *     HTTPException 401: Missing or wrong X-Dash-Token.
    */
   set_bot_mode_api_bots__symbol__mode_post: {
     parameters: {
@@ -909,7 +1006,23 @@ export interface operations {
   };
   /**
    * Set Bulk Mode
-   * @description Set mode for multiple bots in one request.
+   * @description Set mode for multiple (or all) roster bots in one request.
+   *
+   * If ``symbols`` is empty, the mode is applied to every bot in the roster.
+   *
+   * PANIC debounce: a 2nd bulk PANIC within ``CCBT_PANIC_DEBOUNCE_S`` seconds
+   * returns 429 to prevent accidental double-clicks from closing everything twice.
+   *
+   * Args:
+   *     body: BulkModeRequest with ``symbols`` list (empty = all) and ``mode``.
+   *
+   * Returns:
+   *     BulkModeResponse with per-symbol ModeResponse entries.
+   *
+   * Raises:
+   *     HTTPException 422: Unknown mode string.
+   *     HTTPException 429: Rapid duplicate bulk PANIC.
+   *     HTTPException 401: Missing or wrong X-Dash-Token.
    */
   set_bulk_mode_api_bots_mode_bulk_post: {
     parameters: {
@@ -938,22 +1051,12 @@ export interface operations {
     };
   };
   /**
-   * Health
-   * @description Liveness probe — confirms the API process is up.
-   */
-  health_api_health_get: {
-    responses: {
-      /** @description Successful Response */
-      200: {
-        content: {
-          "application/json": components["schemas"]["HealthResponse"];
-        };
-      };
-    };
-  };
-  /**
    * Get Candles
    * @description Persisted OHLCV candles + indicators for a symbol.
+   *
+   * Returns {available: false} when no candles are persisted.
+   * The bot writes to bot_ohlcv whenever it fetches OHLCV from the exchange.
+   * The dashboard NEVER calls the exchange directly.
    */
   get_candles_api_candles_get: {
     parameters: {
@@ -974,6 +1077,20 @@ export interface operations {
       422: {
         content: {
           "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  /**
+   * Health
+   * @description Liveness probe — confirms the API process is up.
+   */
+  health_api_health_get: {
+    responses: {
+      /** @description Successful Response */
+      200: {
+        content: {
+          "application/json": components["schemas"]["HealthResponse"];
         };
       };
     };

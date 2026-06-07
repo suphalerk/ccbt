@@ -341,18 +341,10 @@ export function RiskAtStakeHeader({ symbol }: { symbol?: string | null } = {}) {
   const unprotectedCount = riskData?.unprotected_count ?? 0
   const openCount = rows.length
 
-  // Max SL loss: sum of (entry - stop_loss) * position_size for rows where stop_loss is set
-  let maxSlLoss = 0
-  let notional = 0
-  for (const r of rows) {
-    if (r.entry_price !== null && r.stop_loss !== null && r.position_size !== null) {
-      const slDist = Math.abs(r.entry_price - r.stop_loss)
-      maxSlLoss += slDist * r.position_size
-    }
-    if (r.entry_price !== null && r.position_size !== null) {
-      notional += r.entry_price * r.position_size
-    }
-  }
+  // Consume pre-computed server fields (api/risk.py get_open_risk() computes these).
+  // Never recompute financial math in TS — server is authoritative.
+  const maxSlLoss: number = (riskData as any)?.max_sl_loss ?? 0
+  const notional: number = (riskData as any)?.notional ?? 0
 
   if (isLoading) {
     return (
@@ -367,7 +359,7 @@ export function RiskAtStakeHeader({ symbol }: { symbol?: string | null } = {}) {
       {/* Big number: max SL loss in $ */}
       <div className="flex items-baseline gap-2 mb-2">
         <span
-          data-testid="risk-max-sl"
+          data-testid="risk-max-sl-loss"
           className="text-3xl font-bold tabular-nums text-slate-100"
         >
           ${maxSlLoss.toFixed(2)}
@@ -483,9 +475,9 @@ export function MonthlyCalendar({
 
   // Build a date → cell map for O(1) lookups
   const cellMap = useMemo(() => {
-    const m: Record<string, { pnl: number; trade_count: number }> = {}
+    const m: Record<string, { pnl: number; trade_count: number; win_rate_pct: number }> = {}
     for (const c of cells) {
-      m[c.date] = { pnl: c.pnl, trade_count: c.trade_count }
+      m[c.date] = { pnl: c.pnl, trade_count: c.trade_count, win_rate_pct: c.win_rate_pct ?? 0 }
     }
     return m
   }, [cells])
@@ -566,7 +558,7 @@ export function MonthlyCalendar({
               const cell = cellMap[dateStr]
               const hasTrades = cell !== undefined
               const pnl = cell?.pnl ?? 0
-              const tradeCount = cell?.trade_count ?? 0
+              const winRatePct = cell?.win_rate_pct ?? 0
 
               const cellColour = !hasTrades
                 ? 'bg-[#1A1F2E] text-slate-700'
@@ -586,7 +578,7 @@ export function MonthlyCalendar({
                       <span className="tabular-nums">
                         {pnl >= 0 ? '+' : ''}{pnl.toFixed(1)}
                       </span>
-                      <span className="text-[9px] opacity-70">WR {tradeCount}</span>
+                      <span className="text-[9px] opacity-70">WR {winRatePct.toFixed(0)}%</span>
                     </>
                   )}
                 </div>
@@ -606,14 +598,15 @@ export function MonthlyCalendar({
 const BUCKET_OPTIONS = [1, 2, 4, 6, 8, 12, 24]
 const MIN_SAMPLES = 20 // must-fix #4: colour only cells with ≥20 trades
 
+// pandas day-of-week: Mon=0 … Sun=6 (NOT JS Sun=0)
 const DOW_LABEL_MAP: Record<number, string> = {
-  0: 'Sun',
-  1: 'Mon',
-  2: 'Tue',
-  3: 'Wed',
-  4: 'Thu',
-  5: 'Fri',
-  6: 'Sat',
+  0: 'Mon',
+  1: 'Tue',
+  2: 'Wed',
+  3: 'Thu',
+  4: 'Fri',
+  5: 'Sat',
+  6: 'Sun',
 }
 
 export function ExpectancyHeatmap({ symbol }: { symbol?: string | null } = {}) {

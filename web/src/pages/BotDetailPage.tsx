@@ -103,7 +103,7 @@ function ModeBadge({ mode }: { mode: string | null }) {
 // ============================================================================
 
 interface CandleChartProps {
-  candles: CandlesResponse['candles']
+  candles: NonNullable<CandlesResponse['candles']>
   trades?: TradeRow[]  // for exit markers
 }
 
@@ -225,7 +225,7 @@ function CandleChartInner({ candles, trades = [] }: CandleChartProps) {
 }
 
 // RSI subchart
-function RsiChart({ candles }: { candles: CandlesResponse['candles'] }) {
+function RsiChart({ candles }: { candles: NonNullable<CandlesResponse['candles']> }) {
   const chartRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -325,7 +325,8 @@ function CandleSection({ symbol, trades = [] }: { symbol: string; trades?: Trade
   }
 
   // Not available (no persisted candles)
-  if (!data.available || data.candles.length === 0) {
+  const candles = data.candles ?? []
+  if (!data.available || candles.length === 0) {
     return (
       <div
         data-testid="candles-unavailable"
@@ -339,7 +340,7 @@ function CandleSection({ symbol, trades = [] }: { symbol: string; trades?: Trade
   // Available
   return (
     <div data-testid="candle-chart-container">
-      <CandleChartInner candles={data.candles} trades={trades} />
+      <CandleChartInner candles={candles} trades={trades} />
       <div className="mt-1 text-xs text-slate-600 flex gap-3 mb-1">
         <span style={{ color: COLOR_EMA9 }}>— EMA9</span>
         <span style={{ color: COLOR_EMA21 }}>— EMA21</span>
@@ -350,7 +351,7 @@ function CandleSection({ symbol, trades = [] }: { symbol: string; trades?: Trade
         className="mt-2"
       >
         <div className="text-xs text-slate-600 mb-1">RSI(14)</div>
-        <RsiChart candles={data.candles} />
+        <RsiChart candles={candles} />
       </div>
     </div>
   )
