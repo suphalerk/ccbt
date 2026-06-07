@@ -242,3 +242,11 @@ BOT_DATA_DIR                 — Data directory (default: ./data in Docker, . lo
 - `tests/test_api_binance_testnet.py` — 17-endpoint test suite for Binance testnet
 - Tests all API calls: markets, leverage, balance, OHLCV, ticker, funding, OI, orderbook, long/short round-trip, SL/TP, trade history, order cleanup
 - Run: `python tests/test_api_binance_testnet.py`
+
+## Test Safety
+- **NEVER let tests send real Telegram.** Tests that drive the engine close path (`check_closed_positions`)
+  call `bot.engine.send_alert`; if `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` are in the env (e.g. the dev
+  `.env`), fixture closes get delivered to the real chat (this happened — a flood of bogus
+  "BUY closed (trail_stop/breakeven/...)" alerts at round fixture PnLs). `tests/conftest.py` has an
+  **autouse** fixture that blanks the telegram creds + no-ops `send_alert` in `bot.telegram`/`bot.engine`/
+  `main_multi` for every test. **Do not remove it**, and don't write a test that asserts a real send.
