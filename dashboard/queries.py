@@ -1,4 +1,5 @@
 """SQLite helper functions to query trades.db for the dashboard."""
+from __future__ import annotations
 
 import json
 import os
@@ -6,7 +7,7 @@ import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -750,3 +751,425 @@ def get_per_bot_summary(db_path: Optional[str] = None) -> pd.DataFrame:
         return pd.DataFrame()
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# N9 — New Metrics Data Layer
+# ---------------------------------------------------------------------------
+
+#: Config filenames that are skipped (non-deployed, retired, or alternative exchange).
+#: Must stay in sync with the set in get_bot_statuses.
+_SKIP_CONFIGS: set = {
+    "config_aggressive.json", "config_sniper.json", "config_yolo.json",
+    "config_max.json",
+    "config_doge.json",
+    "config_sol_ichi.json",
+    "config_gold.json",
+    "config_gold_forex.json",
+    "config_arb.json",
+    "config_btc_ichi.json",
+    "config_1000shibusdt_ichi.json",
+    "config_trxusdt_ichi.json",
+    "config_xlmusdt_ichi.json",
+    "config_saharausdt_supertrend.json",
+    "config_polusdt_ichi4htrail.json",
+}
+
+
+def _build_symbol_config_count(project_root: Path) -> Dict[str, int]:
+    """Count how many deployed config_*.json files map to each symbol_clean.
+
+    This is the authoritative attribution map for get_trade_gate — it counts
+    ALL config files per symbol_clean (not deduped like get_bot_statuses) so
+    that symbols traded by multiple strategies (e.g. AXS with 4 configs) show
+    the real count.
+
+    Args:
+        project_root: The project root directory that contains config_*.json files.
+
+    Returns:
+        Dict mapping symbol_clean (e.g. "AXSUSDTUSDT") to the number of
+        deployed config files that reference that symbol.
+    """
+    count_map: Dict[str, int] = {}
+    for cfg_path in sorted(project_root.glob("config*.json")):
+        if cfg_path.name in _SKIP_CONFIGS:
+            continue
+        try:
+            with open(cfg_path) as f:
+                cfg = json.load(f)
+        except Exception:
+            continue
+        symbol = cfg.get("symbol")
+        if not symbol:
+            continue
+        symbol_clean = symbol.replace("/", "").replace(":", "")
+        count_map[symbol_clean] = count_map.get(symbol_clean, 0) + 1
+    return count_map
+
+
+def get_close_reason_breakdown(
+    db_path: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> pd.DataFrame:
+    """Get breakdown of trade close reasons for closed, non-orphan trades.
+
+    The breakdown is taxonomy-agnostic — auto-picks up any close_reason
+    value present in the DB (including trail_stop, breakeven, etc.).
+
+    Args:
+        db_path: Path to trades.db.
+        symbol: Optional symbol filter.
+
+    Returns:
+        DataFrame with columns: close_reason, count, pct, total_pnl, avg_pnl.
+        pct values sum to ~100. Empty DataFrame if no data.
+    """
+    if not db_exists(db_path):
+        return pd.DataFrame(columns=["close_reason", "count", "pct", "total_pnl", "avg_pnl"])
+
+    filt, params = _symbol_filter(symbol)
+    conn = _get_connection(db_path)
+    try:
+        df = pd.read_sql_query(
+            f"""
+            SELECT
+                COALESCE(close_reason, 'unknown') AS close_reason,
+                COUNT(*) AS count,
+                COALESCE(SUM(pnl), 0.0) AS total_pnl,
+                COALESCE(AVG(pnl), 0.0) AS avg_pnl
+            FROM trades
+            WHERE status = 'closed'
+              AND COALESCE(close_reason, '') != 'orphan_reconcile'
+              {filt}
+            GROUP BY close_reason
+            ORDER BY count DESC
+            """,
+            conn,
+            params=params,
+        )
+        if df.empty:
+            return pd.DataFrame(columns=["close_reason", "count", "pct", "total_pnl", "avg_pnl"])
+        total = df["count"].sum()
+        df["pct"] = (df["count"] / total * 100.0).round(2) if total > 0 else 0.0
+        return df[["close_reason", "count", "pct", "total_pnl", "avg_pnl"]]
+    except Exception:
+        return pd.DataFrame(columns=["close_reason", "count", "pct", "total_pnl", "avg_pnl"])
+    finally:
+        conn.close()
+
+
+def get_trade_gate(
+    db_path: Optional[str] = None,
+    min_trades: int = 15,
+    graduate_pf: Optional[float] = None,
+    project_root: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Compute per-symbol forward-test gate verdicts.
+
+    Attribution guard: symbols traded by > 1 deployed config file get
+    verdict = "MIXED" (the blended DB rows are not attributable to a single
+    strategy). Single-config symbols get classified by classify() from
+    research.forward_test_report.
+
+    graduate_pf defaults to the value in research/forward_test_cohort.json
+    if not provided (same source as the forward_test_report CLI).
+
+    Args:
+        db_path: Path to trades.db.
+        min_trades: Minimum closed trades to meet the gate.
+        graduate_pf: Profit factor threshold to graduate to READY_TO_AUDIT.
+            Defaults to the manifest value (currently 1.3).
+        project_root: Project root directory used to count config files.
+            Defaults to the project root inferred from this file's location.
+
+    Returns:
+        Dict with:
+          "rows": list of per-symbol dicts with keys:
+            symbol, trades, win_rate, profit_factor, total_pnl, avg_pnl,
+            reward_to_avgloss (or None), meets_min, verdict
+          "summary": {n_meeting_min: int, n_total: int}
+    """
+    # Resolve project root
+    if project_root is None:
+        project_root = Path(__file__).resolve().parent.parent
+
+    # Load graduate_pf from manifest if not provided
+    if graduate_pf is None:
+        manifest_path = project_root / "research" / "forward_test_cohort.json"
+        try:
+            manifest = json.loads(manifest_path.read_text())
+            graduate_pf = float(manifest.get("graduate_pf", 1.3))
+        except Exception:
+            graduate_pf = 1.3
+
+    # Import classify from research.forward_test_report (N9 must not depend on N0)
+    from research.forward_test_report import classify  # noqa: PLC0415
+
+    # Build attribution map: symbol_clean → config count
+    count_map = _build_symbol_config_count(project_root)
+
+    # Get all closed non-orphan trades
+    closed = get_closed_trades(db_path)
+    if closed.empty or "pnl" not in closed.columns:
+        return {"rows": [], "summary": {"n_meeting_min": 0, "n_total": 0}}
+
+    rows_out: List[Dict[str, Any]] = []
+
+    for symbol, grp in closed.groupby("symbol"):
+        pnls = grp["pnl"].dropna().values
+        n = len(pnls)
+        if n == 0:
+            continue
+
+        wins = pnls[pnls > 0]
+        losses = pnls[pnls < 0]
+
+        win_rate = float(len(wins) / n) if n > 0 else 0.0
+        gross_profit = float(wins.sum()) if len(wins) > 0 else 0.0
+        gross_loss = float(abs(losses.sum())) if len(losses) > 0 else 0.0
+        pf: float
+        if gross_loss > 0:
+            pf = gross_profit / gross_loss
+        elif gross_profit > 0:
+            pf = float("inf")
+        else:
+            pf = 0.0
+
+        total_pnl = float(pnls.sum())
+        avg_pnl = float(pnls.mean()) if n > 0 else 0.0
+
+        # reward_to_avgloss = mean(pnl) / mean(abs(losing pnl))
+        # null for zero-loss symbols; suppressed for < ~10 trades
+        reward_to_avgloss: Optional[float]
+        if len(losses) > 0:
+            reward_to_avgloss = avg_pnl / float(abs(losses).mean())
+        else:
+            reward_to_avgloss = None
+
+        meets_min = n >= min_trades
+
+        # Attribution verdict
+        symbol_clean = str(symbol).replace("/", "").replace(":", "")
+        config_count = count_map.get(symbol_clean, 0)
+        if config_count > 1:
+            verdict = "MIXED"
+        else:
+            verdict = classify(n, pf, min_trades, graduate_pf)
+
+        rows_out.append({
+            "symbol": symbol,
+            "trades": n,
+            "win_rate": round(win_rate, 4),
+            "profit_factor": pf,
+            "total_pnl": round(total_pnl, 4),
+            "avg_pnl": round(avg_pnl, 4),
+            "reward_to_avgloss": round(reward_to_avgloss, 4) if reward_to_avgloss is not None else None,
+            "meets_min": meets_min,
+            "verdict": verdict,
+        })
+
+    n_meeting_min = sum(1 for r in rows_out if r["meets_min"])
+    n_total = len(rows_out)
+
+    return {
+        "rows": rows_out,
+        "summary": {"n_meeting_min": n_meeting_min, "n_total": n_total},
+    }
+
+
+def get_open_risk(
+    db_path: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Compute open position risk summary.
+
+    Ships degraded: % risk gauge is omitted until bot writes balance to DB.
+    null SL rows are counted separately as unprotected.
+
+    Args:
+        db_path: Path to trades.db.
+        symbol: Optional symbol filter.
+
+    Returns:
+        Dict with:
+          open_count: number of open trades
+          notional: sum of abs(entry_price * size) for all open trades
+          max_sl_loss: sum of abs(entry_price - stop_loss) * size for protected trades
+          unprotected_count: number of open trades with null stop_loss
+          pct: None (until balance is persisted — ships degraded)
+    """
+    empty: Dict[str, Any] = {
+        "open_count": 0,
+        "notional": 0.0,
+        "max_sl_loss": 0.0,
+        "unprotected_count": 0,
+        "pct": None,
+    }
+    if not db_exists(db_path):
+        return empty
+
+    filt, params = _symbol_filter(symbol)
+    conn = _get_connection(db_path)
+    try:
+        df = pd.read_sql_query(
+            f"SELECT entry_price, size, stop_loss FROM trades WHERE status = 'open'{filt}",
+            conn,
+            params=params,
+        )
+    except Exception:
+        return empty
+    finally:
+        conn.close()
+
+    if df.empty:
+        return empty
+
+    open_count = len(df)
+    notional = float((df["entry_price"].abs() * df["size"].abs()).sum())
+
+    protected = df[df["stop_loss"].notna()].copy()
+    unprotected_count = int((df["stop_loss"].isna()).sum())
+
+    if len(protected) > 0:
+        max_sl_loss = float(
+            ((protected["entry_price"] - protected["stop_loss"]).abs() * protected["size"].abs()).sum()
+        )
+    else:
+        max_sl_loss = 0.0
+
+    return {
+        "open_count": open_count,
+        "notional": round(notional, 4),
+        "max_sl_loss": round(max_sl_loss, 4),
+        "unprotected_count": unprotected_count,
+        "pct": None,  # ships degraded — no balance persisted yet
+    }
+
+
+def get_calendar_pnl(
+    db_path: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> pd.DataFrame:
+    """Get PnL aggregated by UTC date for calendar heatmap display.
+
+    Uses the same DATE(timestamp) SQL as get_daily_pnl so results reconcile
+    exactly with the existing function.
+
+    Args:
+        db_path: Path to trades.db.
+        symbol: Optional symbol filter.
+
+    Returns:
+        DataFrame with columns: date, daily_pnl, trades, wins, win_rate.
+        win_rate is in [0, 1]. Empty DataFrame if no data.
+    """
+    _EMPTY_COLS = ["date", "daily_pnl", "trades", "wins", "win_rate"]
+    if not db_exists(db_path):
+        return pd.DataFrame(columns=_EMPTY_COLS)
+
+    filt, params = _symbol_filter(symbol)
+    conn = _get_connection(db_path)
+    try:
+        df = pd.read_sql_query(
+            f"""
+            SELECT
+                DATE(timestamp) AS date,
+                COALESCE(SUM(pnl), 0.0) AS daily_pnl,
+                COUNT(*) AS trades,
+                SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins
+            FROM trades
+            WHERE status = 'closed'
+              AND COALESCE(close_reason, '') != 'orphan_reconcile'
+              {filt}
+            GROUP BY DATE(timestamp)
+            ORDER BY date ASC
+            """,
+            conn,
+            params=params,
+        )
+    except Exception:
+        return pd.DataFrame(columns=_EMPTY_COLS)
+    finally:
+        conn.close()
+
+    if df.empty:
+        return pd.DataFrame(columns=_EMPTY_COLS)
+
+    df["win_rate"] = (df["wins"] / df["trades"]).where(df["trades"] > 0, 0.0)
+    return df[_EMPTY_COLS]
+
+
+def get_hour_dow_stats(
+    db_path: Optional[str] = None,
+    symbol: Optional[str] = None,
+    bucket_hours: int = 4,
+) -> pd.DataFrame:
+    """Compute per (day-of-week, hour-bucket) trade statistics.
+
+    UTC bucketing is done in pandas (not SQLite) to correctly handle
+    timestamps with any timezone offset (e.g. +07:00 from OANDA/gold).
+    SQLite strftime('%w', 'utc', ts) returns NULL for fractional-second
+    timestamps, and DATE(ts, 'utc') double-shifts offset-aware timestamps.
+
+    Args:
+        db_path: Path to trades.db.
+        symbol: Optional symbol filter.
+        bucket_hours: Hour bucket size (default 4 → buckets 0, 4, 8, 12, 16, 20).
+
+    Returns:
+        DataFrame with columns: dow (0=Mon..6=Sun), hour_bucket, trades,
+        avg_pnl, win_rate, total_pnl. Only cells with >= 1 trade are returned.
+        Empty DataFrame if no data.
+    """
+    _EMPTY_COLS = ["dow", "hour_bucket", "trades", "avg_pnl", "win_rate", "total_pnl"]
+    if not db_exists(db_path):
+        return pd.DataFrame(columns=_EMPTY_COLS)
+
+    filt, params = _symbol_filter(symbol)
+    conn = _get_connection(db_path)
+    try:
+        df = pd.read_sql_query(
+            f"""
+            SELECT timestamp, pnl
+            FROM trades
+            WHERE status = 'closed'
+              AND COALESCE(close_reason, '') != 'orphan_reconcile'
+              AND pnl IS NOT NULL
+              {filt}
+            """,
+            conn,
+            params=params,
+        )
+    except Exception:
+        return pd.DataFrame(columns=_EMPTY_COLS)
+    finally:
+        conn.close()
+
+    if df.empty:
+        return pd.DataFrame(columns=_EMPTY_COLS)
+
+    # UTC bucketing in pandas — handles any timezone offset correctly
+    t = pd.to_datetime(df["timestamp"], utc=True)
+    df = df.copy()
+    df["dow"] = t.dt.dayofweek  # Monday=0, Sunday=6
+    df["hour_bucket"] = (t.dt.hour // bucket_hours) * bucket_hours
+
+    grouped = df.groupby(["dow", "hour_bucket"])
+    stats = grouped["pnl"].agg(
+        trades="count",
+        avg_pnl="mean",
+        total_pnl="sum",
+        wins=lambda x: (x > 0).sum(),
+    ).reset_index()
+    stats["win_rate"] = (stats["wins"] / stats["trades"]).where(stats["trades"] > 0, 0.0)
+
+    # Rename: the lambda column is named by the lambda attr — reset to clean names
+    # groupby agg with named aggregations may need rename depending on pandas version
+    if "wins" not in stats.columns:
+        # Fallback: compute wins separately
+        wins_df = grouped["pnl"].apply(lambda x: (x > 0).sum()).reset_index(name="wins")
+        stats = stats.merge(wins_df, on=["dow", "hour_bucket"])
+        stats["win_rate"] = (stats["wins"] / stats["trades"]).where(stats["trades"] > 0, 0.0)
+
+    return stats[_EMPTY_COLS]
