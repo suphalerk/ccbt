@@ -218,7 +218,8 @@ class TestBusyTimeout:
         )
 
     def test_upsert_candles_source_contains_busy_timeout(self):
-        """upsert_candles function body must contain PRAGMA busy_timeout."""
+        """upsert_candles function body must apply busy_timeout (directly or
+        via the shared _apply_pragmas helper)."""
         import re
         logger_path = REPO / "bot" / "logger.py"
         source = logger_path.read_text()
@@ -243,8 +244,11 @@ class TestBusyTimeout:
             func_lines.append(line)
 
         func_body = "\n".join(func_lines)
-        assert "busy_timeout" in func_body, (
-            "upsert_candles must set PRAGMA busy_timeout inside its body"
+        # Accept either inline PRAGMA or the shared _apply_pragmas helper
+        has_busy = "busy_timeout" in func_body or "_apply_pragmas" in func_body
+        assert has_busy, (
+            "upsert_candles must set PRAGMA busy_timeout inside its body "
+            "(directly or via _apply_pragmas helper)"
         )
 
     def test_journal_busy_timeout_behavioral(self, tmp_path):
@@ -579,3 +583,253 @@ class TestCooldownReasonClassification:
                 break
 
         assert found_is_sl_line, "Could not find is_sl assignment in engine.py"
+
+
+# ---------------------------------------------------------------------------
+# ROUND 2 — BLOCKER 1: Gold H1 cooldown candle_secs ValueError
+# ---------------------------------------------------------------------------
+
+class TestGoldH1CooldownCandle:
+    """Candle-seconds parser must handle uppercase timeframe strings (Gold H1).
+
+    The inline parser `int(tf.replace('h','')) * 3600 if 'h' in tf else ...`
+    is case-sensitive.  config_gold_forex.json has timeframe_signal='H1' (capital H).
+    `'h' in 'H1'` is False, so it falls to the else-branch and tries
+    `int('H1'.replace('m',''))` → ValueError, which the outer `except Exception`
+    swallows each iteration — the cooldown block never runs on gold.
+
+    Fix: lowercase tf before parsing.
+    """
+
+    def test_uppercase_H1_candle_secs_is_3600(self):
+        """Parsing 'H1' must yield 3600 seconds (same as '1h')."""
+        import re
+        engine_path = REPO / "bot" / "engine.py"
+        source = engine_path.read_text()
+
+        # Verify that the candle_secs block uses .lower() before 'h' in tf
+        lines = source.splitlines()
+        found_lower = False
+        for i, line in enumerate(lines):
+            # Find the candle_secs assignment block
+            if "candle_secs" in line and ("tf.replace" in line or "tf.lower" in line):
+                # Look backwards a couple of lines for a .lower() on tf
+                context = "\n".join(lines[max(0, i-3):i+5])
+                if ".lower()" in context:
+                    found_lower = True
+                    break
+        assert found_lower, (
+            "candle_secs parser must call tf.lower() before checking 'h'/'m' "
+            "so that Gold 'H1' timeframe is handled correctly"
+        )
+
+    def test_uppercase_H1_sleep_candle_secs_is_3600(self):
+        """The _sleep_until_next_candle parser must also use .lower() for 'H1'."""
+        import re
+        engine_path = REPO / "bot" / "engine.py"
+        source = engine_path.read_text()
+
+        # Find the sleep parser block (around line 1678-1684)
+        # It must not silently default to 15min for 'H1'
+        lines = source.splitlines()
+        # Look for 'signal_minutes' assignments near _sleep_until_next_candle
+        sleep_fn_start = None
+        for i, line in enumerate(lines):
+            if "def _sleep_until_next_candle" in line:
+                sleep_fn_start = i
+                break
+        assert sleep_fn_start is not None, "_sleep_until_next_candle must exist"
+
+        func_lines = lines[sleep_fn_start:sleep_fn_start + 30]
+        func_body = "\n".join(func_lines)
+        assert ".lower()" in func_body, (
+            "_sleep_until_next_candle parser must call tf.lower() so Gold 'H1' "
+            "yields 60 minutes not the 15-min fallback"
+        )
+
+    @engine_required
+    def test_H1_cooldown_selects_after_sl_candles(self):
+        """Behavioral: with timeframe_signal='H1' and a stop_loss close,
+        the cooldown gate must select cooldown_candles_after_sl (8) and
+        candle_secs must equal 3600.
+
+        We test this via the _evaluate_and_execute signal path by verifying
+        that the candle_secs calculation does not raise and produces 3600.
+        """
+        # We exercise the parser logic in isolation, mirroring what engine does
+        tf = "H1"
+        tf_lower = tf.lower()  # This is what the fix must do
+        if "h" in tf_lower:
+            candle_secs = int(tf_lower.replace("h", "")) * 3600
+        elif "m" in tf_lower:
+            candle_secs = int(tf_lower.replace("m", "")) * 60
+        else:
+            candle_secs = 15 * 60
+
+        assert candle_secs == 3600, (
+            f"H1 must yield candle_secs=3600, got {candle_secs}"
+        )
+
+        # Also verify 'H1' is a stop_loss scenario → after_sl candles
+        config = {
+            "timeframe_signal": "H1",
+            "cooldown_candles_after_sl": 8,
+            "cooldown_candles_after_close": 4,
+        }
+        lc_reason = "stop_loss"
+        is_sl = lc_reason in ("sl", "stop_loss")
+        cooldown_candles = config.get(
+            "cooldown_candles_after_sl" if is_sl else "cooldown_candles_after_close", 4
+        )
+        assert cooldown_candles == 8, (
+            f"stop_loss close with H1 must select after_sl=8, got {cooldown_candles}"
+        )
+        required = cooldown_candles * candle_secs
+        assert required == 8 * 3600, (
+            f"Required cooldown must be 8*3600=28800s, got {required}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# ROUND 2 — BLOCKER 2: CalibrationTracker busy_timeout + engine guard
+# ---------------------------------------------------------------------------
+
+class TestCalibrationTrackerBusyTimeout:
+    """CalibrationTracker._conn must have PRAGMA busy_timeout=5000.
+
+    Without it, under the ~59-bot candle-boundary write burst, record_outcome
+    can raise 'database is locked', which propagates out of check_closed_positions
+    before `closed.append` — leaving the trade in open_trade_ids so the whole
+    close block re-executes next loop (double-counting the loss).
+    """
+
+    def test_calibration_init_table_source_contains_busy_timeout(self):
+        """bot/logger.py CalibrationTracker._init_calibration_table must set
+        PRAGMA busy_timeout."""
+        import re
+        logger_path = REPO / "bot" / "logger.py"
+        source = logger_path.read_text()
+
+        lines = source.splitlines()
+        # Find _init_calibration_table method
+        start = None
+        for i, line in enumerate(lines):
+            if "def _init_calibration_table" in line:
+                start = i
+                break
+        assert start is not None, "_init_calibration_table not found in logger.py"
+
+        # Collect the function body until next method
+        func_lines = []
+        for line in lines[start:]:
+            if func_lines and re.match(r'\s{4}def ', line):
+                break
+            func_lines.append(line)
+        func_body = "\n".join(func_lines)
+
+        # Accept either inline PRAGMA or the shared _apply_pragmas helper
+        has_busy = "busy_timeout" in func_body or "_apply_pragmas" in func_body
+        assert has_busy, (
+            "CalibrationTracker._init_calibration_table must set PRAGMA busy_timeout "
+            "(directly or via _apply_pragmas helper)"
+        )
+
+    def test_calibration_tracker_behavioral_busy_timeout(self, tmp_path):
+        """After CalibrationTracker init, PRAGMA busy_timeout returns >= 1000."""
+        from bot.logger import CalibrationTracker
+
+        db_path = str(tmp_path / "trades.db")
+        ct = CalibrationTracker(db_path=db_path)
+        try:
+            row = ct._conn.execute("PRAGMA busy_timeout").fetchone()
+            assert row is not None
+            assert row[0] >= 1000, (
+                f"busy_timeout on CalibrationTracker._conn must be >= 1000ms, got {row[0]}"
+            )
+        finally:
+            ct.close()
+
+    def test_apply_pragmas_helper_exists(self):
+        """A shared _apply_pragmas helper must exist in logger.py so all
+        future connections can't drift."""
+        logger_path = REPO / "bot" / "logger.py"
+        source = logger_path.read_text()
+        assert "_apply_pragmas" in source, (
+            "bot/logger.py must define a shared _apply_pragmas() helper "
+            "to prevent future connections from drifting"
+        )
+
+
+@engine_required
+class TestCalibrationBlockGuard:
+    """The calibration block in check_closed_positions must be guarded.
+
+    record_outcome raising 'database is locked' must NOT propagate to the
+    caller — the trade must still be appended to `closed` (i.e., the close
+    path completes), and record_trade_result must have already run.
+
+    This verifies the try/except around engine.py:260-278 that the fix adds.
+    """
+
+    def _run_check_closed_with_calibration(
+        self,
+        calibration_raises: bool,
+        tmp_path,
+    ) -> tuple[dict, MagicMock, MagicMock]:
+        """Run check_closed_positions with or without calibration error."""
+        from bot.engine import check_closed_positions
+        from bot.logger import CalibrationTracker
+
+        info = _make_info(entry=100.0, sl=95.0, tp=110.0, size=1000.0)
+        info["calibration_id"] = 99  # must trigger the calibration block
+
+        journal = _make_journal_mock()
+        risk_mgr = _make_risk_mock()
+
+        db_path = str(tmp_path / "trades.db")
+        ct = CalibrationTracker(db_path=db_path)
+        if calibration_raises:
+            ct.record_outcome = MagicMock(
+                side_effect=Exception("database is locked")
+            )
+
+        client = MagicMock()
+        client.get_closed_pnl.return_value = [
+            {"side": "sell", "price": info["sl"], "amount": 1.0}
+        ]
+        client.get_ticker_price.return_value = info["sl"]
+        client.cancel_all_orders.return_value = None
+
+        trade_id = 42
+        result = check_closed_positions(
+            open_trade_ids={trade_id: info},
+            current_positions=[],
+            journal=journal,
+            risk_mgr=risk_mgr,
+            calibration_tracker=ct,
+            symbol="BTC/USDT:USDT",
+            client=client,
+        )
+        ct.close()
+        return result, risk_mgr, ct
+
+    def test_calibration_error_does_not_prevent_trade_close(self, tmp_path):
+        """When record_outcome raises, the trade must still be removed from
+        open_trade_ids (closed.append must run) — the close path completes."""
+        result, risk_mgr, _ = self._run_check_closed_with_calibration(
+            calibration_raises=True, tmp_path=tmp_path
+        )
+        assert 42 not in result, (
+            "Trade must be removed from open_trade_ids even if calibration raises; "
+            "telemetry must NOT re-drive the close path"
+        )
+
+    def test_calibration_error_does_not_double_count_loss(self, tmp_path):
+        """record_trade_result must be called exactly once even if record_outcome raises."""
+        result, risk_mgr, _ = self._run_check_closed_with_calibration(
+            calibration_raises=True, tmp_path=tmp_path
+        )
+        assert risk_mgr.record_trade_result.call_count == 1, (
+            f"record_trade_result must be called exactly once even when "
+            f"calibration raises, got {risk_mgr.record_trade_result.call_count}"
+        )

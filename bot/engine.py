@@ -257,24 +257,36 @@ def check_closed_positions(
                     "reason": close_reason,
                 }
 
-            if calibration_tracker and info.get("calibration_id"):
-                outcome = "win" if estimated_pnl > 0 else "loss"
-                # Compute default_pnl (what PnL would have been without AI)
-                default_pnl = None
-                orig_size = info.get("original_size")
-                orig_sl = info.get("original_sl")
-                orig_tp = info.get("original_tp")
-                if orig_size is not None and orig_sl is not None and orig_tp is not None:
-                    if trade_side == "long":
-                        default_sl_pnl = (orig_sl - entry) / entry * orig_size
-                        default_tp_pnl = (orig_tp - entry) / entry * orig_size
-                    else:
-                        default_sl_pnl = (entry - orig_sl) / entry * orig_size
-                        default_tp_pnl = (entry - orig_tp) / entry * orig_size
-                    default_pnl = default_tp_pnl if close_reason == "tp" else default_sl_pnl
-                calibration_tracker.record_outcome(
-                    info["calibration_id"], outcome, estimated_pnl,
-                    default_pnl=default_pnl,
+            try:
+                if calibration_tracker and info.get("calibration_id"):
+                    outcome = "win" if estimated_pnl > 0 else "loss"
+                    # Compute default_pnl (what PnL would have been without AI)
+                    default_pnl = None
+                    orig_size = info.get("original_size")
+                    orig_sl = info.get("original_sl")
+                    orig_tp = info.get("original_tp")
+                    if orig_size is not None and orig_sl is not None and orig_tp is not None:
+                        if trade_side == "long":
+                            default_sl_pnl = (orig_sl - entry) / entry * orig_size
+                            default_tp_pnl = (orig_tp - entry) / entry * orig_size
+                        else:
+                            default_sl_pnl = (entry - orig_sl) / entry * orig_size
+                            default_tp_pnl = (entry - orig_tp) / entry * orig_size
+                        default_pnl = default_tp_pnl if close_reason == "tp" else default_sl_pnl
+                    calibration_tracker.record_outcome(
+                        info["calibration_id"], outcome, estimated_pnl,
+                        default_pnl=default_pnl,
+                    )
+            except Exception as calib_err:
+                # Telemetry must never re-drive the close path.  A transient
+                # 'database is locked' here (under the ~59-bot write burst) would
+                # otherwise propagate before closed.append, leaving the trade in
+                # open_trade_ids and causing record_trade_result to be called a
+                # second time on the next loop — spuriously tripping the
+                # consecutive-loss circuit breaker.
+                logger.warning(
+                    "calibration_record_failed",
+                    extra={"trade_id": trade_id, "error": str(calib_err)},
                 )
 
             logger.info(
@@ -1111,12 +1123,13 @@ class TradingEngine:
         # --- Same-side cooldown after close ---
         if not already_open_side and trade_side_label in self._last_trade_close:
             lc = self._last_trade_close[trade_side_label]
-            tf = config["timeframe_signal"]
-            candle_secs = (
-                int(tf.replace("h", "")) * 3600
-                if "h" in tf
-                else int(tf.replace("m", "")) * 60
-            )
+            tf = config["timeframe_signal"].lower()
+            if "h" in tf:
+                candle_secs = int(tf.replace("h", "")) * 3600
+            elif "m" in tf:
+                candle_secs = int(tf.replace("m", "")) * 60
+            else:
+                candle_secs = 15 * 60  # safe fallback
             # Bug #2 fix: check both "sl" and "stop_loss" for SL reason
             lc_reason = lc.get("reason", "close")
             is_sl = lc_reason in ("sl", "stop_loss")
@@ -1675,7 +1688,7 @@ class TradingEngine:
         """
         config = self._config
         now = datetime.now(tz=timezone.utc)
-        tf = config["timeframe_signal"]
+        tf = config["timeframe_signal"].lower()
         if "h" in tf:
             signal_minutes = int(tf.replace("h", "")) * 60
         elif "m" in tf:
