@@ -16,6 +16,7 @@ import { PortfolioPage } from './pages/PortfolioPage'
 import { BotDetailPage } from './pages/BotDetailPage'
 import { AIAnalyticsPage } from './pages/AIAnalyticsPage'
 import { LogViewerPage } from './pages/LogViewerPage'
+import { NewPanelsPage } from './pages/NewPanelsPage'
 import { useLiveSnapshot } from './hooks/useLiveSnapshot'
 
 function App() {
@@ -36,6 +37,7 @@ function App() {
             <Route path="/bots/:symbol" element={<BotDetailPage />} />
             <Route path="/ai" element={<AIAnalyticsPage />} />
             <Route path="/logs" element={<LogViewerPage />} />
+            <Route path="/panels" element={<NewPanelsPage />} />
           </Routes>
         </main>
       </div>

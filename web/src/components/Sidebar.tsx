@@ -75,6 +75,21 @@ export function Sidebar() {
             Live Logs
           </NavLink>
         </li>
+        <li>
+          <NavLink
+            to="/panels"
+            className={({ isActive }) =>
+              `flex items-center gap-2 px-3 py-2 rounded text-sm transition-colors ${
+                isActive
+                  ? 'bg-[#1E2530] text-emerald-400 font-medium'
+                  : 'text-slate-300 hover:bg-[#1E2530] hover:text-slate-100'
+              }`
+            }
+          >
+            <span className="text-base">&#128202;</span>
+            Analytics
+          </NavLink>
+        </li>
       </ul>
 
       <div className="px-3 py-2 border-t border-[#1E2530] mt-1">

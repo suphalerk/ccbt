@@ -20,6 +20,7 @@ export type AICalibrationResponse = components['schemas']['AICalibrationResponse
 export type LogsResponse = components['schemas']['LogsResponse']
 export type CloseReasonResponse = components['schemas']['CloseReasonResponse']
 export type TradeGateResponse = components['schemas']['TradeGateResponse']
+export type TradeGateRow = components['schemas']['TradeGateRow']
 export type OpenRiskResponse = components['schemas']['OpenRiskResponse']
 export type CalendarResponse = components['schemas']['CalendarResponse']
 export type HeatmapResponse = components['schemas']['HeatmapResponse']
