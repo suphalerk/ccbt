@@ -187,8 +187,22 @@ Signal: EMA Ribbon alignment + Awesome Oscillator momentum direction agreement. 
 | **DOGE** | EMA 15m | 1.11 | All strategies PF < 1.2 |
 | **SOL** | Ichi 1H | 1.17 | All strategies PF < 1.2 |
 
-**Portfolio total: 96 audited bots across 30 strategy types (29 removed after walk-forward fail)**
-**Deployed: 174 bots in 17 Docker containers (multi-bot mode, ~4GB RAM)**
+### Live tuning — losing-coins workflow (2026-06-07)
+Diagnosed 6 net-losing testnet coins (workflow `losing-coins-diagnosis`, backtest-verified). Configs removed from `deploy/macos/start.sh`:
+| Coin | Action | Reason |
+|------|--------|--------|
+| **ENJ** | retire `awesome`(1H PF 0.93) + `rangebounce`(0.91) → keep **Dual Thrust** | wrong-TF / fades trend |
+| **TON** | retire `awesome` + `rangebounce` → **drops out** | AO on 1H (validated 4H); AO-4H = needs data |
+| **ALICE** | retire `awesome` → **drops out** | sole strat, AO 1H PF 0.77 |
+| **TRUMP** | retire `stochmtf`(6tr) + `zscore`(1tr) + `ichi`(walk-fwd IS 0.93) → keep **EMA Ribbon** | <15-trade gate / unstable |
+| **1000SHIB** | retire `zscore`(3tr); retune Ribbon **SL 2.0→3.0 ATR** | no edge / SL premature-stopped 70% |
+| **ARC** | keep EMA 15m; retune **TP 5.0→3.0, trail 3.0→2.5 ATR** | genuine edge, TP unreachable (R:R 0.63) |
+
+**ICP** (`dualthrust`/`emaribbon`/`rangebounce`) retired 2026-06-07 — Binance testnet lists ICP as SPOT only, no USDT perp (crashed every restart).
+
+**Cross-coin finding (pending):** all 18 `config_*_awesome.json` ship on 1H but Awesome Oscillator was validated on 4H → systemic edge loss. Audit pending — see docs/plans / memory.
+
+**Deployed: 59 configs (single process via `main_multi.py`, ~340 MB) through a DigitalOcean SOCKS5 proxy + shared market-data cache.**
 
 ### Walk-Forward Audit Status
 - **96 PASS** — IS/OOS ratio >= 60%, full PF >= 1.2, stable edge

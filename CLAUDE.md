@@ -133,6 +133,8 @@ Bot runs fully autonomous — risk management is the primary safety layer:
 - **Regime propagation**: `detect_regime()` must be computed per row in backtest (rolling); backtest stores regime in DataFrame for signal-level gating
 - **Leverage auto-reduction**: `set_leverage()` returns `int` (actual leverage set); halves on Binance -4028 rejection; `engine.py` captures actual value and updates config for risk manager
 - **Position restore**: `engine._restore_positions()` (async) must `await portfolio_manager.register_open(symbol)` for every restored position — otherwise the global position cap and duplicate-coin gate undercount after a restart and the bot opens beyond `--max-positions` / re-opens the same coin
+- **Portfolio cap counts by unique coin**: `PortfolioManager.open_count` = `len(_open_coins)` (a set), NOT a separate counter. Several strategy-bots share one netted exchange position per symbol, so `register_open` must be idempotent per coin — a per-call counter double-counts on restart and freezes all entries
+- **Shared market-data cache**: NEVER cache positions (close detection is absence-based — a stale snapshot misses SL/TP closes, up to a full candle on 4H bots). Only balance + OHLCV are cached. OHLCV invalidation is WALL-CLOCK (`floor(now,tf)`), keyed on the last closed candle; the forming candle stays at `iloc[-1]`. `SharedMarketData` uses a non-reentrant `threading.Lock` with TINY scope (never held across a fetch). Unit-test fakes must return the real ccxt shape (`fetch_ohlcv` → `list[list]`, not a DataFrame) — add a real-interface smoke test
 - **Backtest correctness**: Portfolio backtests must use the R-multiple method — see [docs/backtest-methodology.md](docs/backtest-methodology.md) (past results were inflated 10x by a risk-mismatch bug)
 
 ### Adding a New Strategy — Checklist
@@ -204,8 +206,8 @@ BOT_DATA_DIR                 — Data directory (default: ./data in Docker, . lo
 - `bot_health` — Per-bot live status (position, errors, loop count, mode, PnL)
 
 ## Deployment
-- **167 bots in a single process** via `main_multi.py` (shared ccxt exchange pool)
-- **RAM**: ~340 MB total (vs ~25 GB if running 167 separate Docker containers)
+- **All bots in a single process** via `main_multi.py` (shared ccxt exchange pool); ~59 active configs as of 2026-06-07 (roster lives in `deploy/macos/start.sh`)
+- **RAM**: ~340 MB total (vs ~25 GB if running each bot as a separate Docker container)
 - **Start/stop**: `bash scripts/start_all_bots.sh` / `bash scripts/start_all_bots.sh stop`
 - **Dashboard**: Streamlit local on port 8501 (`streamlit run dashboard/app.py`)
 - **Per-bot mode control**: mode files in `data/mode_{symbol}.json` (read each loop tick)
@@ -214,6 +216,8 @@ BOT_DATA_DIR                 — Data directory (default: ./data in Docker, . lo
 - Nginx reverse proxy (HTTPS, basic auth, rate limiting) for VPS dashboard
 - Monthly cost: ~$7-17 (Hetzner VPS + Claude API)
 - **Fixed-IP proxy for Binance**: exchange traffic can route through a SOCKS5 tunnel to a DigitalOcean droplet so Binance sees a whitelistable egress IP. Enable with env `CCBT_SOCKS_PROXY=socks5h://127.0.0.1:1080` (read in `bot/exchange.py` + `bot/shared_exchange_pool.py`); `deploy/macos/start.sh` runs `deploy/do-proxy/check-proxy.sh` pre-flight and refuses to start on IP mismatch. Setup + ops: [deploy/do-proxy/README.md](deploy/do-proxy/README.md). Binance API is IPv4-only, so egress can't leak over IPv6.
+- **Shared market-data cache** (`CCBT_SHARED_MARKETDATA=1`): `SharedMarketData` (`bot/shared_exchange_pool.py`) caches **balance** (30s) + **OHLCV** (wall-clock candle-boundary) shared across all bots, cutting the per-bot API fan-out that caused Binance -1003/418 rate-limit bursts. **Positions are never cached** (absence-based close detection); routine fetches are gated on the bot's own `_tracked_trades`. Flag-OFF = byte-for-byte original behaviour. Plan + design: [docs/plans/shared-market-data-refactor.md](docs/plans/shared-market-data-refactor.md).
+- macOS: managed by launchd (`com.ccbt.trading-bot` → `deploy/macos/start.sh`); restart with `launchctl kickstart -k gui/$(id -u)/com.ccbt.trading-bot`.
 - Deployment profiles (testnet → real-test → real-safe → real-grow → real-full): [docs/portfolio.md](docs/portfolio.md)
 
 ## API Testing
