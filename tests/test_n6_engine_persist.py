@@ -103,29 +103,39 @@ class TestEnginePersistHook:
             index=idx,
         )
 
-    def test_engine_imports_upsert_candles(self):
-        """bot/engine.py must import upsert_candles from bot.logger."""
-        engine_path = REPO / "bot" / "engine.py"
-        source = engine_path.read_text()
-        assert "upsert_candles" in source, "engine.py must import upsert_candles"
-        assert "from bot.logger import" in source
-        # Confirm the import line includes upsert_candles
-        for line in source.splitlines():
-            if "from bot.logger import" in line:
-                assert "upsert_candles" in line, (
-                    f"upsert_candles missing from logger import: {line}"
-                )
-                break
+    def test_engine_calls_journal_upsert_candles(self):
+        """bot/engine.py must call self._journal.upsert_candles() (instance method).
 
-    def test_engine_calls_upsert_with_journal_db_path(self):
-        """engine.py must call upsert_candles with self._journal.db_path."""
+        After the H3 refactor the engine no longer imports the module-level
+        upsert_candles or references self._journal.db_path — it delegates to
+        the journal instance method which reuses the persistent connection.
+        """
         engine_path = REPO / "bot" / "engine.py"
         source = engine_path.read_text()
         assert "upsert_candles(" in source, "engine.py must call upsert_candles()"
-        # Verify it uses the journal's db_path (not a hardcoded path)
-        assert "self._journal.db_path" in source, (
-            "engine.py must use self._journal.db_path for upsert_candles"
+        # Must use the journal instance method, not the module-level function
+        assert "self._journal.upsert_candles(" in source, (
+            "engine.py must call self._journal.upsert_candles() (instance method) "
+            "to reuse the persistent connection rather than opening a new one per tick."
         )
+
+    def test_engine_calls_upsert_without_db_path(self):
+        """engine.py must NOT pass db_path= to upsert_candles (uses instance method).
+
+        The instance method TradeJournal.upsert_candles() uses self._conn
+        so no db_path argument is needed at the call site.
+        """
+        engine_path = REPO / "bot" / "engine.py"
+        source = engine_path.read_text()
+        lines = source.splitlines()
+        for i, line in enumerate(lines):
+            if "self._journal.upsert_candles(" in line:
+                # Look ahead a few lines for db_path=
+                block = "\n".join(lines[i:i+5])
+                assert "db_path=" not in block, (
+                    f"self._journal.upsert_candles() must not pass db_path= "
+                    f"(the method uses the persistent self._conn). Line {i+1}: {line}"
+                )
 
     def test_engine_passes_symbol_and_timeframe(self):
         """engine.py passes config symbol and timeframe_signal to upsert_candles."""

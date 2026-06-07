@@ -100,7 +100,6 @@ class TestGoldBreakevenMislabel:
             exit_price=exit_price,
             pnl=pnl,
             info=info,
-            trade_side="long",
         )
 
     def test_hard_loss_inside_band_labelled_stop_loss_not_breakeven(self):
@@ -157,7 +156,7 @@ class TestGoldBreakevenMislabel:
         info = _make_info(entry=entry, sl=sl, tp=entry * 1.02)
         from bot.engine import _infer_close_reason
         reason = _infer_close_reason(
-            exit_price=sl, pnl=pnl, info=info, trade_side="long"
+            exit_price=sl, pnl=pnl, info=info
         )
         assert reason == "stop_loss", (
             f"Negative pnl={pnl} near entry must be stop_loss, got {reason!r}"
@@ -218,27 +217,37 @@ class TestBusyTimeout:
         )
 
     def test_upsert_candles_source_contains_busy_timeout(self):
-        """upsert_candles function body must apply busy_timeout (directly or
-        via the shared _apply_pragmas helper)."""
+        """The candle-persist path must apply busy_timeout on any connection it opens.
+
+        After the _upsert_candles_conn refactor:
+        - module-level upsert_candles() opens a new connection and calls _apply_pragmas
+        - TradeJournal.upsert_candles() delegates to _upsert_candles_conn with the
+          already-configured persistent connection
+        Either way, busy_timeout must be applied before writing.
+        We verify that:
+        1. _apply_pragmas is called in the module-level upsert_candles, AND
+        2. The TradeJournal instance method is the preferred call path (engine tests
+           verify connection reuse separately).
+        """
         import re
         logger_path = REPO / "bot" / "logger.py"
         source = logger_path.read_text()
 
-        # Extract the upsert_candles function body by finding its def and scanning
-        # until the next top-level def/class.
+        # The module-level upsert_candles() (top-level def, not inside a class)
+        # must call _apply_pragmas (or busy_timeout) because it opens a new conn.
         lines = source.splitlines()
         start = None
         for i, line in enumerate(lines):
-            if line.lstrip().startswith("def upsert_candles("):
+            # Top-level function: starts at column 0 (no indentation)
+            if line.startswith("def upsert_candles("):
                 start = i
                 break
 
-        assert start is not None, "upsert_candles not found in logger.py"
+        assert start is not None, "module-level upsert_candles not found in logger.py"
 
-        # Collect lines from start until next top-level (non-indented) def/class
+        # Collect lines from start until next top-level def/class
         func_lines = []
         for line in lines[start:]:
-            # A top-level def/class (after the first line) ends the function
             if func_lines and re.match(r'^(def |class )', line):
                 break
             func_lines.append(line)
@@ -247,8 +256,9 @@ class TestBusyTimeout:
         # Accept either inline PRAGMA or the shared _apply_pragmas helper
         has_busy = "busy_timeout" in func_body or "_apply_pragmas" in func_body
         assert has_busy, (
-            "upsert_candles must set PRAGMA busy_timeout inside its body "
-            "(directly or via _apply_pragmas helper)"
+            "module-level upsert_candles must set PRAGMA busy_timeout inside its body "
+            "(directly or via _apply_pragmas helper) — it opens a fresh connection "
+            "so it must configure it before writing."
         )
 
     def test_journal_busy_timeout_behavioral(self, tmp_path):
@@ -602,37 +612,48 @@ class TestGoldH1CooldownCandle:
     """
 
     def test_uppercase_H1_candle_secs_is_3600(self):
-        """Parsing 'H1' must yield 3600 seconds (same as '1h')."""
-        import re
+        """Parsing 'H1' must yield 3600 seconds (same as '1h').
+
+        After the _candle_seconds helper extraction, the parser now lives in
+        _candle_seconds() and both callsites delegate to it.  We verify that
+        _candle_seconds uses .lower() and that 'H1' produces 3600.
+        """
         engine_path = REPO / "bot" / "engine.py"
         source = engine_path.read_text()
 
-        # Verify that the candle_secs block uses .lower() before 'h' in tf
+        # The _candle_seconds helper must use .lower() so 'H1' works
         lines = source.splitlines()
-        found_lower = False
+        fn_start = None
         for i, line in enumerate(lines):
-            # Find the candle_secs assignment block
-            if "candle_secs" in line and ("tf.replace" in line or "tf.lower" in line):
-                # Look backwards a couple of lines for a .lower() on tf
-                context = "\n".join(lines[max(0, i-3):i+5])
-                if ".lower()" in context:
-                    found_lower = True
-                    break
-        assert found_lower, (
-            "candle_secs parser must call tf.lower() before checking 'h'/'m' "
-            "so that Gold 'H1' timeframe is handled correctly"
+            if line.startswith("def _candle_seconds("):
+                fn_start = i
+                break
+        assert fn_start is not None, "_candle_seconds helper not found in engine.py"
+
+        fn_lines = []
+        for line in lines[fn_start:]:
+            if fn_lines and (line.startswith("def ") or line.startswith("class ")):
+                break
+            fn_lines.append(line)
+        fn_body = "\n".join(fn_lines)
+        assert ".lower()" in fn_body, (
+            "_candle_seconds must call tf.lower() so Gold 'H1' yields 3600, "
+            "not the 15-min fallback"
+        )
+
+        # Behavioral check: _candle_seconds('H1') must return 3600
+        from bot.engine import _candle_seconds
+        assert _candle_seconds("H1") == 3600, (
+            "_candle_seconds('H1') must return 3600 seconds"
         )
 
     def test_uppercase_H1_sleep_candle_secs_is_3600(self):
-        """The _sleep_until_next_candle parser must also use .lower() for 'H1'."""
-        import re
+        """_sleep_until_next_candle must handle 'H1' correctly via _candle_seconds."""
         engine_path = REPO / "bot" / "engine.py"
         source = engine_path.read_text()
 
-        # Find the sleep parser block (around line 1678-1684)
-        # It must not silently default to 15min for 'H1'
+        # _sleep_until_next_candle must call _candle_seconds (which handles .lower())
         lines = source.splitlines()
-        # Look for 'signal_minutes' assignments near _sleep_until_next_candle
         sleep_fn_start = None
         for i, line in enumerate(lines):
             if "def _sleep_until_next_candle" in line:
@@ -640,11 +661,15 @@ class TestGoldH1CooldownCandle:
                 break
         assert sleep_fn_start is not None, "_sleep_until_next_candle must exist"
 
-        func_lines = lines[sleep_fn_start:sleep_fn_start + 30]
+        func_lines = []
+        for line in lines[sleep_fn_start:]:
+            if func_lines and (line.startswith("    def ") or line.startswith("    async def ")):
+                break
+            func_lines.append(line)
         func_body = "\n".join(func_lines)
-        assert ".lower()" in func_body, (
-            "_sleep_until_next_candle parser must call tf.lower() so Gold 'H1' "
-            "yields 60 minutes not the 15-min fallback"
+        assert "_candle_seconds(" in func_body, (
+            "_sleep_until_next_candle must delegate to _candle_seconds() "
+            "so that Gold 'H1' yields 60 minutes not the 15-min fallback"
         )
 
     @engine_required

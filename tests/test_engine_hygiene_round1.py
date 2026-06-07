@@ -92,7 +92,6 @@ class TestH1PnlSignStructuralPriority:
             exit_price=105.0,
             pnl=-0.5,   # small negative — fee-driven loss on near-TP exit
             info=info,
-            trade_side="long",
         )
         assert reason == "stop_loss", (
             f"Negative pnl must trump TP proximity → 'stop_loss', got {reason!r}. "
@@ -108,7 +107,6 @@ class TestH1PnlSignStructuralPriority:
             exit_price=105.9,
             pnl=+50.0,
             info=info,
-            trade_side="long",
         )
         assert reason == "tp", (
             f"Positive pnl closer to TP must be 'tp', got {reason!r}"

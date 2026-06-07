@@ -108,24 +108,24 @@ class TestInferCloseReason:
 
     def test_tp_hit_labelled_tp(self):
         info = _make_trade_info(entry=100.0, sl=95.0, tp=110.0)
-        reason = _infer_close_reason(exit_price=110.0, pnl=100.0, info=info, trade_side="long")
+        reason = _infer_close_reason(exit_price=110.0, pnl=100.0, info=info)
         assert reason == "tp"
 
     def test_tp_hit_short_labelled_tp(self):
         info = _make_trade_info(side="sell", entry=100.0, sl=105.0, tp=90.0)
-        reason = _infer_close_reason(exit_price=90.0, pnl=100.0, info=info, trade_side="short")
+        reason = _infer_close_reason(exit_price=90.0, pnl=100.0, info=info)
         assert reason == "tp"
 
     # -- Hard stop_loss (exits below entry, negative PnL) --
 
     def test_hard_sl_long_labelled_stop_loss(self):
         info = _make_trade_info(entry=100.0, sl=95.0, tp=110.0, initial_sl=95.0)
-        reason = _infer_close_reason(exit_price=95.0, pnl=-50.0, info=info, trade_side="long")
+        reason = _infer_close_reason(exit_price=95.0, pnl=-50.0, info=info)
         assert reason == "stop_loss"
 
     def test_hard_sl_short_labelled_stop_loss(self):
         info = _make_trade_info(side="sell", entry=100.0, sl=105.0, tp=90.0, initial_sl=105.0)
-        reason = _infer_close_reason(exit_price=105.0, pnl=-50.0, info=info, trade_side="short")
+        reason = _infer_close_reason(exit_price=105.0, pnl=-50.0, info=info)
         assert reason == "stop_loss"
 
     # -- Trailing stop (stop ratcheted into profit, positive PnL) --
@@ -133,19 +133,19 @@ class TestInferCloseReason:
     def test_trail_stop_positive_pnl_labelled_trail_stop(self):
         # SL ratcheted from 95 → 103, so current sl > entry for long
         info = _make_trade_info(entry=100.0, sl=103.0, tp=110.0, initial_sl=95.0)
-        reason = _infer_close_reason(exit_price=103.0, pnl=30.0, info=info, trade_side="long")
+        reason = _infer_close_reason(exit_price=103.0, pnl=30.0, info=info)
         assert reason == "trail_stop"
 
     def test_trail_stop_still_labelled_trail_stop_even_if_near_sl_price(self):
         # Exit near the (ratcheted) SL but PnL is positive  → trail_stop
         info = _make_trade_info(entry=100.0, sl=102.0, tp=115.0, initial_sl=94.0)
-        reason = _infer_close_reason(exit_price=102.1, pnl=20.0, info=info, trade_side="long")
+        reason = _infer_close_reason(exit_price=102.1, pnl=20.0, info=info)
         assert reason == "trail_stop"
 
     def test_trail_stop_short_positive_pnl(self):
         # Short: entry=100, initial_sl=106, ratcheted sl=97 (into profit)
         info = _make_trade_info(side="sell", entry=100.0, sl=97.0, tp=85.0, initial_sl=106.0)
-        reason = _infer_close_reason(exit_price=97.0, pnl=30.0, info=info, trade_side="short")
+        reason = _infer_close_reason(exit_price=97.0, pnl=30.0, info=info)
         assert reason == "trail_stop"
 
     # -- Breakeven (~entry, near-zero PnL) --
@@ -154,17 +154,17 @@ class TestInferCloseReason:
         # Stop moved to entry ± tiny buffer, PnL is essentially 0
         info = _make_trade_info(entry=100.0, sl=100.1, tp=110.0, initial_sl=94.0)
         # PnL near 0: 0.1 / 100.0 * 1000 = 1.0 USDT
-        reason = _infer_close_reason(exit_price=100.1, pnl=1.0, info=info, trade_side="long")
+        reason = _infer_close_reason(exit_price=100.1, pnl=1.0, info=info)
         assert reason == "breakeven"
 
     def test_breakeven_exactly_at_entry(self):
         info = _make_trade_info(entry=100.0, sl=100.0, tp=110.0, initial_sl=94.0)
-        reason = _infer_close_reason(exit_price=100.0, pnl=0.0, info=info, trade_side="long")
+        reason = _infer_close_reason(exit_price=100.0, pnl=0.0, info=info)
         assert reason == "breakeven"
 
     def test_breakeven_short(self):
         info = _make_trade_info(side="sell", entry=100.0, sl=99.9, tp=90.0, initial_sl=106.0)
-        reason = _infer_close_reason(exit_price=99.9, pnl=1.0, info=info, trade_side="short")
+        reason = _infer_close_reason(exit_price=99.9, pnl=1.0, info=info)
         assert reason == "breakeven"
 
     # -- Label-correctness invariant: positive PnL is NEVER stop_loss --
@@ -173,7 +173,7 @@ class TestInferCloseReason:
         """The core invariant from N11: profitable stops must NOT be stop_loss."""
         # Even if exit is close to original SL, positive pnl means trail_stop
         info = _make_trade_info(entry=100.0, sl=96.0, tp=110.0, initial_sl=95.0)
-        reason = _infer_close_reason(exit_price=96.0, pnl=10.0, info=info, trade_side="long")
+        reason = _infer_close_reason(exit_price=96.0, pnl=10.0, info=info)
         assert reason != "stop_loss", (
             f"Positive-PnL stop must not be labelled stop_loss, got {reason!r}"
         )
@@ -181,7 +181,7 @@ class TestInferCloseReason:
     def test_negative_pnl_stop_never_labelled_trail_stop(self):
         """Negative-PnL stops must not be trail_stop."""
         info = _make_trade_info(entry=100.0, sl=95.0, tp=110.0, initial_sl=95.0)
-        reason = _infer_close_reason(exit_price=95.0, pnl=-50.0, info=info, trade_side="long")
+        reason = _infer_close_reason(exit_price=95.0, pnl=-50.0, info=info)
         assert reason != "trail_stop", (
             f"Loss stop must not be labelled trail_stop, got {reason!r}"
         )
@@ -272,7 +272,7 @@ class TestLabelCorrectnessInvariant:
     def test_positive_pnl_not_stop_loss(self, pnl: float, expected_not: str):
         info = _make_trade_info(entry=100.0, sl=102.0, tp=115.0, initial_sl=94.0)
         reason = _infer_close_reason(
-            exit_price=102.0, pnl=pnl, info=info, trade_side="long"
+            exit_price=102.0, pnl=pnl, info=info
         )
         assert reason != expected_not, (
             f"pnl={pnl}: must not be labelled {expected_not!r}, got {reason!r}"

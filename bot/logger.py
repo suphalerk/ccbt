@@ -501,10 +501,159 @@ class TradeJournal:
         )
         self._conn.commit()
 
+    def upsert_candles(
+        self,
+        symbol: str,
+        timeframe: str,
+        df: "pd.DataFrame",
+        max_rows: int = MAX_OHLCV_ROWS,
+    ) -> None:
+        """Persist OHLCV + indicator snapshot using the persistent connection.
+
+        This is a thin wrapper around the module-level :func:`upsert_candles`
+        that passes ``self._conn`` so no new connection is opened per tick.
+        Calling it multiple times with the same closed-candle data is safe
+        (INSERT OR REPLACE makes writes idempotent).
+
+        Args:
+            symbol:    Trading symbol (e.g. ``"BTCUSDT"`` or ``"BTC/USDT:USDT"``).
+            timeframe: Candle timeframe string (e.g. ``"15m"``, ``"1h"``).
+            df:        DataFrame produced by ``add_indicators()``.
+            max_rows:  Maximum rows retained per (symbol, timeframe).
+        """
+        _upsert_candles_conn(
+            conn=self._conn,
+            symbol=symbol,
+            timeframe=timeframe,
+            df=df,
+            max_rows=max_rows,
+        )
+
 
 # ---------------------------------------------------------------------------
 # Candle producer (N6)
 # ---------------------------------------------------------------------------
+
+def _upsert_candles_conn(
+    conn: "sqlite3.Connection",
+    symbol: str,
+    timeframe: str,
+    df: "pd.DataFrame",
+    max_rows: int = MAX_OHLCV_ROWS,
+) -> None:
+    """Write candle rows using a caller-supplied connection.
+
+    Extracted so :class:`TradeJournal` can call this with its persistent
+    ``self._conn`` (avoiding a new connect/close per tick) while the
+    module-level :func:`upsert_candles` still works for one-shot callers.
+
+    Idempotent: INSERT OR REPLACE means duplicate ts values for the same
+    (symbol, timeframe) are safe to call multiple times per closed candle.
+
+    Args:
+        conn:      Open sqlite3.Connection configured with WAL pragmas.
+        symbol:    Trading symbol.
+        timeframe: Candle timeframe string.
+        df:        DataFrame from ``add_indicators()``.
+        max_rows:  Row retention limit per (symbol, timeframe).
+    """
+    if df is None or len(df) == 0:
+        return
+
+    import math
+    import pandas as pd  # lazy import — keeps journal importable stdlib-only
+
+    _ensure_bot_ohlcv_table(conn)
+
+    # Resolve the timestamp series.
+    # The live-bot DataFrame (from get_ohlcv) uses a DatetimeIndex.
+    # Test fixtures may supply a plain integer `timestamp` column.
+    if "timestamp" in df.columns:
+        # Column-based (test fixtures or already-reset index)
+        ts_series: "pd.Series" = df["timestamp"]
+        _ts_is_datetime = pd.api.types.is_datetime64_any_dtype(ts_series)
+    else:
+        # Index-based (live bot — get_ohlcv sets index to DatetimeIndex)
+        ts_series = df.index.to_series()
+        _ts_is_datetime = True
+
+    def _to_epoch_ms(ts_val) -> int:
+        """Convert a timestamp value to integer epoch milliseconds."""
+        if _ts_is_datetime:
+            # pandas Timestamp / numpy datetime64 → int ns → divide by 1e6
+            try:
+                return int(pd.Timestamp(ts_val).timestamp() * 1000)
+            except Exception:
+                return int(ts_val)
+        else:
+            # Already an integer (epoch ms from test fixture)
+            return int(ts_val)
+
+    # Build rows from the DataFrame.
+    # Columns may or may not be present depending on config (strategy type).
+    def _col(name: str) -> "pd.Series | None":
+        return df[name] if name in df.columns else None
+
+    ema_fast_col = _col("ema_fast")
+    ema_slow_col = _col("ema_slow")
+    rsi_col = _col("rsi")
+
+    def _safe_float(col: "pd.Series | None", idx: int) -> "float | None":
+        if col is None:
+            return None
+        val = col.iloc[idx]
+        if val is None:
+            return None
+        try:
+            fval = float(val)
+            return None if math.isnan(fval) else fval
+        except (TypeError, ValueError):
+            return None
+
+    rows = []
+    for idx in range(len(df)):
+        ts_ms = _to_epoch_ms(ts_series.iloc[idx])
+        rows.append((
+            symbol,
+            timeframe,
+            ts_ms,
+            float(df["open"].iloc[idx]),
+            float(df["high"].iloc[idx]),
+            float(df["low"].iloc[idx]),
+            float(df["close"].iloc[idx]),
+            float(df["volume"].iloc[idx]),
+            _safe_float(ema_fast_col, idx),   # ema9
+            _safe_float(ema_slow_col, idx),   # ema21
+            _safe_float(rsi_col, idx),        # rsi14
+        ))
+
+    conn.executemany(
+        """
+        INSERT OR REPLACE INTO bot_ohlcv
+            (symbol, timeframe, ts, open, high, low, close, volume,
+             ema9, ema21, rsi14)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+
+    # Prune rows beyond max_rows — keep the most-recent ones.
+    conn.execute(
+        """
+        DELETE FROM bot_ohlcv
+        WHERE symbol = ? AND timeframe = ?
+          AND ts NOT IN (
+              SELECT ts FROM bot_ohlcv
+              WHERE symbol = ? AND timeframe = ?
+              ORDER BY ts DESC
+              LIMIT ?
+          )
+        """,
+        (symbol, timeframe, symbol, timeframe, max_rows),
+    )
+
+    conn.commit()
+
 
 def upsert_candles(
     db_path: str,
@@ -515,9 +664,10 @@ def upsert_candles(
 ) -> None:
     """Persist OHLCV + indicator snapshot from the bot's per-loop DataFrame.
 
-    This is the **only** place the bot writes candle data to SQLite.
-    It MUST NOT fetch from the exchange — it reuses the DataFrame already
-    produced by ``add_indicators()`` in the trading loop.
+    This is the **only** place the bot writes candle data to SQLite for one-shot
+    callers (e.g. scripts, tests).  The :class:`TradeJournal` instance method
+    :meth:`TradeJournal.upsert_candles` should be preferred in the trading loop
+    because it reuses the persistent connection.
 
     Column mapping (add_indicators → bot_ohlcv):
         ``ema_fast``  → ``ema9``
@@ -541,102 +691,11 @@ def upsert_candles(
     if df is None or len(df) == 0:
         return
 
-    import math
-    import pandas as pd  # lazy import — keeps journal importable stdlib-only
-
     conn = sqlite3.connect(db_path, check_same_thread=False)
     try:
         _apply_pragmas(conn)
-        _ensure_bot_ohlcv_table(conn)
-
-        # Resolve the timestamp series.
-        # The live-bot DataFrame (from get_ohlcv) uses a DatetimeIndex.
-        # Test fixtures may supply a plain integer `timestamp` column.
-        if "timestamp" in df.columns:
-            # Column-based (test fixtures or already-reset index)
-            ts_series: "pd.Series" = df["timestamp"]
-            _ts_is_datetime = pd.api.types.is_datetime64_any_dtype(ts_series)
-        else:
-            # Index-based (live bot — get_ohlcv sets index to DatetimeIndex)
-            ts_series = df.index.to_series()
-            _ts_is_datetime = True
-
-        def _to_epoch_ms(ts_val) -> int:
-            """Convert a timestamp value to integer epoch milliseconds."""
-            if _ts_is_datetime:
-                # pandas Timestamp / numpy datetime64 → int ns → divide by 1e6
-                try:
-                    return int(pd.Timestamp(ts_val).timestamp() * 1000)
-                except Exception:
-                    return int(ts_val)
-            else:
-                # Already an integer (epoch ms from test fixture)
-                return int(ts_val)
-
-        # Build rows from the DataFrame.
-        # Columns may or may not be present depending on config (strategy type).
-        def _col(name: str) -> "pd.Series | None":
-            return df[name] if name in df.columns else None
-
-        ema_fast_col = _col("ema_fast")
-        ema_slow_col = _col("ema_slow")
-        rsi_col = _col("rsi")
-
-        def _safe_float(col: "pd.Series | None", idx: int) -> "float | None":
-            if col is None:
-                return None
-            val = col.iloc[idx]
-            if val is None:
-                return None
-            try:
-                fval = float(val)
-                return None if math.isnan(fval) else fval
-            except (TypeError, ValueError):
-                return None
-
-        rows = []
-        for idx in range(len(df)):
-            ts_ms = _to_epoch_ms(ts_series.iloc[idx])
-            rows.append((
-                symbol,
-                timeframe,
-                ts_ms,
-                float(df["open"].iloc[idx]),
-                float(df["high"].iloc[idx]),
-                float(df["low"].iloc[idx]),
-                float(df["close"].iloc[idx]),
-                float(df["volume"].iloc[idx]),
-                _safe_float(ema_fast_col, idx),   # ema9
-                _safe_float(ema_slow_col, idx),   # ema21
-                _safe_float(rsi_col, idx),        # rsi14
-            ))
-
-        conn.executemany(
-            """
-            INSERT OR REPLACE INTO bot_ohlcv
-                (symbol, timeframe, ts, open, high, low, close, volume,
-                 ema9, ema21, rsi14)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
-
-        # Prune rows beyond max_rows — keep the most-recent ones.
-        conn.execute(
-            """
-            DELETE FROM bot_ohlcv
-            WHERE symbol = ? AND timeframe = ?
-              AND ts NOT IN (
-                  SELECT ts FROM bot_ohlcv
-                  WHERE symbol = ? AND timeframe = ?
-                  ORDER BY ts DESC
-                  LIMIT ?
-              )
-            """,
-            (symbol, timeframe, symbol, timeframe, max_rows),
-        )
-
-        conn.commit()
+        _upsert_candles_conn(conn=conn, symbol=symbol, timeframe=timeframe,
+                             df=df, max_rows=max_rows)
     finally:
         conn.close()
 

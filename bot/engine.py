@@ -17,7 +17,7 @@ from bot.ai_analyst import AIAnalyst, CandidateSignal
 from bot.context_builder import ContextBuilder
 from bot.data import add_indicators
 from bot.exchange import BybitClient
-from bot.logger import CalibrationTracker, TradeJournal, upsert_candles
+from bot.logger import CalibrationTracker, TradeJournal
 from bot.mode import BotMode, read_bot_mode
 from bot.news_fetcher import NewsFetcher
 from bot.risk import RiskManager
@@ -35,23 +35,25 @@ def _infer_close_reason(
     exit_price: float,
     pnl: float,
     info: dict,
-    trade_side: str,
 ) -> str:
     """Infer a semantically correct close_reason for a stop exit.
 
-    Classification uses pnl-sign as the primary discriminator for stop exits:
+    Classification uses pnl-sign as the structural top-priority discriminator:
 
     Priority ordering (evaluated top-to-bottom; first match wins):
-    1. ``tp``              — exit is closer to the take-profit price than to SL.
-    2. ``stop_loss``       — pnl < 0; hard loss regardless of exit proximity to entry.
+    1. ``stop_loss``       — pnl < 0; hard loss regardless of exit proximity to TP or entry.
+    2. ``tp``              — pnl >= 0 and exit is closer to TP than to SL.
     3. ``breakeven``       — pnl >= 0 and exit within 0.5% of entry (stop moved to ~entry).
     4. ``trail_stop``      — pnl > 0 and exit outside the entry band (ratcheted stop).
 
-    The pnl-sign gate on step 2 ensures a genuine loss is never labelled
+    The pnl-sign gate on step 1 ensures a genuine loss is never labelled
     ``breakeven``, even when the exit price falls within the breakeven band
     (e.g. Gold H1 with ATR SL of ~0.3% where the 0.5% band would otherwise
     mask the loss and use the shorter ``cooldown_candles_after_close`` instead
     of ``cooldown_candles_after_sl``).
+
+    Classification is symmetric — the result does not depend on trade direction
+    (long vs short).
 
     The function intentionally never returns the legacy ``sl`` label for new
     closes.  Old DB rows retain ``sl``/``tp`` — those are additive.
@@ -62,7 +64,6 @@ def _infer_close_reason(
         info:       Tracked-trade dict for the position.  Must contain
                     ``entry_price``, ``sl`` (current, possibly ratcheted),
                     and ``tp``.
-        trade_side: ``"long"`` or ``"short"``.
 
     Returns:
         One of ``"tp"``, ``"trail_stop"``, ``"breakeven"``, ``"stop_loss"``.
@@ -71,16 +72,16 @@ def _infer_close_reason(
     tp = info["tp"]
     sl = info["sl"]  # current (possibly ratcheted) SL
 
-    # 1. TP hit: exit is closest to TP
+    # 1. Negative PnL → hard stop loss; checked first so a fee-driven near-TP
+    #    exit or a genuine loss inside the breakeven band is never mislabelled.
+    if pnl < 0:
+        return "stop_loss"
+
+    # 2. TP hit (pnl >= 0): exit is closest to TP
     dist_to_tp = abs(exit_price - tp)
     dist_to_sl = abs(exit_price - sl)
     if dist_to_tp < dist_to_sl:
         return "tp"
-
-    # 2. Negative PnL → hard loss → stop_loss (gate before proximity check so
-    #    a genuine loss within the breakeven band is not mislabelled 'breakeven').
-    if pnl < 0:
-        return "stop_loss"
 
     # 3–4 are stop exits with pnl >= 0.  Classify by exit-price proximity to entry.
     # Breakeven band: exit within 0.5% of entry price counts as near-zero PnL.
@@ -93,6 +94,31 @@ def _infer_close_reason(
 
     # Positive PnL and outside entry band → trailing stop ratcheted into profit
     return "trail_stop"
+
+
+def _candle_seconds(tf: str) -> int:
+    """Return the number of seconds in one candle for a given timeframe string.
+
+    Handles both lowercase (``"1h"``, ``"15m"``) and uppercase (``"H1"``, ``"4H"``)
+    variants so Gold ``timeframe_signal="H1"`` is parsed correctly.
+
+    Args:
+        tf: Timeframe string from config, e.g. ``"15m"``, ``"1h"``, ``"4H"``, ``"H1"``.
+
+    Returns:
+        Duration in seconds.  Falls back to 900 (15 m) with a ``logger.warning``
+        when the format is unrecognised so callers never get a silent wrong value.
+    """
+    tf_lower = tf.lower()
+    if "h" in tf_lower:
+        return int(tf_lower.replace("h", "")) * 3600
+    if "m" in tf_lower:
+        return int(tf_lower.replace("m", "")) * 60
+    logger.warning(
+        "candle_seconds_unknown_tf",
+        extra={"tf": tf, "fallback_seconds": 900},
+    )
+    return 900  # safe 15-minute fallback
 
 
 def check_closed_positions(
@@ -189,7 +215,6 @@ def check_closed_positions(
                     exit_price=exit_price,
                     pnl=estimated_pnl,
                     info=info,
-                    trade_side=trade_side,
                 )
             else:
                 # Fallback: infer from current price if available
@@ -221,7 +246,6 @@ def check_closed_positions(
                     exit_price=exit_price,
                     pnl=estimated_pnl,
                     info=info,
-                    trade_side=trade_side,
                 )
 
             pnl_pct = estimated_pnl / info["size"] * 100 if info["size"] > 0 else 0
@@ -250,6 +274,12 @@ def check_closed_positions(
 
             risk_mgr.record_trade_result(estimated_pnl)
 
+            # STRUCTURAL double-count guard: mark as closed IMMEDIATELY after
+            # risk accounting succeeds, BEFORE any telemetry that might raise.
+            # A future raising line in calibration / logger.info / send_alert
+            # cannot re-drive record_trade_result on the next loop iteration.
+            closed.append(trade_id)
+
             # Record close time for cooldown tracking
             if last_trade_close is not None:
                 last_trade_close[trade_side] = {
@@ -257,6 +287,7 @@ def check_closed_positions(
                     "reason": close_reason,
                 }
 
+            # --- Telemetry (non-fatal: each block is independently guarded) ---
             try:
                 if calibration_tracker and info.get("calibration_id"):
                     outcome = "win" if estimated_pnl > 0 else "loss"
@@ -278,37 +309,36 @@ def check_closed_positions(
                         default_pnl=default_pnl,
                     )
             except Exception as calib_err:
-                # Telemetry must never re-drive the close path.  A transient
-                # 'database is locked' here (under the ~59-bot write burst) would
-                # otherwise propagate before closed.append, leaving the trade in
-                # open_trade_ids and causing record_trade_result to be called a
-                # second time on the next loop — spuriously tripping the
-                # consecutive-loss circuit breaker.
                 logger.warning(
                     "calibration_record_failed",
                     extra={"trade_id": trade_id, "error": str(calib_err)},
                 )
 
-            logger.info(
-                "position_closed_detected",
-                extra={
-                    "trade_id": trade_id,
-                    "side": info["side"],
-                    "entry": entry,
-                    "exit": exit_price,
-                    "pnl": round(estimated_pnl, 4),
-                    "pnl_pct": round(pnl_pct, 2),
-                    "close_reason": close_reason,
-                    "duration_s": duration,
-                },
-            )
-            pnl_emoji = "✅" if estimated_pnl > 0 else "❌"
-            send_alert(
-                f"{pnl_emoji} <b>{symbol}</b> {info['side'].upper()} closed ({close_reason})\n"
-                f"PnL: ${estimated_pnl:+,.2f} ({pnl_pct:+.1f}%)\n"
-                f"Duration: {duration//60}m"
-            )
-            closed.append(trade_id)
+            try:
+                logger.info(
+                    "position_closed_detected",
+                    extra={
+                        "trade_id": trade_id,
+                        "side": info["side"],
+                        "entry": entry,
+                        "exit": exit_price,
+                        "pnl": round(estimated_pnl, 4),
+                        "pnl_pct": round(pnl_pct, 2),
+                        "close_reason": close_reason,
+                        "duration_s": duration,
+                    },
+                )
+                pnl_emoji = "✅" if estimated_pnl > 0 else "❌"
+                send_alert(
+                    f"{pnl_emoji} <b>{symbol}</b> {info['side'].upper()} closed ({close_reason})\n"
+                    f"PnL: ${estimated_pnl:+,.2f} ({pnl_pct:+.1f}%)\n"
+                    f"Duration: {duration//60}m"
+                )
+            except Exception as log_alert_err:
+                logger.warning(
+                    "trade_close_telemetry_failed",
+                    extra={"trade_id": trade_id, "error": str(log_alert_err)},
+                )
 
     # Cancel orphaned algo orders (e.g. TP remaining after SL trigger, or vice
     # versa).  On Binance, algo orders live in a separate book and persist even
@@ -1070,10 +1100,9 @@ class TradingEngine:
         # N6: persist recent candles + indicators to bot_ohlcv so the dashboard
         # can render the candle chart without hitting the exchange.
         # This reuses the DataFrame already produced above — NO new fetch.
+        # Uses the journal's persistent connection (no new sqlite3.connect per tick).
         try:
-            db_path = self._journal.db_path
-            upsert_candles(
-                db_path=db_path,
+            self._journal.upsert_candles(
                 symbol=config["symbol"],
                 timeframe=config["timeframe_signal"],
                 df=enriched_signal_df,
@@ -1123,13 +1152,7 @@ class TradingEngine:
         # --- Same-side cooldown after close ---
         if not already_open_side and trade_side_label in self._last_trade_close:
             lc = self._last_trade_close[trade_side_label]
-            tf = config["timeframe_signal"].lower()
-            if "h" in tf:
-                candle_secs = int(tf.replace("h", "")) * 3600
-            elif "m" in tf:
-                candle_secs = int(tf.replace("m", "")) * 60
-            else:
-                candle_secs = 15 * 60  # safe fallback
+            candle_secs = _candle_seconds(config["timeframe_signal"])
             # Bug #2 fix: check both "sl" and "stop_loss" for SL reason
             lc_reason = lc.get("reason", "close")
             is_sl = lc_reason in ("sl", "stop_loss")
@@ -1688,13 +1711,7 @@ class TradingEngine:
         """
         config = self._config
         now = datetime.now(tz=timezone.utc)
-        tf = config["timeframe_signal"].lower()
-        if "h" in tf:
-            signal_minutes = int(tf.replace("h", "")) * 60
-        elif "m" in tf:
-            signal_minutes = int(tf.replace("m", ""))
-        else:
-            signal_minutes = 15  # default
+        signal_minutes = _candle_seconds(config["timeframe_signal"]) // 60
         minutes_until_close = (signal_minutes - 1) - (now.minute % signal_minutes)
         seconds_until_close = minutes_until_close * 60 + (60 - now.second)
 
