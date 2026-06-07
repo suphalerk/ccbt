@@ -46,6 +46,21 @@ def _ensure_bot_ohlcv_table(conn: sqlite3.Connection) -> None:
         "ON bot_ohlcv (symbol, timeframe, ts)"
     )
 
+
+def _apply_pragmas(conn: sqlite3.Connection) -> None:
+    """Apply standard WAL-mode pragmas to a SQLite connection.
+
+    Centralises the busy_timeout, journal_mode, and synchronous settings so
+    every persistent or transient connection to trades.db uses the same
+    configuration.  Call this on every new connection *before* any DML.
+
+    Args:
+        conn: An open sqlite3.Connection to configure.
+    """
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+
 # Bangkok timezone (GMT+7)
 _TZ_BKK = timezone(timedelta(hours=7))
 
@@ -148,9 +163,7 @@ class TradeJournal:
 
     def _init_db(self) -> None:
         """Create the trades table, bot_health table, and indexes if they don't exist."""
-        self._conn.execute("PRAGMA busy_timeout=5000")
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=NORMAL")
+        _apply_pragmas(self._conn)
         self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS bot_health (
@@ -533,9 +546,7 @@ def upsert_candles(
 
     conn = sqlite3.connect(db_path, check_same_thread=False)
     try:
-        conn.execute("PRAGMA busy_timeout=5000")
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
+        _apply_pragmas(conn)
         _ensure_bot_ohlcv_table(conn)
 
         # Resolve the timestamp series.
@@ -667,8 +678,7 @@ class CalibrationTracker:
 
     def _init_calibration_table(self) -> None:
         """Create the ai_calibration table and indexes if they don't exist."""
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=NORMAL")
+        _apply_pragmas(self._conn)
         self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS ai_calibration (
