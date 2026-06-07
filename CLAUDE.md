@@ -177,6 +177,7 @@ When adding a new signal type (e.g. `my_new_signal`), ALL of these must be done 
 - SL/TP size must use `filled_size` (actual fill) not requested size
 - SL placement failure must prevent TP placement (never have TP without SL)
 - Emergency SL must use `_retry` wrapper (network flicker could leave position unprotected)
+- **`close_all_positions()` reduceOnly + fallback**: tries a `reduceOnly` market close first, then **falls back to a plain market order of the EXACT `info['positionAmt']`** (precision-TRUNCATED, so no over-shoot/side-flip) when Binance rejects with **-2022 "ReduceOnly Order is rejected"**. This account rejects reduceOnly market closes, so without the fallback **PANIC + graceful shutdown silently fail to close** (was logging `graceful_shutdown_failed -2022`). Only `-2022`/`reduceonly` errors trigger the fallback; other errors (margin/-2021/network) re-raise. **Must close to flat or RAISE** — the not-flat & hedge-mode (`positionSide != BOTH`) branches raise so PANIC/`_shutdown` callers never record a *phantom* close (book stays in sync with the exchange). Manual one-off close that works on this testnet: plain market order, exact `positionAmt`, one-way mode.
 
 ### API Key Safety
 - **NEVER** put API keys in code, config files, or chat messages
