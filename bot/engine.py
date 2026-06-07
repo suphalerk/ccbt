@@ -31,6 +31,61 @@ logger = logging.getLogger(__name__)
 # Module-level helper (previously in main.py at module scope)
 # ---------------------------------------------------------------------------
 
+def _infer_close_reason(
+    exit_price: float,
+    pnl: float,
+    info: dict,
+    trade_side: str,
+) -> str:
+    """Infer a semantically correct close_reason for a stop exit.
+
+    Priority ordering (evaluated top-to-bottom; first match wins):
+    1. ``tp``              — exit near the take-profit price.
+    2. ``trail_stop``      — stop hit after ratcheting into profit (pnl > 0).
+    3. ``breakeven``       — stop moved to ~entry; pnl is near-zero.
+    4. ``stop_loss``       — hard SL, position exited at a loss.
+
+    The function intentionally never returns the legacy ``sl`` label for new
+    closes.  Old DB rows retain ``sl``/``tp`` — those are additive.
+
+    Args:
+        exit_price: Actual (or estimated) exit price.
+        pnl:        Realised PnL in quote currency (positive = profit).
+        info:       Tracked-trade dict for the position.  Must contain
+                    ``entry_price``, ``sl`` (current, possibly ratcheted),
+                    ``tp``, and ``initial_sl`` (SL at entry before trailing).
+        trade_side: ``"long"`` or ``"short"``.
+
+    Returns:
+        One of ``"tp"``, ``"trail_stop"``, ``"breakeven"``, ``"stop_loss"``.
+    """
+    entry = info["entry_price"]
+    tp = info["tp"]
+    sl = info["sl"]  # current (possibly ratcheted) SL
+
+    # 1. TP hit: exit is closest to TP
+    dist_to_tp = abs(exit_price - tp)
+    dist_to_sl = abs(exit_price - sl)
+    if dist_to_tp < dist_to_sl:
+        return "tp"
+
+    # 2–4 are stop exits.  Classify by exit-price proximity to entry.
+    # Breakeven band: exit within 0.5% of entry price counts as near-zero PnL.
+    breakeven_band = entry * 0.005
+    exit_near_entry = abs(exit_price - entry) <= breakeven_band
+
+    # Near entry (stop moved to ~entry) → breakeven
+    if exit_near_entry:
+        return "breakeven"
+
+    # Positive PnL → trailing stop ratcheted into profit → trail_stop
+    if pnl > 0:
+        return "trail_stop"
+
+    # Negative PnL → hard loss → stop_loss
+    return "stop_loss"
+
+
 def check_closed_positions(
     open_trade_ids: dict,
     current_positions: list,
@@ -120,11 +175,13 @@ def check_closed_positions(
                     logger.warning("failed_to_fetch_actual_pnl", extra={"error": str(e)})
 
             if actual_pnl is not None and exit_price is not None:
-                # Determine close reason from exit price proximity to SL/TP
-                dist_to_sl = abs(exit_price - sl)
-                dist_to_tp = abs(exit_price - tp)
-                close_reason = "tp" if dist_to_tp < dist_to_sl else "sl"
                 estimated_pnl = actual_pnl
+                close_reason = _infer_close_reason(
+                    exit_price=exit_price,
+                    pnl=estimated_pnl,
+                    info=info,
+                    trade_side=trade_side,
+                )
             else:
                 # Fallback: infer from current price if available
                 if client is not None:
@@ -135,28 +192,28 @@ def check_closed_positions(
                             if current_price >= tp:
                                 estimated_pnl = tp_pnl
                                 exit_price = tp
-                                close_reason = "tp"
                             else:
                                 estimated_pnl = sl_pnl
                                 exit_price = sl
-                                close_reason = "sl"
                         else:
                             if current_price <= tp:
                                 estimated_pnl = tp_pnl
                                 exit_price = tp
-                                close_reason = "tp"
                             else:
                                 estimated_pnl = sl_pnl
                                 exit_price = sl
-                                close_reason = "sl"
                     except Exception:
                         estimated_pnl = sl_pnl
                         exit_price = sl
-                        close_reason = "sl"
                 else:
                     estimated_pnl = sl_pnl
                     exit_price = sl
-                    close_reason = "sl"
+                close_reason = _infer_close_reason(
+                    exit_price=exit_price,
+                    pnl=estimated_pnl,
+                    info=info,
+                    trade_side=trade_side,
+                )
 
             pnl_pct = estimated_pnl / info["size"] * 100 if info["size"] > 0 else 0
 
@@ -694,13 +751,17 @@ class TradingEngine:
                             )
 
                         size_usdt_restored = db_trade["size"] * db_trade["entry_price"]
+                        restored_sl = db_trade.get("stop_loss", 0)
                         self._tracked_trades[trade_id] = {
                             "side": db_trade["side"],
                             "entry_price": db_trade["entry_price"],
                             "size": size_usdt_restored,
                             "original_size": size_usdt_restored,
-                            "sl": db_trade.get("stop_loss", 0),
+                            "sl": restored_sl,
                             "tp": db_trade.get("take_profit", 0),
+                            # initial_sl: use DB stop_loss; may already be ratcheted but
+                            # it's the best approximation we have on restore.
+                            "initial_sl": restored_sl,
                             "tp1_price": 0.0,
                             "tp1_hit": True,  # Mark as hit to avoid partial close on restart
                             "calibration_id": None,
@@ -1514,6 +1575,9 @@ class TradingEngine:
                 "original_size": actual_size_usdt,
                 "sl": adjusted_sl,
                 "tp": adjusted_tp,
+                # initial_sl: SL at entry before any trailing ratchet; used by
+                # _infer_close_reason() to distinguish trail_stop from stop_loss.
+                "initial_sl": adjusted_sl,
                 "tp1_price": tp1_price,
                 "tp1_hit": False,
                 "calibration_id": calibration_id,
