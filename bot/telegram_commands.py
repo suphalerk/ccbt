@@ -59,18 +59,116 @@ _PROCESS_START: float = time.time()
 # Module-level exchange holder (injected by main_multi.py for /upnl)
 # ---------------------------------------------------------------------------
 
+# NOTE: /upnl must NEVER share the live trading ccxt instance.
+# Trading bots call create_order/fetch_positions on that instance from the
+# event-loop thread; _cmd_upnl runs in a run_in_executor thread. ccxt sync
+# Exchange objects carry mutable per-instance state (rate-limiter, nonce,
+# last_http_response) and are not thread-safe. Using the same instance
+# would corrupt rate-limiter bookkeeping intermittently.
+#
+# Instead, set_exchange() receives the *live* instance only to copy its
+# credentials and endpoint config into a DEDICATED telemetry instance.
+# The telemetry instance is only ever called from the executor thread
+# that runs _cmd_upnl, so there is no concurrent access.
+
 _EXCHANGE: Optional[object] = None
+# Internal lock guards the _EXCHANGE reference itself (single writer).
+_exchange_lock = __import__("threading").Lock()
 
 
 def set_exchange(exchange: Optional[object]) -> None:
-    """Set the shared ccxt exchange instance used by /upnl.
+    """Inject the exchange whose credentials /upnl should use.
+
+    A DEDICATED copy of the exchange is created so that /upnl never
+    touches the live trading instance that all bot coroutines share.
+    This preserves the one-fetch-per-call and never-interfere guarantees.
 
     Args:
-        exchange: A synchronous ccxt exchange instance (e.g. from
-            get_shared_exchange()), or None to clear it.
+        exchange: A synchronous ccxt exchange instance whose API key /
+            endpoint config should be cloned for telemetry.  Pass None
+            to clear (graceful degradation — /upnl returns unavailable).
     """
     global _EXCHANGE
-    _EXCHANGE = exchange
+    if exchange is None:
+        with _exchange_lock:
+            _EXCHANGE = None
+        return
+
+    # Clone the live exchange into an independent telemetry instance so
+    # /upnl never races with bot coroutines that use the shared instance.
+    try:
+        import ccxt as _ccxt  # noqa: PLC0415
+
+        exchange_id = getattr(exchange, "id", None)
+        exchange_cls = getattr(_ccxt, exchange_id) if exchange_id else None
+        if exchange_cls is None:
+            # Fallback: use the provided instance as-is (test doubles, etc.)
+            with _exchange_lock:
+                _EXCHANGE = exchange
+            return
+
+        # Re-use the same API key + secret as the live instance
+        api_key = getattr(exchange, "apiKey", "") or ""
+        api_secret = getattr(exchange, "secret", "") or ""
+        options = dict(getattr(exchange, "options", {}) or {})
+
+        params: dict = {
+            "apiKey": api_key,
+            "secret": api_secret,
+            "enableRateLimit": True,
+        }
+        if options:
+            params["options"] = options
+
+        telemetry = exchange_cls(params)
+
+        # Copy URL overrides (testnet endpoints) from the live instance
+        live_urls = getattr(exchange, "urls", {}) or {}
+        live_api_urls = live_urls.get("api", {})
+        if live_api_urls and isinstance(live_api_urls, dict):
+            for endpoint, url in live_api_urls.items():
+                try:
+                    telemetry.urls["api"][endpoint] = url
+                except (KeyError, TypeError):
+                    pass
+
+        # Copy has-overrides (e.g. fetchCurrencies disabled on testnet)
+        live_has = getattr(exchange, "has", {}) or {}
+        live_internal_has = getattr(exchange, "_cloneInstance", None)
+        # Only copy has entries that differ from defaults (testnet patches)
+        _BINANCE_TESTNET_HAS_OVERRIDES = {"fetchCurrencies": False, "fetchMarginMarkets": False}
+        for k, v in _BINANCE_TESTNET_HAS_OVERRIDES.items():
+            if live_has.get(k) == v:
+                telemetry.has[k] = v
+
+        # Copy SOCKS proxy if set
+        socks_proxy = getattr(exchange, "socksProxy", None)
+        if socks_proxy:
+            telemetry.socksProxy = socks_proxy
+
+        # Telemetry instance shares the already-loaded markets so it does
+        # not need a second load_markets() network call.
+        live_markets = getattr(exchange, "markets", None)
+        if live_markets:
+            telemetry.markets = live_markets
+
+        with _exchange_lock:
+            _EXCHANGE = telemetry
+
+        logger.info("upnl_telemetry_exchange_created", extra={"exchange_id": exchange_id})
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "upnl_telemetry_exchange_clone_failed",
+            extra={"error": str(exc)},
+        )
+        # Last resort: store the provided instance (maintains prior behaviour,
+        # but log a clear warning so an operator can see the degraded state).
+        logger.warning(
+            "upnl_falling_back_to_shared_exchange — thread safety not guaranteed"
+        )
+        with _exchange_lock:
+            _EXCHANGE = exchange
 
 
 # ---------------------------------------------------------------------------
@@ -426,6 +524,27 @@ def _cmd_positions() -> str:
     return "\n".join(lines)
 
 
+def _fmt_price(price: float) -> str:
+    """Format a price for human-readable display on Telegram.
+
+    Selects decimal precision based on magnitude so that large prices
+    (BTC at 50 000) show as '50,000.00' and small prices (0.0042) show
+    full precision.  Never produces scientific notation (unlike :.4g).
+
+    Args:
+        price: The price to format (must be a finite float).
+
+    Returns:
+        A human-readable string such as '50,255.00', '1,974.50', '0.0042'.
+    """
+    if price >= 1_000:
+        return f"{price:,.2f}"
+    if price >= 1:
+        return f"{price:.4f}"
+    # Sub-dollar (e.g. meme coins): up to 6 significant decimal places
+    return f"{price:.6f}"
+
+
 def _cmd_upnl() -> str:
     """Build /upnl reply — live unrealized PnL from exchange positions.
 
@@ -480,7 +599,9 @@ def _cmd_upnl() -> str:
         line = f"{icon} <b>{short_sym}</b> {side}: {sign}{upnl:.2f} USDT"
         if entry is not None and mark is not None:
             try:
-                line += f" ({float(entry):.4g}→{float(mark):.4g})"
+                entry_f = float(entry)
+                mark_f = float(mark)
+                line += f" ({_fmt_price(entry_f)}→{_fmt_price(mark_f)})"
             except (ValueError, TypeError):
                 pass
         lines.append(line)

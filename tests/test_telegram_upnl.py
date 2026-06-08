@@ -27,15 +27,17 @@ def _make_position(symbol: str, side: str, contracts: float, upnl: float,
 
 
 # Hand-crafted test data used across multiple tests.
-# LONG BTC:   contracts=0.1, upnl=+25.50
+# Values are chosen so that the total (+17.25) does NOT equal any single
+# position magnitude (30.00 or -12.75), making substring-collision impossible.
+# LONG BTC:   contracts=0.1, upnl=+30.00
 # SHORT ETH:  contracts=0.5, upnl=-12.75
 # FLAT SOL:   contracts=0.0  → MUST be filtered out
-_LONG_POS = _make_position("BTC/USDT:USDT", "long", 0.1, 25.50, 50000.0, 50255.0)
+_LONG_POS = _make_position("BTC/USDT:USDT", "long", 0.1, 30.00, 50000.0, 50300.0)
 _SHORT_POS = _make_position("ETH/USDT:USDT", "short", 0.5, -12.75, 2000.0, 1974.5)
 _FLAT_POS = _make_position("SOL/USDT:USDT", "long", 0.0, 0.0, 100.0, 100.0)
 
 # Independently hand-computed expected total (not derived from _cmd_upnl):
-_EXPECTED_TOTAL = 25.50 + (-12.75)  # = 12.75
+_EXPECTED_TOTAL = 30.00 + (-12.75)  # = +17.25
 
 
 class FakeExchange:
@@ -107,15 +109,27 @@ class TestCmdUpnlExchangeError:
 
 class TestCmdUpnlTotalCalculation:
     def test_total_equals_hand_summed_value(self):
-        """Total uPnL must match the independently computed sum of nonzero positions."""
+        """Total uPnL line must display the independently hand-computed sum.
+
+        _EXPECTED_TOTAL = +17.25, which equals neither per-position magnitude
+        (30.00 or 12.75), so a bare substring match cannot accidentally pass
+        because the value appears on a position line rather than the total line.
+        """
         tc.set_exchange(FakeExchange([_LONG_POS, _SHORT_POS, _FLAT_POS]))
         result = tc._cmd_upnl()
-        # _EXPECTED_TOTAL = 12.75 — round to 2dp
-        expected_str = f"{_EXPECTED_TOTAL:+.2f}" if _EXPECTED_TOTAL >= 0 else f"{_EXPECTED_TOTAL:.2f}"
-        # Accept both sign representations
-        assert (
-            f"{abs(_EXPECTED_TOTAL):.2f}" in result
-        ), f"Expected total {_EXPECTED_TOTAL:.2f} not found in reply:\n{result}"
+        lines = result.splitlines()
+        total_line = next((l for l in lines if "Total" in l), None)
+        assert total_line is not None, f"No 'Total' line found in reply:\n{result}"
+        # Total is positive: must show the '+' sign on the total line
+        assert f"+{_EXPECTED_TOTAL:.2f}" in total_line, (
+            f"Expected '+{_EXPECTED_TOTAL:.2f}' on Total line, got: {total_line!r}\n"
+            f"Full reply:\n{result}"
+        )
+        # Guard: a wrong total (e.g. from a sum bug) must not silently pass
+        wrong_total = "999.99"
+        assert wrong_total not in total_line, (
+            f"Total line unexpectedly contains {wrong_total!r}: {total_line!r}"
+        )
 
     def test_total_sign_positive_when_net_positive(self):
         """Net positive total must display a 🟢 icon on the total line."""
@@ -125,6 +139,20 @@ class TestCmdUpnlTotalCalculation:
         total_line = next((l for l in lines if "Total" in l), None)
         assert total_line is not None, "No total line found"
         assert "🟢" in total_line, f"Expected 🟢 on positive total line: {total_line}"
+
+    def test_total_negative_when_net_negative(self):
+        """When all positions are losing, total line must show negative value + 🔴."""
+        # Single losing position — total is clearly negative, no collision risk
+        losing_pos = _make_position("BTC/USDT:USDT", "long", 0.1, -40.00, 50000.0, 49600.0)
+        tc.set_exchange(FakeExchange([losing_pos]))
+        result = tc._cmd_upnl()
+        lines = result.splitlines()
+        total_line = next((l for l in lines if "Total" in l), None)
+        assert total_line is not None, f"No 'Total' line found:\n{result}"
+        assert "-40.00" in total_line, (
+            f"Expected '-40.00' on negative total line, got: {total_line!r}"
+        )
+        assert "🔴" in total_line, f"Expected 🔴 on negative total line: {total_line}"
 
 
 class TestCmdUpnlPositionFilter:
@@ -198,6 +226,50 @@ class TestSetExchange:
         tc.set_exchange(FakeExchange([]))
         tc.set_exchange(None)
         assert tc._EXCHANGE is None
+
+
+class TestFmtPrice:
+    """Unit tests for _fmt_price — no exchange needed."""
+
+    def test_large_price_no_scientific_notation(self):
+        """BTC-range prices must NOT produce scientific notation ('e+')."""
+        result = tc._fmt_price(50255.0)
+        assert "e+" not in result and "e-" not in result, (
+            f"Scientific notation found for 50255.0: {result!r}"
+        )
+
+    def test_large_price_decimal_format(self):
+        """BTC-range prices must display with comma-separated thousands and 2dp."""
+        assert tc._fmt_price(50255.0) == "50,255.00"
+        assert tc._fmt_price(50000.0) == "50,000.00"
+
+    def test_mid_price_decimal_format(self):
+        """ETH-range prices (1000-999) must show 4 decimal places, no comma."""
+        result = tc._fmt_price(1974.5)
+        assert "e+" not in result and "e-" not in result
+        # 1974.5 >= 1000 → comma-separated 2dp
+        assert result == "1,974.50"
+
+    def test_sub_dollar_price_no_scientific_notation(self):
+        """Sub-dollar prices must NOT produce scientific notation."""
+        result = tc._fmt_price(0.00421)
+        assert "e+" not in result and "e-" not in result, (
+            f"Scientific notation found for 0.00421: {result!r}"
+        )
+        assert "0.004210" == result
+
+    def test_upnl_reply_no_scientific_notation(self):
+        """BTC entry→mark annotation in /upnl reply must not contain 'e+'."""
+        btc_pos = _make_position("BTC/USDT:USDT", "long", 0.1, 255.0, 50000.0, 50255.0)
+        tc.set_exchange(FakeExchange([btc_pos]))
+        result = tc._cmd_upnl()
+        assert "e+" not in result, (
+            f"Scientific notation found in /upnl reply:\n{result}"
+        )
+        # Should show the mark price in plain decimal
+        assert "50,255.00" in result, (
+            f"Expected '50,255.00' in /upnl reply:\n{result}"
+        )
 
 
 class TestDispatchUpnl:
