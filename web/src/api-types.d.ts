@@ -572,6 +572,12 @@ export interface components {
       worst_bot: string | null;
       /** Active Bots */
       active_bots: number;
+      /**
+       * Notional
+       * @description Sum of abs(entry_price * size) for all open positions. Python-computed.
+       * @default 0
+       */
+      notional?: number;
     };
     /**
      * TradeGateResponse

@@ -94,7 +94,8 @@ def _ws_base_url() -> str:
 class PositionMark:
     """Latest mark + computed uPnL for one open position."""
 
-    __slots__ = ("symbol", "side", "entry_price", "size", "mark_price", "upnl", "ts")
+    __slots__ = ("symbol", "side", "entry_price", "size", "stop_loss", "take_profit",
+                 "mark_price", "upnl", "ts")
 
     def __init__(
         self,
@@ -102,6 +103,8 @@ class PositionMark:
         side: str,
         entry_price: float,
         size: float,
+        stop_loss: Optional[float] = None,
+        take_profit: Optional[float] = None,
         mark_price: float = 0.0,
         upnl: float = 0.0,
         ts: float = 0.0,
@@ -110,6 +113,8 @@ class PositionMark:
         self.side = side
         self.entry_price = entry_price
         self.size = size
+        self.stop_loss = stop_loss
+        self.take_profit = take_profit
         self.mark_price = mark_price
         self.upnl = upnl
         self.ts = ts  # unix timestamp of last mark update
@@ -119,12 +124,49 @@ class PositionMark:
         direction = 1.0 if self.side.lower() in ("long", "buy") else -1.0
         return (mark - self.entry_price) * self.size * direction
 
+    def _compute_derived(self, mark: float) -> tuple:
+        """Compute (dist_to_stop_pct, rr_remaining) given current mark price.
+
+        dist_to_stop_pct: how far mark is from SL as % of mark
+            = abs(mark - SL) / mark * 100
+            null when SL is missing/None/<=0 or mark<=0.
+
+        rr_remaining: remaining reward-to-risk for an open position
+            = abs(TP - mark) / abs(mark - SL)
+            null when SL or TP is missing/None/<=0, denom is 0, or mark<=0.
+
+        Guards: never divide by zero, never raise.
+        """
+        sl = self.stop_loss
+        tp = self.take_profit
+
+        # Validate SL — must be present and positive
+        sl_valid = sl is not None and sl > 0.0 and mark > 0.0
+
+        if sl_valid:
+            dist = abs(mark - sl) / mark * 100.0
+        else:
+            dist = None
+
+        # Validate TP — both SL and TP must be present and positive
+        tp_valid = tp is not None and tp > 0.0
+        denom = abs(mark - sl) if sl_valid and sl is not None else 0.0
+        if sl_valid and tp_valid and denom > 0.0:
+            rr = abs(tp - mark) / denom
+        else:
+            rr = None
+
+        return dist, rr
+
     def to_dict(self) -> Dict[str, Any]:
+        dist, rr = self._compute_derived(self.mark_price)
         return {
             "symbol": self.symbol,
             "side": self.side,
             "entry_price": self.entry_price,
             "size": self.size,
+            "stop_loss": self.stop_loss,
+            "take_profit": self.take_profit,
             "mark_price": self.mark_price,
             "upnl": round(self.upnl, 6),
             "ts": (
@@ -132,6 +174,9 @@ class PositionMark:
                 if self.ts
                 else None
             ),
+            # Server-side computed derived fields (null when SL/TP missing or invalid)
+            "dist_to_stop_pct": round(dist, 4) if dist is not None else None,
+            "rr_remaining": round(rr, 4) if rr is not None else None,
         }
 
 
@@ -160,20 +205,33 @@ def _open_ro_conn(db_path: str) -> Optional[sqlite3.Connection]:
 
 
 def _query_open_positions(conn: sqlite3.Connection) -> List[Dict[str, Any]]:
-    """Return open positions from trades: [{symbol, side, entry_price, size}, ...]."""
+    """Return open positions from trades: [{symbol, side, entry_price, size, stop_loss, take_profit}, ...]."""
     try:
         rows = conn.execute(
-            "SELECT symbol, side, entry_price, size FROM trades WHERE status='open'"
+            "SELECT symbol, side, entry_price, size, stop_loss, take_profit"
+            " FROM trades WHERE status='open'"
         ).fetchall()
         positions = []
-        for symbol, side, entry_price, size in rows:
+        for symbol, side, entry_price, size, stop_loss, take_profit in rows:
             if symbol and side and entry_price is not None and size is not None:
+                # Normalise SL/TP: None or 0.0 → None (guards _compute_derived)
+                def _nullable_price(v: Any) -> Optional[float]:
+                    if v is None:
+                        return None
+                    try:
+                        f = float(v)
+                        return f if f > 0.0 else None
+                    except (TypeError, ValueError):
+                        return None
+
                 positions.append(
                     {
                         "symbol": str(symbol).upper(),
                         "side": str(side).lower(),
                         "entry_price": float(entry_price),
                         "size": abs(float(size)),
+                        "stop_loss": _nullable_price(stop_loss),
+                        "take_profit": _nullable_price(take_profit),
                     }
                 )
         return positions
@@ -271,6 +329,8 @@ class MarkPriceClient:
                 existing.entry_price = row["entry_price"]
                 existing.size = row["size"]
                 existing.side = row["side"]
+                existing.stop_loss = row.get("stop_loss")
+                existing.take_profit = row.get("take_profit")
                 new_positions[sym] = existing
             else:
                 new_positions[sym] = PositionMark(
@@ -278,6 +338,8 @@ class MarkPriceClient:
                     side=row["side"],
                     entry_price=row["entry_price"],
                     size=row["size"],
+                    stop_loss=row.get("stop_loss"),
+                    take_profit=row.get("take_profit"),
                 )
         self._positions = new_positions
         return set(new_positions.keys())

@@ -55,8 +55,8 @@ describe('UpnlPanel', () => {
 
   it('renders per-position rows for each open position', () => {
     const positions: PositionMark[] = [
-      { symbol: 'BTCUSDT', side: 'long', entry_price: 30000, size: 0.5, mark_price: 31000, upnl: 500, ts: null },
-      { symbol: 'ETHUSDT', side: 'short', entry_price: 2000, size: 1.0, mark_price: 1800, upnl: 200, ts: null },
+      { symbol: 'BTCUSDT', side: 'long', entry_price: 30000, size: 0.5, stop_loss: null, take_profit: null, mark_price: 31000, upnl: 500, ts: null, dist_to_stop_pct: null, rr_remaining: null },
+      { symbol: 'ETHUSDT', side: 'short', entry_price: 2000, size: 1.0, stop_loss: null, take_profit: null, mark_price: 1800, upnl: 200, ts: null, dist_to_stop_pct: null, rr_remaining: null },
     ]
     const upnl: WSUpnlData = {
       positions,

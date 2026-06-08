@@ -2,7 +2,7 @@
  * UpnlPanel — realtime unrealized PnL display.
  *
  * Renders the latest uPnL data from api/markprice.py via the /ws stream.
- * Python computes all values; this component only renders.
+ * Python computes all values (uPnL, dist_to_stop_pct, rr_remaining); this component only renders.
  *
  * Feed status indicators:
  *  live    — mark prices updating in real-time
@@ -93,6 +93,10 @@ export function UpnlPanel({ upnl }: UpnlPanelProps) {
               <th className="px-1 py-1 text-left font-medium text-slate-500">Side</th>
               <th className="px-1 py-1 text-right font-medium text-slate-500">Mark</th>
               <th className="px-1 py-1 text-right font-medium text-slate-500">Entry</th>
+              <th className="px-1 py-1 text-right font-medium text-slate-500">SL</th>
+              <th className="px-1 py-1 text-right font-medium text-slate-500">TP</th>
+              <th className="px-1 py-1 text-right font-medium text-slate-500">Dist%</th>
+              <th className="px-1 py-1 text-right font-medium text-slate-500">R:R</th>
               <th className="px-1 py-1 text-right font-medium text-slate-500">uPnL</th>
             </tr>
           </thead>
@@ -114,6 +118,28 @@ export function UpnlPanel({ upnl }: UpnlPanelProps) {
                 </td>
                 <td className="px-1 py-1 text-right tabular-nums text-slate-400">
                   {pos.entry_price > 0 ? pos.entry_price.toLocaleString('en-US', { maximumFractionDigits: 4 }) : '—'}
+                </td>
+                <td className="px-1 py-1 text-right tabular-nums text-red-400/70" data-testid={`upnl-sl-${pos.symbol}`}>
+                  {pos.stop_loss != null && pos.stop_loss > 0
+                    ? pos.stop_loss.toLocaleString('en-US', { maximumFractionDigits: 4 })
+                    : '—'}
+                </td>
+                <td className="px-1 py-1 text-right tabular-nums text-emerald-400/70" data-testid={`upnl-tp-${pos.symbol}`}>
+                  {pos.take_profit != null && pos.take_profit > 0
+                    ? pos.take_profit.toLocaleString('en-US', { maximumFractionDigits: 4 })
+                    : '—'}
+                </td>
+                <td className="px-1 py-1 text-right tabular-nums text-slate-400" data-testid={`upnl-dist-${pos.symbol}`}>
+                  {/* dist_to_stop_pct: server-computed; '—' for null */}
+                  {pos.dist_to_stop_pct != null
+                    ? `${pos.dist_to_stop_pct.toFixed(2)}%`
+                    : '—'}
+                </td>
+                <td className="px-1 py-1 text-right tabular-nums text-slate-300" data-testid={`upnl-rr-${pos.symbol}`}>
+                  {/* rr_remaining: server-computed; '—' for null */}
+                  {pos.rr_remaining != null
+                    ? pos.rr_remaining.toFixed(2)
+                    : '—'}
                 </td>
                 <td className={`px-1 py-1 text-right tabular-nums font-medium ${upnlClass(pos.upnl)}`}>
                   {fmt(pos.upnl)}

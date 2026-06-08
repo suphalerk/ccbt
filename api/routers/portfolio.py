@@ -118,6 +118,17 @@ async def portfolio_summary(db: str = Depends(get_db_path)) -> PortfolioSummaryR
     open_df = get_open_trades(db_path=db)
     active_bots = int(open_df["symbol"].nunique()) if not open_df.empty and "symbol" in open_df.columns else 0
 
+    # Notional: sum of abs(entry_price * size) for all open positions (Python-only, no exchange call)
+    notional = 0.0
+    if not open_df.empty and "entry_price" in open_df.columns and "size" in open_df.columns:
+        import numpy as _np
+        ep = open_df["entry_price"].fillna(0.0).astype(float)
+        sz = open_df["size"].fillna(0.0).astype(float)
+        notional_series = (ep * sz.abs())
+        notional = float(notional_series.sum())
+        if _np.isnan(notional) or _np.isinf(notional):
+            notional = 0.0
+
     best_bot: Optional[str] = None
     worst_bot: Optional[str] = None
     if not per_bot.empty and "total_pnl" in per_bot.columns and "symbol" in per_bot.columns:
@@ -138,6 +149,7 @@ async def portfolio_summary(db: str = Depends(get_db_path)) -> PortfolioSummaryR
         best_bot=best_bot,
         worst_bot=worst_bot,
         active_bots=active_bots,
+        notional=round(notional, 2),
     )
 
 

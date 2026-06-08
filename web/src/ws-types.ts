@@ -81,9 +81,15 @@ export interface PositionMark {
   side: string
   entry_price: number
   size: number
+  stop_loss: number | null
+  take_profit: number | null
   mark_price: number
   upnl: number
   ts: string | null
+  /** Server-computed: abs(mark - SL) / mark * 100. null when SL missing/invalid. */
+  dist_to_stop_pct: number | null
+  /** Server-computed: abs(TP - mark) / abs(mark - SL). null when SL or TP missing/invalid. */
+  rr_remaining: number | null
 }
 
 export type FeedStatus = 'live' | 'stale' | 'offline'

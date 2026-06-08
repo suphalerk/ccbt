@@ -26,7 +26,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
-import type { BotRow, TradeRow, PortfolioSummaryResponse, ModeResponse } from '../api/client'
+import type { BotRow, TradeRow, PortfolioSummaryResponse, DailyPnlResponse, ModeResponse } from '../api/client'
 import { formatMoney, formatPct, formatPF } from '../utils/format'
 import { EquityCurve, PerBotPnl, DailyPnl } from '../components/Charts'
 import { UpnlPanel } from '../components/UpnlPanel'
@@ -61,14 +61,35 @@ function MetricCard({ label, value, testId, valueClass = 'text-slate-100' }: Met
 // Header section
 // ============================================================================
 
-function PortfolioHeader({ summary }: { summary: PortfolioSummaryResponse | undefined }) {
+interface PortfolioHeaderProps {
+  summary: PortfolioSummaryResponse | undefined
+  /** All daily-pnl days; last entry is today's PnL. */
+  dailyDays: DailyPnlResponse['days']
+}
+
+function PortfolioHeader({ summary, dailyDays }: PortfolioHeaderProps) {
   const totalPnl = summary?.total_pnl ?? null
   const pnlClass =
     totalPnl === null ? 'text-slate-100' : totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'
 
+  // Today's PnL: last point of the daily-pnl series (already fetched for the bar chart)
+  const todayPnl = dailyDays.length > 0 ? dailyDays[dailyDays.length - 1].pnl : null
+  const todayPnlClass =
+    todayPnl === null ? 'text-slate-100' : todayPnl >= 0 ? 'text-emerald-400' : 'text-red-400'
+
+  // Open / Notional: active_bots count + notional USDT (Python-computed in portfolio/summary)
+  const activeBots = summary?.active_bots ?? null
+  const notional = summary?.notional ?? null
+  const notionalLabel =
+    activeBots !== null && notional !== null
+      ? `${activeBots} / ${formatMoney(notional)}`
+      : activeBots !== null
+      ? String(activeBots)
+      : '—'
+
   return (
     <div data-testid="portfolio-header" className="mb-6">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
         <MetricCard
           label="Total PnL"
           value={formatMoney(totalPnl)}
@@ -87,8 +108,21 @@ function PortfolioHeader({ summary }: { summary: PortfolioSummaryResponse | unde
         />
         <MetricCard
           label="Active Bots"
-          value={summary?.active_bots !== undefined ? String(summary.active_bots) : '—'}
+          value={activeBots !== null ? String(activeBots) : '—'}
           testId="header-active-bots"
+        />
+        {/* #5 — Today's PnL */}
+        <MetricCard
+          label="Today's PnL"
+          value={formatMoney(todayPnl)}
+          testId="header-today-pnl"
+          valueClass={todayPnlClass}
+        />
+        {/* #5 — Open / Notional */}
+        <MetricCard
+          label="Open / Notional"
+          value={notionalLabel}
+          testId="header-open-notional"
         />
       </div>
       {/* Bulk mode controls (#2) */}
@@ -839,7 +873,7 @@ export function PortfolioPage({ upnl = null }: PortfolioPageProps) {
       <PortfolioAlertBanner bots={bots} />
 
       {/* Header metrics + bulk controls */}
-      <PortfolioHeader summary={summary} />
+      <PortfolioHeader summary={summary} dailyDays={dailyDays} />
 
       {/* Realtime unrealized PnL (from public markPrice WS — no API key) */}
       <div className="mb-4">

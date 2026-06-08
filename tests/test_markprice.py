@@ -33,7 +33,10 @@ if str(REPO) not in sys.path:
 # ---------------------------------------------------------------------------
 
 def _seed_db(tmp_path: Path, trades: List[Dict[str, Any]]) -> str:
-    """Create a WAL-mode trades.db with the given open trades."""
+    """Create a WAL-mode trades.db with the given open trades.
+
+    Supports optional 'stop_loss' and 'take_profit' keys (default NULL).
+    """
     db_path = str(tmp_path / "trades.db")
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")
@@ -44,13 +47,20 @@ def _seed_db(tmp_path: Path, trades: List[Dict[str, Any]]) -> str:
             side TEXT,
             entry_price REAL,
             size REAL,
+            stop_loss REAL,
+            take_profit REAL,
             status TEXT
         )"""
     )
     for t in trades:
         conn.execute(
-            "INSERT INTO trades (symbol, side, entry_price, size, status) VALUES (?,?,?,?,?)",
-            (t["symbol"], t["side"], t["entry_price"], t["size"], t.get("status", "open")),
+            "INSERT INTO trades (symbol, side, entry_price, size, stop_loss, take_profit, status)"
+            " VALUES (?,?,?,?,?,?,?)",
+            (
+                t["symbol"], t["side"], t["entry_price"], t["size"],
+                t.get("stop_loss"), t.get("take_profit"),
+                t.get("status", "open"),
+            ),
         )
     conn.commit()
     conn.close()
@@ -718,4 +728,179 @@ class TestTotalUpnl:
         payload = client.get_upnl_payload()
         assert abs(payload["data"]["total_upnl"] - 700.0) < 1e-9, (
             f"total_upnl must be 700.0; got {payload['data']['total_upnl']}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 9. dist_to_stop_pct and rr_remaining — server-side computed, hand-verified
+# ---------------------------------------------------------------------------
+
+class TestDistAndRR:
+    """PIN tests: dist_to_stop_pct and rr_remaining are computed correctly
+    in PositionMark.to_dict() for a long, a short, and a null-SL case.
+
+    Formulas (implemented in api/markprice.py PositionMark._compute_derived):
+        dist_to_stop_pct = abs(mark - SL) / mark * 100
+        rr_remaining     = abs(TP - mark) / abs(mark - SL)
+
+    These are INDEPENDENT hand-computations that do not call production code
+    (the assertions compare to values computed here in the test, not copied
+    from the implementation).
+    """
+
+    def test_long_dist_and_rr(self, tmp_path: Any) -> None:
+        """Long position pin test.
+
+        Entry=30000, mark=31000, SL=29500, TP=33000.
+
+        Hand-computed:
+          dist_to_stop_pct = abs(31000 - 29500) / 31000 * 100
+                           = 1500 / 31000 * 100
+                           ≈ 4.8387 %
+          rr_remaining     = abs(33000 - 31000) / abs(31000 - 29500)
+                           = 2000 / 1500
+                           ≈ 1.3333
+        """
+        expected_dist = abs(31000.0 - 29500.0) / 31000.0 * 100.0  # ≈ 4.8387
+        expected_rr = abs(33000.0 - 31000.0) / abs(31000.0 - 29500.0)  # ≈ 1.3333
+
+        db_path = _seed_db(tmp_path, [
+            {
+                "symbol": "BTCUSDT", "side": "long",
+                "entry_price": 30000.0, "size": 0.5,
+                "stop_loss": 29500.0, "take_profit": 33000.0,
+            },
+        ])
+        from api.markprice import MarkPriceClient
+
+        broadcasts: List[Dict[str, Any]] = []
+        client = MarkPriceClient(db_path=db_path, broadcast_fn=lambda m: broadcasts.append(m), ws_base_url="wss://unused")
+        client._reload_positions()
+
+        async def run() -> None:
+            await client._handle_message(_make_mark_message("BTCUSDT", 31000.0))
+
+        asyncio.get_event_loop().run_until_complete(run())
+
+        payload = client.get_upnl_payload()
+        pos_d = next(p for p in payload["data"]["positions"] if p["symbol"] == "BTCUSDT")
+
+        assert pos_d["dist_to_stop_pct"] is not None, "dist_to_stop_pct must not be null for valid SL"
+        assert abs(pos_d["dist_to_stop_pct"] - round(expected_dist, 4)) < 1e-4, (
+            f"dist_to_stop_pct expected ≈{expected_dist:.4f}%, got {pos_d['dist_to_stop_pct']}"
+        )
+        assert pos_d["rr_remaining"] is not None, "rr_remaining must not be null for valid SL+TP"
+        assert abs(pos_d["rr_remaining"] - round(expected_rr, 4)) < 1e-4, (
+            f"rr_remaining expected ≈{expected_rr:.4f}, got {pos_d['rr_remaining']}"
+        )
+
+    def test_short_dist_and_rr(self, tmp_path: Any) -> None:
+        """Short position pin test.
+
+        Entry=30000, mark=28000, SL=31000, TP=25000.
+
+        Hand-computed:
+          dist_to_stop_pct = abs(28000 - 31000) / 28000 * 100
+                           = 3000 / 28000 * 100
+                           ≈ 10.7143 %
+          rr_remaining     = abs(25000 - 28000) / abs(28000 - 31000)
+                           = 3000 / 3000
+                           = 1.0
+        """
+        expected_dist = abs(28000.0 - 31000.0) / 28000.0 * 100.0  # ≈ 10.7143
+        expected_rr = abs(25000.0 - 28000.0) / abs(28000.0 - 31000.0)  # = 1.0
+
+        db_path = _seed_db(tmp_path, [
+            {
+                "symbol": "ETHUSDT", "side": "short",
+                "entry_price": 30000.0, "size": 1.0,
+                "stop_loss": 31000.0, "take_profit": 25000.0,
+            },
+        ])
+        from api.markprice import MarkPriceClient
+
+        broadcasts: List[Dict[str, Any]] = []
+        client = MarkPriceClient(db_path=db_path, broadcast_fn=lambda m: broadcasts.append(m), ws_base_url="wss://unused")
+        client._reload_positions()
+
+        async def run() -> None:
+            await client._handle_message(_make_mark_message("ETHUSDT", 28000.0))
+
+        asyncio.get_event_loop().run_until_complete(run())
+
+        payload = client.get_upnl_payload()
+        pos_d = next(p for p in payload["data"]["positions"] if p["symbol"] == "ETHUSDT")
+
+        assert pos_d["dist_to_stop_pct"] is not None, "dist_to_stop_pct must not be null for valid SL"
+        assert abs(pos_d["dist_to_stop_pct"] - round(expected_dist, 4)) < 1e-4, (
+            f"dist_to_stop_pct expected ≈{expected_dist:.4f}%, got {pos_d['dist_to_stop_pct']}"
+        )
+        assert pos_d["rr_remaining"] is not None, "rr_remaining must not be null for valid SL+TP"
+        assert abs(pos_d["rr_remaining"] - round(expected_rr, 4)) < 1e-4, (
+            f"rr_remaining expected {expected_rr:.4f}, got {pos_d['rr_remaining']}"
+        )
+
+    def test_null_case_sl_zero(self, tmp_path: Any) -> None:
+        """When SL=0 (not set), both dist_to_stop_pct and rr_remaining must be null.
+
+        Many positions in early bot runs have SL=0 (placeholder before the
+        exchange confirms the order). The _compute_derived guard must return
+        (None, None) without dividing by zero.
+        """
+        db_path = _seed_db(tmp_path, [
+            {
+                "symbol": "BTCUSDT", "side": "long",
+                "entry_price": 30000.0, "size": 0.5,
+                "stop_loss": 0.0, "take_profit": 33000.0,   # SL=0 → null
+            },
+        ])
+        from api.markprice import MarkPriceClient
+
+        broadcasts: List[Dict[str, Any]] = []
+        client = MarkPriceClient(db_path=db_path, broadcast_fn=lambda m: broadcasts.append(m), ws_base_url="wss://unused")
+        client._reload_positions()
+
+        async def run() -> None:
+            await client._handle_message(_make_mark_message("BTCUSDT", 31000.0))
+
+        asyncio.get_event_loop().run_until_complete(run())
+
+        payload = client.get_upnl_payload()
+        pos_d = next(p for p in payload["data"]["positions"] if p["symbol"] == "BTCUSDT")
+
+        assert pos_d["dist_to_stop_pct"] is None, (
+            f"dist_to_stop_pct must be null when SL=0; got {pos_d['dist_to_stop_pct']}"
+        )
+        assert pos_d["rr_remaining"] is None, (
+            f"rr_remaining must be null when SL=0; got {pos_d['rr_remaining']}"
+        )
+
+    def test_null_case_sl_none(self, tmp_path: Any) -> None:
+        """When SL is NULL in DB, both derived fields must be null (no crash)."""
+        db_path = _seed_db(tmp_path, [
+            {
+                "symbol": "BTCUSDT", "side": "long",
+                "entry_price": 30000.0, "size": 0.5,
+                # stop_loss and take_profit absent → NULL in DB
+            },
+        ])
+        from api.markprice import MarkPriceClient
+
+        broadcasts: List[Dict[str, Any]] = []
+        client = MarkPriceClient(db_path=db_path, broadcast_fn=lambda m: broadcasts.append(m), ws_base_url="wss://unused")
+        client._reload_positions()
+
+        async def run() -> None:
+            await client._handle_message(_make_mark_message("BTCUSDT", 31000.0))
+
+        asyncio.get_event_loop().run_until_complete(run())
+
+        payload = client.get_upnl_payload()
+        pos_d = next(p for p in payload["data"]["positions"] if p["symbol"] == "BTCUSDT")
+
+        assert pos_d["dist_to_stop_pct"] is None, (
+            f"dist_to_stop_pct must be null when SL is NULL; got {pos_d['dist_to_stop_pct']}"
+        )
+        assert pos_d["rr_remaining"] is None, (
+            f"rr_remaining must be null when SL is NULL; got {pos_d['rr_remaining']}"
         )

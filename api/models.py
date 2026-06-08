@@ -42,6 +42,7 @@ class PortfolioSummaryResponse(BaseModel):
     best_bot: Optional[str]
     worst_bot: Optional[str]
     active_bots: int
+    notional: float = 0.0  # sum of abs(entry_price * size) for all open positions
 
 
 # ---------------------------------------------------------------------------
