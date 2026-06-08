@@ -65,6 +65,7 @@ class BotRow(BaseModel):
     trade_count: int
     last_updated: Optional[str]
     mode: Optional[str]
+    error_count: int = 0
 
 
 class BotListResponse(BaseModel):

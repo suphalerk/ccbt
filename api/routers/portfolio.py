@@ -182,6 +182,12 @@ async def list_bots(db: str = Depends(get_db_path)) -> BotListResponse:
             if wr is None:
                 wr = 0.0
 
+            raw_mode = _hstr("mode")
+            # Normalise to UPPERCASE so the frontend can do simple `=== 'PANIC'` comparisons.
+            # bot_health.mode is written by engine.py as BotMode.value (lowercase); upper()
+            # fixes the case-mismatch bug where 'panic' never matched 'PANIC' on the frontend.
+            mode_upper = raw_mode.upper() if raw_mode else None
+
             bots.append(BotRow(
                 symbol=symbol,
                 strategy=_hstr("strategy"),
@@ -195,7 +201,8 @@ async def list_bots(db: str = Depends(get_db_path)) -> BotListResponse:
                 profit_factor=_safe_float_required(row.get("profit_factor")),
                 trade_count=_safe_int(row.get("trades")),
                 last_updated=str(row.get("last_trade")) if row.get("last_trade") is not None else None,
-                mode=_hstr("mode"),
+                mode=mode_upper,
+                error_count=_safe_int(h.get("error_count")) if has_h else 0,
             ))
 
     return BotListResponse(bots=bots)
@@ -209,10 +216,28 @@ async def list_bots(db: str = Depends(get_db_path)) -> BotListResponse:
 @router.get("/bots/{symbol:path}", response_model=BotDetailResponse)
 async def bot_detail(symbol: str, db: str = Depends(get_db_path)) -> BotDetailResponse:
     """Detail for a single bot — stats + recent trades."""
-    from dashboard.queries import get_recent_trades, get_trade_stats
+    from dashboard.queries import get_bot_health, get_recent_trades, get_trade_stats
 
     stats = get_trade_stats(db_path=db, symbol=symbol)
     recent = get_recent_trades(limit=20, db_path=db, symbol=symbol)
+
+    # Pull live health for this symbol (same source as list_bots) so that
+    # BotDetailPage can read the actual mode and highlight the correct button.
+    health_df = get_bot_health(db_path=db)
+    h_row = None
+    if not health_df.empty and "symbol" in health_df.columns:
+        matching = health_df[health_df["symbol"].astype(str) == symbol]
+        if not matching.empty:
+            h_row = matching.iloc[0]
+
+    def _hd(key: str):
+        if h_row is None:
+            return None
+        val = h_row.get(key)
+        return (str(val) if val is not None else "") or None
+
+    raw_mode = _hd("mode")
+    mode_upper = raw_mode.upper() if raw_mode else None
 
     pf = _safe_float(stats.get("profit_factor"), default=0.0)
     if pf is None:
@@ -220,18 +245,19 @@ async def bot_detail(symbol: str, db: str = Depends(get_db_path)) -> BotDetailRe
 
     summary = BotRow(
         symbol=symbol,
-        strategy=None,
+        strategy=_hd("strategy"),
         timeframe=None,
-        status=None,
-        position_side=None,
-        position_size=None,
+        status=_hd("status"),
+        position_side=_hd("position_side"),
+        position_size=_safe_float(h_row.get("position_size")) if h_row is not None else None,
         unrealized_pnl=None,
         total_pnl=round(_safe_float_required(stats.get("total_pnl")), 2),
         win_rate_pct=round(_safe_float_required(stats.get("win_rate")) * 100, 1),
         profit_factor=pf,
         trade_count=_safe_int(stats.get("total_trades")),
         last_updated=None,
-        mode=None,
+        mode=mode_upper,
+        error_count=_safe_int(h_row.get("error_count")) if h_row is not None else 0,
     )
 
     trades: List[TradeRow] = []

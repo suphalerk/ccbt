@@ -22,7 +22,7 @@
  *   - Mode column in table uses raw mode string, not the ModeBadge component,
  *     to avoid duplicate 'STOP'/'TP'/'PANIC' text matches.
  */
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
@@ -100,6 +100,9 @@ function PortfolioHeader({ summary }: { summary: PortfolioSummaryResponse | unde
 // ============================================================================
 // Mode badge — used ONLY in the bot grid pills.
 // The overview table uses raw mode strings to avoid duplicate text nodes.
+//
+// Normalise incoming mode to UPPERCASE before lookup so the badge renders
+// correctly whether the backend sends 'PANIC' or 'panic' (DB stores lowercase).
 // ============================================================================
 
 const MODE_BADGE_MAP: Record<string, { label: string; className: string }> = {
@@ -118,8 +121,9 @@ const MODE_BADGE_MAP: Record<string, { label: string; className: string }> = {
 }
 
 function ModeBadge({ mode }: { mode: string | null }) {
-  if (!mode || mode === 'NORMAL' || !MODE_BADGE_MAP[mode]) return null
-  const cfg = MODE_BADGE_MAP[mode]
+  const m = (mode ?? '').toUpperCase()
+  if (!m || m === 'NORMAL' || !MODE_BADGE_MAP[m]) return null
+  const cfg = MODE_BADGE_MAP[m]
   return (
     <span className={`text-[10px] px-1.5 py-0.5 rounded ${cfg.className}`}>{cfg.label}</span>
   )
@@ -127,6 +131,7 @@ function ModeBadge({ mode }: { mode: string | null }) {
 
 // ============================================================================
 // Bulk panic confirm dialog (#2)
+// Accessible: Escape to cancel, focus trapped inside, aria-labelledby.
 // ============================================================================
 
 interface BulkPanicConfirmDialogProps {
@@ -135,21 +140,43 @@ interface BulkPanicConfirmDialogProps {
 }
 
 function BulkPanicConfirmDialog({ onConfirm, onCancel }: BulkPanicConfirmDialogProps) {
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  const titleId = 'bulk-panic-dialog-title'
+  const descId = 'bulk-panic-dialog-desc'
+
+  // Move focus into dialog on mount; restore on unmount
+  useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null
+    cancelRef.current?.focus()
+    return () => { previousFocus?.focus() }
+  }, [])
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      onCancel()
+    }
+  }
+
   return (
     <div
       data-testid="bulk-panic-confirm-dialog"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descId}
+      onKeyDown={handleKeyDown}
     >
       <div className="bg-[#12161F] border border-red-500/50 rounded-lg p-6 max-w-sm w-full mx-4 shadow-2xl">
-        <h3 className="text-base font-bold text-red-400 mb-2">PANIC ALL BOTS</h3>
-        <p className="text-sm text-slate-300 mb-5">
+        <h3 id={titleId} className="text-base font-bold text-red-400 mb-2">PANIC ALL BOTS</h3>
+        <p id={descId} className="text-sm text-slate-300 mb-5">
           This will immediately close ALL open positions across ALL bots at market price.
           This action cannot be undone.
         </p>
         <div className="flex gap-3 justify-end">
           <button
+            ref={cancelRef}
             data-testid="bulk-panic-confirm-cancel"
             onClick={onCancel}
             className="px-4 py-1.5 rounded text-sm bg-[#1A1F2E] border border-[#2A3245] text-slate-300 hover:border-slate-500 transition-colors"
@@ -268,12 +295,28 @@ function BulkModeControls() {
 
 type AlertSeverity = 'clear' | 'warning' | 'critical'
 
+/**
+ * Determine banner severity from the bots list.
+ *
+ * BLOCKER fix: compare mode case-insensitively — the DB stores lowercase
+ * ('panic','normal') but callers may pass either casing.  Normalising here
+ * means the function is correct regardless of whether the API uppercases
+ * the field (it now does) or not.
+ *
+ * MAJOR fix: use bot.error_count > 0 instead of bot.status === 'error'.
+ * status is never 'error' in production (engine only writes 'running'/'stopped').
+ * error_count is the real signal: it is incremented by the engine and exposed
+ * via bot_health, which list_bots already reads.
+ */
 function getAlertSeverity(bots: BotRow[]): AlertSeverity {
   if (bots.length === 0) return 'clear'
-  const hasPanic = bots.some(b => b.mode === 'PANIC')
+  const hasPanic = bots.some(b => (b.mode ?? '').toUpperCase() === 'PANIC')
   if (hasPanic) return 'critical'
-  const hasNonNormal = bots.some(b => b.mode && b.mode !== 'NORMAL')
-  const hasError = bots.some(b => b.status === 'error')
+  const hasNonNormal = bots.some(b => {
+    const m = (b.mode ?? '').toUpperCase()
+    return m !== '' && m !== 'NORMAL'
+  })
+  const hasError = bots.some(b => (b.error_count ?? 0) > 0)
   if (hasNonNormal || hasError) return 'warning'
   return 'clear'
 }
@@ -285,8 +328,12 @@ function PortfolioAlertBanner({ bots }: { bots: BotRow[] }) {
     return null
   }
 
-  const nonNormalCount = bots.filter(b => b.mode && b.mode !== 'NORMAL').length
-  const errorCount = bots.filter(b => b.status === 'error').length
+  const nonNormalCount = bots.filter(b => {
+    const m = (b.mode ?? '').toUpperCase()
+    return m !== '' && m !== 'NORMAL'
+  }).length
+  // error_count > 0 is the real production signal (status is never 'error').
+  const errorCount = bots.filter(b => (b.error_count ?? 0) > 0).length
 
   const parts: string[] = []
   if (nonNormalCount > 0) parts.push(`${nonNormalCount} bot${nonNormalCount !== 1 ? 's' : ''} in non-NORMAL mode`)
@@ -476,13 +523,15 @@ function BotOverviewTable({ bots }: { bots: BotRow[] }) {
     )
   }
 
-  // Mode display: raw abbreviated string (not ModeBadge) to avoid text collision with grid badges
+  // Mode display: raw abbreviated string (not ModeBadge) to avoid text collision with grid badges.
+  // Normalise to uppercase for comparison — DB may return lowercase.
   function modeLabel(mode: string | null): string {
-    if (!mode || mode === 'NORMAL') return '—'
-    if (mode === 'GRACEFUL_STOP') return 'Graceful Stop'
-    if (mode === 'TP_ONLY') return 'TP Only'
-    if (mode === 'PANIC') return 'Panic!'
-    return mode
+    const m = (mode ?? '').toUpperCase()
+    if (!m || m === 'NORMAL') return '—'
+    if (m === 'GRACEFUL_STOP') return 'Graceful Stop'
+    if (m === 'TP_ONLY') return 'TP Only'
+    if (m === 'PANIC') return 'Panic!'
+    return mode ?? ''
   }
 
   return (

@@ -86,8 +86,10 @@ const MODE_BADGE_MAP: Record<string, { label: string; className: string }> = {
 }
 
 function ModeBadge({ mode }: { mode: string | null }) {
-  if (!mode || mode === 'NORMAL' || !MODE_BADGE_MAP[mode]) return null
-  const cfg = MODE_BADGE_MAP[mode]
+  // Normalise to uppercase so 'panic' from the DB renders the same as 'PANIC'
+  const m = (mode ?? '').toUpperCase()
+  if (!m || m === 'NORMAL' || !MODE_BADGE_MAP[m]) return null
+  const cfg = MODE_BADGE_MAP[m]
   return (
     <span className={`text-[10px] px-1.5 py-0.5 rounded ${cfg.className}`}>{cfg.label}</span>
   )
@@ -105,18 +107,40 @@ interface PanicConfirmDialogProps {
 }
 
 function PanicConfirmDialog({ title, message, onConfirm, onCancel }: PanicConfirmDialogProps) {
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  const titleId = 'panic-dialog-title'
+  const descId = 'panic-dialog-desc'
+
+  // Move focus into dialog on mount; restore on unmount
+  useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null
+    cancelRef.current?.focus()
+    return () => { previousFocus?.focus() }
+  }, [])
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      onCancel()
+    }
+  }
+
   return (
     <div
       data-testid="panic-confirm-dialog"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descId}
+      onKeyDown={handleKeyDown}
     >
       <div className="bg-[#12161F] border border-red-500/50 rounded-lg p-6 max-w-sm w-full mx-4 shadow-2xl">
-        <h3 className="text-base font-bold text-red-400 mb-2">{title}</h3>
-        <p className="text-sm text-slate-300 mb-5">{message}</p>
+        <h3 id={titleId} className="text-base font-bold text-red-400 mb-2">{title}</h3>
+        <p id={descId} className="text-sm text-slate-300 mb-5">{message}</p>
         <div className="flex gap-3 justify-end">
           <button
+            ref={cancelRef}
             data-testid="panic-confirm-cancel"
             onClick={onCancel}
             className="px-4 py-1.5 rounded text-sm bg-[#1A1F2E] border border-[#2A3245] text-slate-300 hover:border-slate-500 transition-colors"
@@ -181,6 +205,13 @@ function ModeButtons({ symbol, currentMode }: ModeButtonsProps) {
   const [message, setMessage] = useState<string | null>(null)
   const [showPanicConfirm, setShowPanicConfirm] = useState(false)
 
+  // Normalise incoming mode to UPPERCASE so the active-button highlight
+  // works regardless of whether the API sends 'TP_ONLY' or 'tp_only'.
+  // BLOCKER fix: bot_detail previously hardcoded mode=None; the backend now
+  // reads bot_health so currentMode will be a real value; but we also
+  // normalise here as a defensive measure.
+  const normalisedMode = (currentMode ?? '').toUpperCase() || null
+
   const token = localStorage.getItem('ccbt_dash_token')
 
   async function applyMode(mode: BotMode, confirmPanic?: boolean) {
@@ -217,7 +248,7 @@ function ModeButtons({ symbol, currentMode }: ModeButtonsProps) {
     <>
       <div data-testid="mode-buttons" className="flex flex-wrap gap-2 items-center">
         {MODE_BUTTONS.map(({ mode, label, className, activeClass }) => {
-          const isActive = currentMode === mode
+          const isActive = normalisedMode === mode
           return (
             <button
               key={mode}
@@ -771,7 +802,7 @@ export function BotDetailPage() {
         <h1 className="text-2xl font-bold text-slate-100">
           <span className="text-emerald-400">{sym}</span>
         </h1>
-        {bot?.mode && bot.mode !== 'NORMAL' && (
+        {bot?.mode && (bot.mode ?? '').toUpperCase() !== 'NORMAL' && (
           <ModeBadge mode={bot.mode} />
         )}
       </div>

@@ -263,6 +263,12 @@ export interface components {
       last_updated: string | null;
       /** Mode */
       mode: string | null;
+      /**
+       * Error Count
+       * @description Consecutive error count from bot_health. 0 when healthy.
+       * @default 0
+       */
+      error_count?: number;
     };
     /**
      * BulkModeRequest

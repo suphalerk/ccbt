@@ -55,6 +55,7 @@ function makeBot(overrides: Partial<BotRow> = {}): BotRow {
     trade_count: 0,
     last_updated: null,
     mode: 'NORMAL',
+    error_count: 0,
     ...overrides,
   }
 }
@@ -378,8 +379,8 @@ describe('PortfolioPage — Alert banner (#4)', () => {
 
   it('banner is hidden when all bots are NORMAL with no errors', async () => {
     const bots = [
-      makeBot({ symbol: 'BTCUSDT', mode: 'NORMAL', status: 'active' }),
-      makeBot({ symbol: 'ETHUSDT', mode: 'NORMAL', status: 'active' }),
+      makeBot({ symbol: 'BTCUSDT', mode: 'NORMAL', status: 'active', error_count: 0 }),
+      makeBot({ symbol: 'ETHUSDT', mode: 'NORMAL', status: 'active', error_count: 0 }),
     ]
     vi.mocked(api.listBots).mockResolvedValue({ bots })
 
@@ -397,9 +398,9 @@ describe('PortfolioPage — Alert banner (#4)', () => {
 
   it('banner shows amber when some bots are in non-NORMAL mode', async () => {
     const bots = [
-      makeBot({ symbol: 'BTCUSDT', mode: 'NORMAL', status: 'active' }),
-      makeBot({ symbol: 'ETHUSDT', mode: 'GRACEFUL_STOP', status: 'active' }),
-      makeBot({ symbol: 'SOLUSDT', mode: 'TP_ONLY', status: 'active' }),
+      makeBot({ symbol: 'BTCUSDT', mode: 'NORMAL', status: 'active', error_count: 0 }),
+      makeBot({ symbol: 'ETHUSDT', mode: 'GRACEFUL_STOP', status: 'running', error_count: 0 }),
+      makeBot({ symbol: 'SOLUSDT', mode: 'TP_ONLY', status: 'running', error_count: 0 }),
     ]
     vi.mocked(api.listBots).mockResolvedValue({ bots })
 
@@ -415,8 +416,8 @@ describe('PortfolioPage — Alert banner (#4)', () => {
 
   it('banner shows red when any bot is in PANIC mode', async () => {
     const bots = [
-      makeBot({ symbol: 'BTCUSDT', mode: 'PANIC', status: 'active' }),
-      makeBot({ symbol: 'ETHUSDT', mode: 'NORMAL', status: 'active' }),
+      makeBot({ symbol: 'BTCUSDT', mode: 'PANIC', status: 'running', error_count: 0 }),
+      makeBot({ symbol: 'ETHUSDT', mode: 'NORMAL', status: 'running', error_count: 0 }),
     ]
     vi.mocked(api.listBots).mockResolvedValue({ bots })
 
@@ -428,10 +429,11 @@ describe('PortfolioPage — Alert banner (#4)', () => {
     expect(banner.getAttribute('data-severity')).toBe('critical')
   })
 
-  it('banner counts bots with status=error', async () => {
+  // BLOCKER fix: verify lowercase mode values from real DB casing also work
+  it('banner shows red when any bot has lowercase panic mode (real DB casing)', async () => {
     const bots = [
-      makeBot({ symbol: 'BTCUSDT', mode: 'NORMAL', status: 'error' }),
-      makeBot({ symbol: 'ETHUSDT', mode: 'NORMAL', status: 'active' }),
+      makeBot({ symbol: 'BTCUSDT', mode: 'panic', status: 'running', error_count: 0 }),
+      makeBot({ symbol: 'ETHUSDT', mode: 'normal', status: 'running', error_count: 0 }),
     ]
     vi.mocked(api.listBots).mockResolvedValue({ bots })
 
@@ -440,7 +442,41 @@ describe('PortfolioPage — Alert banner (#4)', () => {
     await act(async () => {})
 
     const banner = await screen.findByTestId('portfolio-alert-banner')
-    // 1 bot with status=error should trigger a warning
+    expect(banner.getAttribute('data-severity')).toBe('critical')
+  })
+
+  it('banner is hidden when all bots have lowercase normal mode (real DB casing)', async () => {
+    const bots = [
+      makeBot({ symbol: 'BTCUSDT', mode: 'normal', status: 'running', error_count: 0 }),
+      makeBot({ symbol: 'ETHUSDT', mode: 'normal', status: 'running', error_count: 0 }),
+    ]
+    vi.mocked(api.listBots).mockResolvedValue({ bots })
+
+    const Wrapper = makePortfolioWrapper()
+    render(<PortfolioPage />, { wrapper: Wrapper })
+    await act(async () => {})
+
+    // Normal bots with no errors → no banner
+    const banner = screen.queryByTestId('portfolio-alert-banner')
+    if (banner) {
+      expect(banner.getAttribute('data-severity')).toBe('clear')
+    }
+  })
+
+  // MAJOR fix: error_count > 0 triggers warning (status:'running' — the real production value)
+  it('banner counts bots with error_count>0 (realistic shape: status running, not error)', async () => {
+    const bots = [
+      makeBot({ symbol: 'BTCUSDT', mode: 'NORMAL', status: 'running', error_count: 3 }),
+      makeBot({ symbol: 'ETHUSDT', mode: 'NORMAL', status: 'running', error_count: 0 }),
+    ]
+    vi.mocked(api.listBots).mockResolvedValue({ bots })
+
+    const Wrapper = makePortfolioWrapper()
+    render(<PortfolioPage />, { wrapper: Wrapper })
+    await act(async () => {})
+
+    const banner = await screen.findByTestId('portfolio-alert-banner')
+    // 1 bot with error_count>0 should trigger a warning
     expect(banner.getAttribute('data-severity')).toMatch(/warning|amber|critical/)
     expect(banner.textContent).toMatch(/1|error/i)
   })
@@ -457,5 +493,58 @@ describe('PortfolioPage — Alert banner (#4)', () => {
     if (banner) {
       expect(banner.getAttribute('data-severity')).toBe('clear')
     }
+  })
+})
+
+// ============================================================================
+// BLOCKER #2 — BotDetailPage mode highlight with realistic data shape
+// Bot detail mode comes from bot_health (now populated by backend), but the
+// test must verify that the highlight works even when botDetail returns
+// mode=null while the bots list carries the real mode (defensive).
+// ============================================================================
+
+describe('BotDetailPage — Mode highlight with real API casing (BLOCKER #2)', () => {
+  beforeEach(() => {
+    vi.mocked(api.candles).mockResolvedValue({ available: false, symbol: 'BTCUSDT', timeframe: null, candles: [] } as any)
+    vi.mocked(api.equityCurve).mockResolvedValue({ symbol: 'BTCUSDT', points: [] })
+    vi.mocked(api.listTrades).mockResolvedValue({ trades: [], total: 0 })
+    vi.mocked(api.setBotMode).mockResolvedValue({ symbol: 'BTCUSDT', mode: 'GRACEFUL_STOP', accepted: true, message: 'Mode set' })
+    vi.mocked(api.setBulkMode).mockResolvedValue({ results: [] })
+  })
+  afterEach(() => vi.clearAllMocks())
+
+  it('highlights TP_ONLY when botDetail returns uppercase mode', async () => {
+    vi.mocked(api.botDetail).mockResolvedValue(makeDetail({ summary: makeBot({ mode: 'TP_ONLY' }) }))
+
+    const Wrapper = makeBotDetailWrapper()
+    render(<BotDetailPage />, { wrapper: Wrapper })
+    await act(async () => {})
+
+    const activeBtn = await screen.findByTestId('mode-btn-TP_ONLY')
+    expect(activeBtn.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('highlights GRACEFUL_STOP when botDetail returns lowercase mode (real DB casing)', async () => {
+    // backend now uppercases, but we defend against future regressions
+    vi.mocked(api.botDetail).mockResolvedValue(makeDetail({ summary: makeBot({ mode: 'graceful_stop' }) }))
+
+    const Wrapper = makeBotDetailWrapper()
+    render(<BotDetailPage />, { wrapper: Wrapper })
+    await act(async () => {})
+
+    const activeBtn = await screen.findByTestId('mode-btn-GRACEFUL_STOP')
+    expect(activeBtn.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('no button highlighted when botDetail returns mode=null', async () => {
+    vi.mocked(api.botDetail).mockResolvedValue(makeDetail({ summary: makeBot({ mode: null }) }))
+
+    const Wrapper = makeBotDetailWrapper()
+    render(<BotDetailPage />, { wrapper: Wrapper })
+    await act(async () => {})
+
+    await screen.findByTestId('mode-buttons')
+    const pressed = document.querySelectorAll('[aria-pressed="true"]')
+    expect(pressed.length).toBe(0)
   })
 })
