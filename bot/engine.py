@@ -130,6 +130,8 @@ def check_closed_positions(
     symbol: str,
     client=None,
     last_trade_close: Optional[dict] = None,
+    recently_closed: Optional[dict] = None,
+    config: Optional[dict] = None,
 ) -> dict:
     """Detect positions closed by exchange (SL/TP fill) and update state.
 
@@ -148,12 +150,57 @@ def check_closed_positions(
         symbol: Trading symbol.
         client: BybitClient instance for fetching actual trade data.
         last_trade_close: Optional dict tracking last close per side.
+        recently_closed: Optional shared dict keyed by normalised symbol used
+            to deduplicate close events when several config-bots share one
+            netted exchange position.  Pass the SAME dict object to all bots
+            running the same symbol.  When a symbol is already recorded here
+            the second (and further) bots skip journaling and alerting but
+            still remove the trade_id from their local open_trade_ids.
+        config: Optional bot config dict.  When present, ``config["leverage"]``
+            is used to derive a per-trade PnL-magnitude cap (leverage * 100 %).
+            Fills that pass the _MAX_EXIT_RATIO price-ratio guard but still yield
+            an implausible pnl_pct are rejected to the reconcile/fallback path
+            (defense-in-depth against same-band cross-symbol contamination).
 
     Returns:
         Updated open_trade_ids dict with closed trades removed.
     """
+    # Maximum ratio of exit_price / entry_price that is physically plausible
+    # within a single candle for any perpetual futures contract.  A value
+    # outside (entry/MAX, entry*MAX) is treated as a cross-symbol contamination
+    # or stale fill and rejected.  At 5x this still allows for genuine
+    # 5-bagger candles (extremely rare but possible for micro-caps) while
+    # catching POLUSDT (0.09) being matched against an AXS (2.5) fill.
+    _MAX_EXIT_RATIO = 5.0
+
+    # Single-candle PRICE-MOVE ceiling (percent, leverage-independent) for the
+    # exit fill of an absence-detected close.  `actual_pnl/size*100` reduces to the
+    # raw underlying price-move %, so this bounds it directly.  The _MAX_EXIT_RATIO
+    # guard above only rejects fills outside 0.2x-5x entry (a -80%..+400% move); a
+    # SAME-BAND cross-symbol fill (e.g. POL 0.09 matched to AXS 0.30 = +233%) passes
+    # the ratio check but is still implausible for one candle.  A real SL/TP/trail
+    # close moves only a few % of the underlying, so 50% is far above any genuine
+    # close yet rejects same-band contamination.  Leverage does NOT enter here —
+    # `size` is notional, so the % is the raw price move, not the leveraged return.
+    _MAX_CANDLE_MOVE_PCT = 50.0
+
+    # TTL for recently_closed entries: after this window (seconds) the symbol
+    # is allowed to journal + alert again so a genuine subsequent trade can
+    # be reported.  60 s is long enough to cover all config-bots processing the
+    # same candle tick (they all run within a few seconds of each other) but
+    # short enough that a re-entry and re-close on the same symbol 5+ minutes
+    # later is not suppressed.
+    _RECENTLY_CLOSED_TTL = 60.0
+
     if not open_trade_ids:
         return open_trade_ids
+
+    # Purge stale recently_closed entries before processing this batch.
+    if recently_closed is not None:
+        _now = time.time()
+        _stale = [k for k, v in recently_closed.items() if _now - v > _RECENTLY_CLOSED_TTL]
+        for k in _stale:
+            del recently_closed[k]
 
     # Determine which sides have active positions on exchange
     active_sides: set[str] = set()
@@ -195,16 +242,74 @@ def check_closed_positions(
                 try:
                     since_ms = int(info["open_time"] * 1000)
                     recent_trades = client.get_closed_pnl(symbol, since_ms=since_ms)
-                    # Find the closing trade: opposite side to our entry
+                    # Find the closing trade: opposite side to our entry,
+                    # AND price must be within a sane ratio of entry.
+                    # Rationale: fetch_my_trades is called for the correct
+                    # symbol but exchange APIs occasionally return fills from
+                    # other symbols in the same batch (cross-symbol
+                    # contamination).  Filtering by price ratio catches
+                    # cases like POLUSDT entry=0.09 matched against an AXS
+                    # fill at 2.5 (28x — physically impossible in one candle).
                     close_side = "sell" if info["side"] == "buy" else "buy"
+                    if entry > 0:
+                        _price_lo = entry / _MAX_EXIT_RATIO
+                        _price_hi = entry * _MAX_EXIT_RATIO
+                    else:
+                        _price_lo = 0.0
+                        _price_hi = float("inf")
                     for t in reversed(recent_trades):
                         if t["side"] == close_side and t["amount"] > 0:
-                            exit_price = t["price"]
+                            candidate_price = float(t["price"])
+                            if not (_price_lo <= candidate_price <= _price_hi):
+                                logger.warning(
+                                    "exit_price_out_of_range_rejected",
+                                    extra={
+                                        "symbol": symbol,
+                                        "entry": entry,
+                                        "candidate_exit": candidate_price,
+                                        "ratio": candidate_price / entry if entry > 0 else None,
+                                    },
+                                )
+                                continue  # skip this fill; try next candidate
+                            exit_price = candidate_price
                             # Calculate actual PnL from fill price
                             if trade_side == "long":
                                 actual_pnl = (exit_price - entry) / entry * info["size"]
                             else:
                                 actual_pnl = (entry - exit_price) / entry * info["size"]
+
+                            # --------------------------------------------------
+                            # PnL-magnitude clamp (defense-in-depth).
+                            # The _MAX_EXIT_RATIO guard above catches EXTREME
+                            # cross-symbol contamination (e.g. 28x → -2685%).  A
+                            # MODERATE same-band contamination (e.g. POL 0.09
+                            # matched against AXS 0.30 = 3.3x, ratio < MAX) passes
+                            # the price-ratio check but yields ~+233% — implausible
+                            # for a single candle.  Bound the raw single-candle
+                            # price move directly (leverage-INDEPENDENT — `size` is
+                            # notional, so this % is the underlying move, not the
+                            # leveraged return).  Reject + fall through to the
+                            # reconcile/fallback path; never journal/alert garbage.
+                            _candidate_move_pct = (
+                                abs(exit_price - entry) / entry * 100
+                                if entry > 0
+                                else 0.0
+                            )
+                            if _candidate_move_pct > _MAX_CANDLE_MOVE_PCT:
+                                logger.warning(
+                                    "exit_price_move_exceeds_candle_cap_rejected",
+                                    extra={
+                                        "symbol": symbol,
+                                        "entry": entry,
+                                        "candidate_exit": candidate_price,
+                                        "candidate_move_pct": round(_candidate_move_pct, 2),
+                                        "cap_pct": _MAX_CANDLE_MOVE_PCT,
+                                    },
+                                )
+                                exit_price = None
+                                actual_pnl = None
+                                continue  # try next fill candidate; fall to reconcile if none
+
                             break
                 except Exception as e:
                     logger.warning("failed_to_fetch_actual_pnl", extra={"error": str(e)})
@@ -250,34 +355,94 @@ def check_closed_positions(
 
             pnl_pct = estimated_pnl / info["size"] * 100 if info["size"] > 0 else 0
 
-            # Crash-safe close sequence: log first; only proceed (and mark as
-            # closed) when the journal write succeeds.  If log_trade_close raises
-            # (e.g. SQLite locked), the trade stays in open_trade_ids so the next
-            # loop iteration retries — preventing both silent data loss and the
-            # double-count that would result from record_trade_result running
-            # twice on the same position.
-            try:
-                journal.log_trade_close(
-                    trade_id=trade_id,
-                    exit_price=exit_price,
-                    pnl=estimated_pnl,
-                    pnl_pct=pnl_pct,
-                    close_reason=close_reason,
-                    duration_seconds=duration,
-                )
-            except Exception as log_err:
-                logger.warning(
-                    "trade_close_log_failed",
-                    extra={"trade_id": trade_id, "error": str(log_err)},
-                )
-                continue  # do NOT call record_trade_result or closed.append
+            # ------------------------------------------------------------------
+            # Multi-bot dedup: several config-bots share one netted exchange
+            # position per symbol (e.g. AXS has 7 bots).  When the netted
+            # position disappears each bot independently detects the absence and
+            # would normally journal + alert separately.  If a shared
+            # recently_closed registry is provided, the FIRST bot to reach this
+            # point owns the journal write + alert; subsequent bots for the same
+            # symbol within the same close window only remove their trade_id
+            # from open_trade_ids (silent dedup — no duplicate DB row, no
+            # duplicate Telegram alert).
+            #
+            # INVARIANT: this block must remain SYNCHRONOUS — there must be NO
+            # `await` between the `_close_key in recently_closed` check and the
+            # registry mark below (in the success path).  An await would allow
+            # a sibling bot coroutine to interleave, both observe the key absent,
+            # both claim is_primary_closer=True, and double-journal the close.
+            #
+            # INVARIANT: _RECENTLY_CLOSED_TTL (currently 60 s) must stay well
+            # below the shortest deployed candle period.  The shortest live TF
+            # is 1h = 3600 s.  If the TTL were raised close to or above the
+            # candle period, a genuine re-entry and re-close on the same symbol
+            # could be silently suppressed (deduped as if it were the same close
+            # event).  Do not raise the TTL above 300 s without a full audit.
+            # ------------------------------------------------------------------
+            is_primary_closer = True  # default: no shared registry
+            _close_key: Optional[str] = None
+            if recently_closed is not None:
+                _close_key = norm_symbol
+                if _close_key in recently_closed:
+                    # Another bot already handled the journal + alert.
+                    is_primary_closer = False
+                    logger.info(
+                        "close_deduped_secondary_bot",
+                        extra={
+                            "trade_id": trade_id,
+                            "symbol": symbol,
+                            "dedup_key": _close_key,
+                        },
+                    )
+                else:
+                    # Do NOT mark the registry here — the journal write has not
+                    # succeeded yet.  If log_trade_close raises (e.g. SQLite
+                    # locked) and we marked early, a sibling/retry bot would
+                    # see is_primary_closer=False and skip the journal entirely,
+                    # leaving the DB row stuck at status='open' and the loss
+                    # invisible to circuit breakers.  The mark is deferred to
+                    # the success path below.
+                    pass
 
-            risk_mgr.record_trade_result(estimated_pnl)
+            if is_primary_closer:
+                # Crash-safe close sequence: log first; only proceed (and mark as
+                # closed) when the journal write succeeds.  If log_trade_close raises
+                # (e.g. SQLite locked), the trade stays in open_trade_ids so the next
+                # loop iteration retries — preventing both silent data loss and the
+                # double-count that would result from record_trade_result running
+                # twice on the same position.
+                try:
+                    journal.log_trade_close(
+                        trade_id=trade_id,
+                        exit_price=exit_price,
+                        pnl=estimated_pnl,
+                        pnl_pct=pnl_pct,
+                        close_reason=close_reason,
+                        duration_seconds=duration,
+                    )
+                except Exception as log_err:
+                    logger.warning(
+                        "trade_close_log_failed",
+                        extra={"trade_id": trade_id, "error": str(log_err)},
+                    )
+                    continue  # do NOT call record_trade_result or closed.append
+                    # NOTE: recently_closed is NOT yet marked, so the next loop
+                    # iteration (or a sibling bot) can still claim primary ownership
+                    # and retry the journal write.
+
+                risk_mgr.record_trade_result(estimated_pnl)
+
+                # Mark the registry NOW — journal + risk accounting both succeeded.
+                # Sibling bots arriving after this point will see is_primary_closer=False
+                # and skip the duplicate write correctly.
+                if recently_closed is not None and _close_key is not None:
+                    recently_closed[_close_key] = time.time()
 
             # STRUCTURAL double-count guard: mark as closed IMMEDIATELY after
-            # risk accounting succeeds, BEFORE any telemetry that might raise.
-            # A future raising line in calibration / logger.info / send_alert
-            # cannot re-drive record_trade_result on the next loop iteration.
+            # risk accounting succeeds (or after dedup skip), BEFORE any
+            # telemetry that might raise.  A future raising line in
+            # calibration / logger.info / send_alert cannot re-drive
+            # record_trade_result on the next loop iteration.
             closed.append(trade_id)
 
             # Record close time for cooldown tracking
@@ -286,6 +451,10 @@ def check_closed_positions(
                     "time": time.time(),
                     "reason": close_reason,
                 }
+
+            if not is_primary_closer:
+                # Secondary bot: trade_id removed, no further telemetry.
+                continue
 
             # --- Telemetry (non-fatal: each block is independently guarded) ---
             try:
@@ -503,12 +672,16 @@ class TradingEngine:
         shared_exchange=None,
         portfolio_manager=None,
         market_data=None,
+        recently_closed: Optional[dict] = None,
     ) -> None:
         self._config = config
         self._shutdown_event = shutdown_event
         self._shared_exchange = shared_exchange
         self._portfolio_manager = portfolio_manager  # Optional global position limit
         self._market_data = market_data  # Optional SharedMarketData (T4)
+        # Shared close-dedup registry (multi-bot: same dict for all bots sharing
+        # a symbol so only one bot journals + alerts per netted-position close).
+        self._recently_closed = recently_closed
 
         # Components (constructed in run() after initial balance fetch)
         self._client: Optional[BybitClient] = None
@@ -780,14 +953,41 @@ class TradingEngine:
         (Bybit merges same-direction positions into one net position).
         Also registers restored positions with the PortfolioManager so
         the global position cap and duplicate-coin gate stay accurate.
+
+        SYMBOL FILTER: only DB rows whose normalised symbol matches this bot's
+        configured symbol are eligible for restore.  Without this guard a
+        multi-bot restart can restore a DIFFERENT coin's open DB row into a
+        same-side bot, causing the bot to track and compute PnL against the
+        wrong coin's price — the root cause of cross-symbol contamination.
         """
         config = self._config
+
+        def _norm(s: str) -> str:
+            """Normalise symbol for comparison (same logic as check_closed_positions)."""
+            return s.replace("/", "").replace(":USDT", "").replace("-", "").upper()
+
+        bot_norm = _norm(config["symbol"])
+
         try:
             existing_positions = self._client.get_positions()
             open_db_trades = self._journal.get_open_trades()
             restored_sides: set[str] = set()
             for db_trade in open_db_trades:
                 trade_id = db_trade["id"]
+
+                # SYMBOL FILTER — reject DB rows for a different coin.
+                db_symbol = db_trade.get("symbol", "")
+                if _norm(db_symbol) != bot_norm:
+                    logger.info(
+                        "restore_skipped_wrong_symbol",
+                        extra={
+                            "trade_id": trade_id,
+                            "db_symbol": db_symbol,
+                            "bot_symbol": config["symbol"],
+                        },
+                    )
+                    continue
+
                 trade_side = "long" if db_trade["side"] == "buy" else "short"
                 if trade_side in restored_sides:
                     continue  # Already restored one trade for this side
@@ -881,6 +1081,8 @@ class TradingEngine:
             symbol=self._config["symbol"],
             client=self._client,
             last_trade_close=self._last_trade_close,
+            recently_closed=self._recently_closed,
+            config=self._config,
         )
         # Notify portfolio manager when positions are closed by exchange (SL/TP)
         if self._portfolio_manager is not None:
