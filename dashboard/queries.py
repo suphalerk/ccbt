@@ -245,7 +245,7 @@ def get_equity_curve(
       timestamp, pnl, cumulative_pnl, underwater
 
     ``underwater`` is the running-max drawdown series:
-      underwater[i] = running_max(cumulative_pnl[0..i]) − cumulative_pnl[i]
+      underwater[i] = cumulative_pnl[i] − running_max(cumulative_pnl[0..i])
 
     It is always <= 0 (0 at new equity highs, negative while in a drawdown).
     Computed server-side so TypeScript never re-derives financial math.
@@ -260,7 +260,7 @@ def get_equity_curve(
     df["pnl"] = df["pnl"].fillna(0.0)
     df["cumulative_pnl"] = df["pnl"].cumsum()
 
-    # Underwater = running_max − current_value  (always <= 0)
+    # Underwater = current_value − running_max  (always <= 0)
     running_max = np.maximum.accumulate(df["cumulative_pnl"].values)
     df["underwater"] = df["cumulative_pnl"].values - running_max  # always <= 0
     return df
