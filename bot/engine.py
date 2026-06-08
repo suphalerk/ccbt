@@ -380,9 +380,25 @@ def check_closed_positions(
             # event).  Do not raise the TTL above 300 s without a full audit.
             # ------------------------------------------------------------------
             is_primary_closer = True  # default: no shared registry
-            _close_key: Optional[str] = None
+            # Dedup key is (norm_symbol, trade_side) so that OPPOSITE-side bots on
+            # the same coin (long-bias + short-bias hedge configs) are NOT deduped
+            # against each other — each side closes independently and each gets its
+            # own journal row and alert.  Same-side bots that share one netted
+            # exchange position (e.g. the 7 AXS configs all going long) still dedup
+            # correctly because they produce the same key.
+            #
+            # PER-STRATEGY PnL ATTRIBUTION NOTE: For coins where multiple config-bots
+            # share one netted exchange position (e.g. AXS=7 bots, FIL=3 bots), the
+            # close PnL is journaled by whichever same-side config wins the dedup race.
+            # Per-strategy attribution is therefore approximate — it reflects which bot
+            # happened to run first, not a precise split of the netted PnL across
+            # strategies.  This is an inherent consequence of exchange-level position
+            # netting; fixing it would require the exchange to expose per-strategy fill
+            # data, which it does not.  Do NOT interpret per-strategy trade rows as
+            # accurate individual strategy P&L for shared-symbol coins.
+            _close_key: Optional[tuple] = None
             if recently_closed is not None:
-                _close_key = norm_symbol
+                _close_key = (norm_symbol, trade_side)
                 if _close_key in recently_closed:
                     # Another bot already handled the journal + alert.
                     is_primary_closer = False
@@ -2001,8 +2017,19 @@ class TradingEngine:
             try:
                 self._client.cancel_all_orders()
                 self._client.close_all_positions()
-            except Exception:
-                pass
+            except Exception as e:
+                # Emergency close failed — position may be live and unprotected.
+                # Log at CRITICAL and alert; do NOT raise (must not crash the halt
+                # path itself, which would prevent the return True below and leave
+                # the main loop running against a halted risk manager).
+                logger.critical(
+                    "api_halt_close_failed",
+                    extra={"symbol": self._config.get("symbol", "unknown"), "error": str(e)},
+                )
+                send_alert(
+                    f"🚨 CRITICAL <b>{self._config.get('symbol', 'unknown')}</b> "
+                    f"API halt emergency close FAILED — position may be live!\n{e}"
+                )
             return True
 
         if await self._interruptible_sleep(30):
