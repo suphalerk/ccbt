@@ -191,17 +191,22 @@ describe('PortfolioPage — Today Net PnL card (LIVE feed)', () => {
   afterEach(() => { vi.clearAllMocks() })
 
   it('shows net_today from the WS feed (server-provided) — NOT recomputed in TS', async () => {
-    // net_today=31.24 is the server field; TS must display it verbatim.
+    // net_today=99.99 intentionally disagrees with today_realized+total_upnl (27.86+3.38=31.24).
+    // Only reading the server field produces 99.99; a TS recompute would produce 31.24.
+    // This is a deliberate poison test — a real server never diverges, but this is the
+    // only way to prove the card reads net_today verbatim rather than re-summing.
     mockAllApis({ today_pnl: 27.86 })
-    const upnl = makeUpnlData({ today_realized: 27.86, total_upnl: 3.38, net_today: 31.24 })
+    const upnl = makeUpnlData({ today_realized: 27.86, total_upnl: 3.38, net_today: 99.99 })
 
     const Wrapper = makeWrapper()
     render(<PortfolioPage upnl={upnl} />, { wrapper: Wrapper })
     await act(async () => {})
 
     const card = await screen.findByTestId('header-today-pnl')
-    // Net value must be the server net_today (31.24), not a TS sum
-    expect(card.textContent).toContain('31.24')
+    // Card must display the server-provided net_today (99.99)
+    expect(card.textContent).toContain('99.99')
+    // Must NOT show the TS-computed sum (31.24) as the net value
+    expect(card.textContent).not.toContain('31.24')
   })
 
   it('shows realized and unrealized breakdown lines', async () => {

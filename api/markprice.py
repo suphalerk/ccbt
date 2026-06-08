@@ -457,8 +457,9 @@ class MarkPriceClient:
         url = self._build_ws_url(symbols, self._ws_base_url)
         logger.info("markprice: connecting to %s (%d symbols)", url, len(symbols))
 
-        # Symbol-poll task runs alongside the WS reader
+        # Symbol-poll task + stale-rebroadcast task run alongside the WS reader.
         symbol_poll_task = asyncio.create_task(self._symbol_poll_loop())
+        stale_rebroadcast_task = asyncio.create_task(self._stale_rebroadcast_loop())
         try:
             async with websockets.connect(url, ping_interval=20, ping_timeout=10) as ws:
                 self._feed_status = "live"
@@ -478,11 +479,12 @@ class MarkPriceClient:
                         logger.info("markprice: symbol set changed — reconnecting")
                         break
         finally:
-            symbol_poll_task.cancel()
-            try:
-                await symbol_poll_task
-            except asyncio.CancelledError:
-                pass
+            for task in (symbol_poll_task, stale_rebroadcast_task):
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
     async def _symbol_poll_loop(self) -> None:
         """Periodically poll the DB for open-symbol changes.
@@ -522,6 +524,29 @@ class MarkPriceClient:
                 self._needs_reconnect = True
                 # No further mutation — _run_once will break and call
                 # _reload_positions() at the top of the next session.
+
+    async def _stale_rebroadcast_loop(self) -> None:
+        """Periodically force a broadcast so 'stale' feed_status reaches clients.
+
+        Problem: get_upnl_payload() already degrades effective feed_status to
+        'stale' when the last mark tick is older than STALE_AFTER_S.  But a
+        broadcast is only emitted on a new mark tick (_handle_message) or on
+        disconnect (force=True).  If Binance silently stops pushing @markPrice
+        frames while the TCP/WS connection stays UP, no new tick arrives, so no
+        new broadcast is emitted and clients keep seeing the last 'live' payload.
+
+        Fix: every STALE_AFTER_S/2 seconds, force a broadcast.  The payload
+        recomputes effective status from _last_mark_ts, so once the feed has
+        gone stale the next periodic broadcast carries feed_status='stale' and
+        the card degrades correctly without waiting for a tick that never comes.
+        """
+        interval = STALE_AFTER_S / 2.0
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                await self._maybe_broadcast(force=True)
+            except Exception as exc:
+                logger.debug("markprice: stale rebroadcast error: %s", exc)
 
     async def _handle_message(self, raw: str) -> None:
         """Process one WS frame from the Binance combined stream.

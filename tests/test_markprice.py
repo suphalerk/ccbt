@@ -17,6 +17,7 @@ import asyncio
 import json
 import sqlite3
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1171,4 +1172,90 @@ class TestTodayRealizedAndNetToday:
         # net_today = 100 + 900 = 1000
         assert abs(data["net_today"] - (data["today_realized"] + data["total_upnl"])) < 1e-9, (
             "net_today identity violated: net_today != today_realized + total_upnl"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 11. _stale_rebroadcast_loop — silent-freeze liveness guarantee
+# ---------------------------------------------------------------------------
+
+class TestStaleRebroadcastLoop:
+    """_stale_rebroadcast_loop must emit a broadcast (force=True) on each tick.
+
+    This covers the silent-freeze scenario: Binance stops pushing @markPrice
+    frames while the TCP/WS connection stays UP.  No _handle_message call
+    arrives, so without the periodic task the client would keep the last
+    'live' payload cached and clients would never see feed_status='stale'.
+
+    The loop calls _maybe_broadcast(force=True) every STALE_AFTER_S/2 seconds.
+    With force=True, get_upnl_payload recomputes effective from _last_mark_ts,
+    so the first iteration AFTER the stale threshold fires will carry
+    feed_status='stale'.
+
+    Teeth: remove the force=True (or the loop entirely) and the stale broadcast
+    never fires — the test verifies the broadcast payload carries 'stale'.
+    """
+
+    def test_stale_rebroadcast_emits_stale_payload(self, tmp_path: Any) -> None:
+        """When _last_mark_ts is older than STALE_AFTER_S, the loop must emit
+        feed_status='stale' even if no new mark ticks arrive.
+
+        Mechanism:
+          1. Seed a position and set _feed_status='live' (as if connected).
+          2. Set _last_mark_ts to a time older than STALE_AFTER_S so
+             get_upnl_payload would compute effective='stale'.
+          3. Patch asyncio.sleep to fire immediately on the first call, then
+             CancelledError to stop the loop.
+          4. Run _stale_rebroadcast_loop; it must emit at least one broadcast
+             with feed_status='stale'.
+        """
+        db_path = _seed_db(tmp_path, [
+            {"symbol": "BTCUSDT", "side": "long", "entry_price": 30000.0, "size": 0.5},
+        ])
+        from api.markprice import MarkPriceClient, STALE_AFTER_S
+
+        broadcasts: List[Dict[str, Any]] = []
+
+        async def fake_broadcast(msg: Dict[str, Any]) -> None:
+            broadcasts.append(msg)
+
+        client = MarkPriceClient(
+            db_path=db_path,
+            broadcast_fn=fake_broadcast,
+            ws_base_url="wss://unused",
+        )
+        client._reload_positions()
+        # Simulate a feed that was live but ticks stopped arriving long ago
+        client._feed_status = "live"
+        client._last_mark_ts = time.monotonic() - (STALE_AFTER_S + 5.0)
+        # Reset throttle so the forced broadcast is not suppressed
+        client._last_broadcast_ts = float("-inf")
+
+        sleep_calls = [0]
+        original_sleep = asyncio.sleep
+
+        async def fast_sleep(n: float) -> None:
+            sleep_calls[0] += 1
+            if sleep_calls[0] >= 2:
+                raise asyncio.CancelledError  # stop after two iterations
+            await original_sleep(0)
+
+        async def run() -> None:
+            with patch("asyncio.sleep", fast_sleep):
+                try:
+                    await client._stale_rebroadcast_loop()
+                except asyncio.CancelledError:
+                    pass
+
+        asyncio.get_event_loop().run_until_complete(run())
+
+        assert len(broadcasts) >= 1, (
+            "_stale_rebroadcast_loop must emit at least one broadcast"
+        )
+        # The broadcast must carry feed_status='stale' (not 'live')
+        statuses = [b["data"]["feed_status"] for b in broadcasts]
+        assert any(s == "stale" for s in statuses), (
+            f"At least one broadcast must have feed_status='stale'; got {statuses}. "
+            "This test catches the silent-freeze failure mode: without the periodic "
+            "rebroadcast task, clients never see 'stale' when ticks stop."
         )
