@@ -447,6 +447,20 @@ import research.portfolio_backtest_v2 as _pb
 
 
 class TestPIN1RunBotLine348:
+    """Guard: run_bot():348 pnl_frac = t.pnl / initial_balance.
+
+    The _StubEngine is patched at the MODULE LEVEL of portfolio_backtest_v2
+    (monkeypatch.setattr(_pb, "BacktestEngine", _StubEngine)).  Since run_bot()
+    references BacktestEngine as a bare name in that module's namespace, patching
+    _pb.BacktestEngine replaces the exact symbol run_bot() uses — the stub IS
+    exercised.
+
+    We also assert len(trades)==1 in each test: if the stub were silently bypassed
+    (e.g. because run_bot fell through to the real engine), the trades list would
+    be empty (no EMA crossover on the flat-price fixture) and len==1 would fail.
+    This serves as an implicit "stub was used" assertion.
+    """
+
     def _patch(self, monkeypatch, fake_pnl):
         # 60 recent rows so run_bot doesn't SKIP (<50) and survives filter_last_year
         idx = _pd.date_range("2026-01-01", periods=60, freq="1h", tz="UTC")
@@ -462,26 +476,45 @@ class TestPIN1RunBotLine348:
             entry_time=idx[0], exit_time=idx[1], close_reason="take_profit",
         )
 
+        stub_call_count = [0]  # mutable cell so the inner class can write it
+
         class _StubEngine:
             def __init__(self, *a, **k):
+                stub_call_count[0] += 1
                 self.state = _types.SimpleNamespace(trades=[fake_trade])
             def run(self, *a, **k):
                 return None
 
         monkeypatch.setattr(_pb, "BacktestEngine", _StubEngine)
+        return stub_call_count
 
     def test_pnl_frac_equals_pnl_over_initial_balance(self, monkeypatch):
         # engine initial_balance is hardcoded 10_000 in run_bot; a $1000 engine PnL
         # must record pnl_frac = 1000/10000 = 0.10 (hand-computed, not via prod code).
-        self._patch(monkeypatch, fake_pnl=1000.0)
+        stub_call_count = self._patch(monkeypatch, fake_pnl=1000.0)
         trades = _pb.run_bot("BTC", "ema", "1h", 1.5, 3.0, 5.0, "test", "btc")
-        assert len(trades) == 1
+
+        # Verify the stub was actually instantiated (not silently bypassed)
+        assert stub_call_count[0] >= 1, (
+            "_StubEngine was never instantiated — run_bot() may have imported "
+            "BacktestEngine directly (not via _pb.BacktestEngine) so the patch "
+            "did not intercept. Fix: ensure portfolio_backtest_v2.py uses a "
+            "module-level 'from backtest.engine import BacktestEngine' and patch "
+            "at _pb.BacktestEngine."
+        )
+        assert len(trades) == 1, (
+            f"Expected 1 trade from _StubEngine, got {len(trades)}. "
+            "If stub was bypassed, the real engine on a flat-price fixture "
+            "would produce 0 trades."
+        )
         assert trades[0]["pnl_frac"] == _pytest.approx(0.10, rel=1e-9), (
             "run_bot:348 must compute pnl_frac = engine_pnl / 10_000 (a 10x or "
             "risk-unnormalized change here is the historical shared-wallet inflation bug)"
         )
 
     def test_loss_pnl_frac_sign(self, monkeypatch):
-        self._patch(monkeypatch, fake_pnl=-250.0)
+        stub_call_count = self._patch(monkeypatch, fake_pnl=-250.0)
         trades = _pb.run_bot("BTC", "ema", "1h", 1.5, 3.0, 5.0, "test", "btc")
+        assert stub_call_count[0] >= 1, "_StubEngine was never instantiated — patch did not intercept"
+        assert len(trades) == 1
         assert trades[0]["pnl_frac"] == _pytest.approx(-0.025, rel=1e-9)

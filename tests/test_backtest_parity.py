@@ -44,28 +44,56 @@ def _extract_live_keys() -> frozenset[str]:
     bot/strategy.py generate_signal().
 
     Method: grep for all `signals_config.get("KEY"` patterns within the
-    generate_signal() function body.  This is more robust than AST parsing
-    because the function has multiple local scopes.
+    generate_signal() function body ONLY — bounded to the next top-level
+    function definition so that helper functions defined after generate_signal
+    cannot leak false positives into the key set.
 
-    We also include the standalone checks for rsi_divergence, squeeze_release,
-    supertrend, and ichimoku_cloud that appear AFTER the new_signals loop.
+    Bounding: we slice from 'def generate_signal' to the next top-level
+    'def ' (zero indentation) after it.  If no such function exists (generate_signal
+    is the last top-level function), we scan to EOF.
     """
     source = STRATEGY_FILE.read_text()
 
-    # Find generate_signal function body (it's the last function in the file
-    # and runs from its def to end-of-file effectively, but we only need to
-    # extract signals_config.get("...") occurrences within it).
-    # Strategy: extract the function, then find all signals_config.get("KEY") calls.
+    # Find generate_signal function start
     fn_match = re.search(r"def generate_signal\b", source)
     assert fn_match, "generate_signal function not found in strategy.py"
 
-    fn_body = source[fn_match.start():]  # from function start to end of file
+    fn_start = fn_match.start()
+
+    # Find the NEXT top-level 'def ' after generate_signal (zero-indent at column 0)
+    # This bounds the slice to the generate_signal body only.
+    next_def_match = re.search(r"\ndef [a-zA-Z_]", source[fn_start + 1:])
+    if next_def_match:
+        fn_end = fn_start + 1 + next_def_match.start()
+    else:
+        fn_end = len(source)  # generate_signal is the last top-level function
+
+    fn_body = source[fn_start:fn_end]
 
     # Pattern: signals_config.get("signal_key") or signals_config.get("signal_key", ...)
     pattern = re.compile(r'signals_config\.get\(\s*["\']([a-zA-Z_]+)["\']')
     keys = frozenset(pattern.findall(fn_body))
 
     assert len(keys) > 0, "No signal keys found in generate_signal — regex broken"
+
+    # Guard: no trailing helper can leak keys after the last expected dispatch line.
+    # The last dispatch in generate_signal is the ema_ribbon / zscore block area.
+    # Assert no signals_config.get() appears AFTER the closing of the new_signals
+    # loop — this catches accidental pollution from newly added top-level helpers.
+    # We detect the end of the dispatch block by finding the last occurrence of
+    # signals_config.get within fn_body, and assert it's still inside the function
+    # (not in a block that would imply a helper leaked past fn_end).
+    all_matches = list(pattern.finditer(fn_body))
+    if all_matches:
+        last_match_pos = all_matches[-1].start()
+        # Ensure the last match is not suspiciously close to fn_end
+        # (would indicate the boundary slipped and a post-function helper leaked)
+        chars_to_end = len(fn_body) - last_match_pos
+        assert chars_to_end > 20, (
+            "Last signals_config.get() in fn_body is suspiciously close to fn_end "
+            f"({chars_to_end} chars). Check that fn_end boundary is correct."
+        )
+
     return keys
 
 

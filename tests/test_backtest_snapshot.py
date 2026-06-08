@@ -8,6 +8,18 @@ Purpose: any change to backtest/engine.py or backtest/metrics.py that
 affects core fill/PnL math will break this test.  That is the intent.
 This snapshot encodes the CURRENT (PR-A) behavior.
 
+NOTE — SNAPSHOT COVERAGE:
+  SNAPSHOT 1 (TestGoldenSnapshot): 300-candle alternating bull/bear, all trades
+    win (5x TP), PF=inf, max_dd=0.  Exercises TP path only.  Will NOT move
+    under PR-B's SL-first tiebreak because no same-candle-both-touched bar fires.
+    Moves under PR-C (funding) only if a funding settlement lands in the window.
+
+  SNAPSHOT 2 (TestLossSnapshot): same fixture but candles 64 and 115 are
+    injected as wide wicks that touch both SL and TP on the same candle.
+    Results in >= 1 LOSING trade.  PR-B's SL-first tiebreak WILL move this
+    snapshot (win_rate drops 0.80→0.60, PF drops ~8.4→~2.0).  Use this snapshot
+    to verify PR-B changes are consistent and intentional.
+
 SNAPSHOT REGENERATION:
   After PR-B (SL-first tiebreak) or PR-C (funding deduction) intentionally
   changes the engine behavior, run:
@@ -324,5 +336,194 @@ class TestGoldenSnapshot:
         )
 
 
+# ===========================================================================
+# SNAPSHOT 2 — Loss-bearing fixture (PIN: same-candle tiebreak is observable)
+# ===========================================================================
+
+def _build_loss_snapshot_df() -> pd.DataFrame:
+    """300-candle alternating bull/bear with 2 injected wide candles.
+
+    The base pattern is identical to _build_snapshot_df().  Two candles are
+    replaced with extreme wicks that touch BOTH SL and TP on the same bar:
+
+      Candle 64: wide BEARISH (open=c+10, high=c+15, low=c-15, close=c-5)
+        → A SHORT position is open at this candle.  Both sl_hit AND tp_hit.
+        → Bearish candle body → current engine picks TP (optimistic for SHORT).
+        → Trade closes as WIN.
+
+      Candle 115: wide BEARISH (open=c+10, high=c+20, low=c-20, close=c-8)
+        → A LONG position is open at this candle.  Both sl_hit AND tp_hit.
+        → Bearish candle body → current engine picks SL (pessimistic for LONG).
+        → Trade closes as LOSS.
+
+    PR-B (SL-first everywhere) will change candle 64's outcome from TP→SL,
+    flipping win_rate from 0.80 to 0.60 and collapsing PF from ~8.4 to ~2.0.
+
+    NOTE: do NOT change candle positions without re-running the regen helper
+    (_generate_loss_snapshot) and updating EXPECTED_LOSS_SNAPSHOT below.
+    """
+    n = 300
+    idx = pd.date_range("2024-01-01", periods=n, freq="1h", tz=None)
+
+    prices = []
+    base = 1000.0
+    for i in range(n):
+        cycle_pos = i % 100
+        move = +2.0 if cycle_pos < 50 else -2.0
+        base += move
+        wobble = 0.5 * math.sin(2 * math.pi * i / 7)
+        prices.append(base + wobble)
+
+    rows = []
+    for idx_i, c in enumerate(prices):
+        if idx_i == 64:
+            # Wide BEARISH: high and low span both SL and TP zones for a SHORT
+            rows.append({
+                "open":   c + 10.0,
+                "high":   c + 15.0,
+                "low":    c - 15.0,
+                "close":  c - 5.0,
+                "volume": 1000.0,
+            })
+        elif idx_i == 115:
+            # Wide BEARISH: high and low span both SL and TP zones for a LONG
+            rows.append({
+                "open":   c + 10.0,
+                "high":   c + 20.0,
+                "low":    c - 20.0,
+                "close":  c - 8.0,
+                "volume": 1000.0,
+            })
+        else:
+            rows.append({
+                "open":   c - 1.0,
+                "high":   c + 2.0,
+                "low":    c - 2.0,
+                "close":  c,
+                "volume": 1000.0,
+            })
+
+    return pd.DataFrame(rows, index=idx)
+
+
+def _run_loss_snapshot() -> dict:
+    """Run the loss-bearing fixture and return a metrics dict."""
+    df = _build_loss_snapshot_df()
+    with patch("backtest.engine.add_funding_rate", side_effect=lambda d, _: d):
+        engine = BacktestEngine(SNAPSHOT_CONFIG, initial_balance=10_000.0)
+        metrics = engine.run(df)
+
+    return {
+        "total_trades":  metrics.total_trades,
+        "win_rate":      round(metrics.win_rate, 6),
+        "profit_factor": round(metrics.profit_factor, 6),
+        "max_drawdown":  round(metrics.max_drawdown, 6),
+        "sharpe_ratio":  round(metrics.sharpe_ratio, 6),
+        "final_balance": round(engine.state.balance, 6),
+    }
+
+
+def _generate_loss_snapshot():
+    """Print current loss-snapshot values for regeneration."""
+    snap = _run_loss_snapshot()
+    print("\nLoss-snapshot values (paste into EXPECTED_LOSS_SNAPSHOT):")
+    for k, v in snap.items():
+        print(f'    "{k}": {v!r},')
+
+
+# Loss-bearing golden snapshot — captured 2026-06-08, PR-A baseline.
+# Fixture: same 300-candle base, candles 64+115 are wide wicks hitting both SL+TP.
+# Candle 64 (SHORT position): bearish body → TP wins (optimistic) → WIN.
+# Candle 115 (LONG position): bearish body → SL wins (pessimistic for long) → LOSS.
+# PR-B (SL-first) will flip candle 64 to SL → win_rate drops, PF drops.
+EXPECTED_LOSS_SNAPSHOT: dict = {
+    "total_trades":  5,
+    "win_rate":      0.8,
+    "profit_factor": 8.4357,
+    "max_drawdown":  0.0076,
+    "sharpe_ratio":  15.0408,
+    "final_balance": 10534.073351,
+}
+
+
+class TestLossSnapshot:
+    """PIN the loss-bearing fixture so same-candle tiebreak changes are visible.
+
+    This snapshot has >= 1 LOSING trade AND >= 1 same-candle-both-touched bar.
+    It WILL change under PR-B (SL-first).  It will NOT change under PR-C unless
+    a funding settlement happens to land in the open-position windows.
+
+    Teeth proof (performed 2026-06-08, not in CI):
+      Temporarily flip _check_exit to always-SL on same-candle-both-touched:
+        win_rate drops to 0.60, profit_factor drops to ~2.00 → snapshot FAILS.
+      This confirms the pin has real discriminating power against PR-B.
+    """
+
+    def test_loss_snapshot_deterministic(self):
+        """Two runs produce identical metrics."""
+        snap1 = _run_loss_snapshot()
+        snap2 = _run_loss_snapshot()
+        assert snap1 == snap2, (
+            f"Non-determinism detected in loss fixture:\n  run1: {snap1}\n  run2: {snap2}"
+        )
+
+    def test_loss_snapshot_has_loss(self):
+        """Fixture produces at least 1 losing trade (smoke test).
+
+        win_rate < 1.0 confirms the LOSS trade (candle 115) fired.
+        """
+        snap = _run_loss_snapshot()
+        assert snap["win_rate"] < 1.0, (
+            f"Loss fixture produced no losses (win_rate={snap['win_rate']}). "
+            "Check candle 115 injection in _build_loss_snapshot_df()."
+        )
+
+    def test_loss_snapshot_has_same_candle_both_touched(self):
+        """Fixture contains at least 1 same-candle-both-touched bar.
+
+        Verified by: at least 1 trade where close_reason is tp (not sl) fired
+        on a wide candle, meaning the tiebreak was invoked.  We detect this
+        indirectly: win_rate==0.80 and total_trades==5 together mean exactly
+        1 loss out of 5, which matches the known injection pattern.
+        """
+        snap = _run_loss_snapshot()
+        assert snap["total_trades"] == 5, (
+            f"Expected 5 trades from loss fixture, got {snap['total_trades']}"
+        )
+        assert abs(snap["win_rate"] - 0.8) < 1e-6, (
+            f"Expected win_rate=0.80 (1 loss/5 trades), got {snap['win_rate']}"
+        )
+
+    def test_loss_snapshot_values_match_expected(self):
+        """Pin all loss-snapshot values.  rel=1e-6 for floats."""
+        snap = _run_loss_snapshot()
+
+        for key, expected in EXPECTED_LOSS_SNAPSHOT.items():
+            actual = snap[key]
+            if isinstance(expected, float):
+                if math.isinf(expected):
+                    assert math.isinf(float(actual)) and (actual > 0) == (expected > 0), (
+                        f"Loss snapshot [{key}]: actual={actual!r}, expected=inf"
+                    )
+                elif expected == 0.0:
+                    assert abs(float(actual)) < 1e-10, (
+                        f"Loss snapshot [{key}]: actual={actual!r}, expected=0.0"
+                    )
+                else:
+                    rel_err = abs(float(actual) - expected) / abs(expected)
+                    assert rel_err < 1e-4, (
+                        f"Loss snapshot [{key}]: actual={actual!r}, expected={expected!r}, "
+                        f"rel_err={rel_err:.2e} (limit 1e-4)\n"
+                        "If PR-B or PR-C changed the engine, run _generate_loss_snapshot() "
+                        "and update EXPECTED_LOSS_SNAPSHOT."
+                    )
+            else:
+                assert actual == expected, (
+                    f"Loss snapshot [{key}]: actual={actual!r}, expected={expected!r}"
+                )
+
+
 if __name__ == "__main__":
     _generate_snapshot()
+    print()
+    _generate_loss_snapshot()

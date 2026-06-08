@@ -970,6 +970,71 @@ class TestForceClose:
         assert engine.state.balance == initial_balance
         assert len(engine.state.trades) == 0
 
+    def test_force_close_with_nonzero_slippage(self):
+        """_force_close with non-zero slippage_rate: exit price is slippage-adjusted.
+
+        For a LONG force-close, slippage reduces the exit price:
+            exit_price = last_close * (1 - slippage_rate * slippage_mult)
+
+        The slippage_mult depends on time-of-day; this test uses a known midday UTC
+        timestamp to get a stable multiplier (US session = 0.7).
+
+        Hand-derivation (slippage_rate=0.0010, slippage_mult=0.7):
+            last_close = 102.0
+            effective_slippage = 0.0010 * 0.7 = 0.0007
+            exit_price = 102.0 * (1 - 0.0007) = 102.0 * 0.9993 = 101.9286
+
+            pnl_pct = (exit_price - entry_price) / entry_price
+                    = (101.9286 - 100.0) / 100.0 = 0.019286
+            gross_pnl = 1000.0 * 0.019286 = 19.286
+            exit_comm = 1000.0 * 0.00055 = 0.55
+            net_pnl = 19.286 - 0.55 = 18.736
+
+        The key assertion: net_pnl with slippage < net_pnl without slippage.
+        This guards against a missing slippage application in _force_close.
+        """
+        slippage_rate = 0.0010
+        commission_rate = 0.00055
+        engine_slipped = _make_engine(
+            initial_balance=10_000.0,
+            commission_rate=commission_rate,
+            slippage_rate=slippage_rate,
+        )
+        engine_zero = _make_engine(
+            initial_balance=10_000.0,
+            commission_rate=commission_rate,
+            slippage_rate=0.0,
+        )
+
+        open_position(engine_slipped, side="long", entry_price=100.0,
+                      stop_loss=90.0, take_profit=200.0, size=1000.0)
+        open_position(engine_zero, side="long", entry_price=100.0,
+                      stop_loss=90.0, take_profit=200.0, size=1000.0)
+
+        # Midday US session timestamp → slippage_mult=0.7 (engine.py:159-184)
+        last_row = make_candle(open_price=101.0, high=103.0, low=100.0, close=102.0)
+        force_close_time = "2024-01-02 16:00"  # 16:00 UTC = US session
+
+        engine_slipped._force_close(last_row, force_close_time, "backtest_end")
+        engine_zero._force_close(last_row, force_close_time, "backtest_end")
+
+        assert engine_slipped.state.position is None
+        assert engine_zero.state.position is None
+
+        pnl_slipped = engine_slipped.state.trades[-1].pnl
+        pnl_zero = engine_zero.state.trades[-1].pnl
+
+        assert pnl_slipped < pnl_zero, (
+            f"Slipped PnL ({pnl_slipped:.6f}) should be less than zero-slippage "
+            f"PnL ({pnl_zero:.6f}). Slippage not applied in _force_close."
+        )
+        # Exit price for slipped must be below the last_close
+        exit_slipped = engine_slipped.state.trades[-1].exit_price
+        assert exit_slipped < 102.0, (
+            f"Force-close exit price {exit_slipped:.6f} should be < last_close=102.0 "
+            "after long-exit slippage reduction."
+        )
+
 
 # ============================================================================
 # Cash conservation invariant
@@ -1038,6 +1103,130 @@ class TestCashConservation:
             f"  final={final:.6f}\n"
             f"  reconstructed={reconstructed:.6f} (initial - entry_comm + sum_pnl)\n"
             f"  diff={abs(final-reconstructed):.2e}"
+        )
+
+    def test_cash_conservation_with_partial_tp(self):
+        """Partial TP does NOT double-add PnL: final = initial - entry_comm + trade.pnl.
+
+        engine.py accounting with partial TP enabled:
+          1. Entry commission charged at entry (engine.py:946-947):
+               balance -= original_size * commission_rate
+          2. TP1 fires (engine.py:1044-1050):
+               partial_pnl = partial_size * pnl_pct - partial_size * commission_rate
+               balance += partial_pnl
+               pos.partial_pnl += partial_pnl
+          3. Full close (engine.py:1265-1280):
+               pnl = remaining_size * exit_pnl_pct - remaining_size * commission_rate
+               balance += pnl
+               trade.pnl = pnl + pos.partial_pnl   ← COMBINED total
+
+        CORRECT invariant:
+            final = initial - entry_comm + trade.pnl
+        where trade.pnl is the combined total (pnl + partial_pnl already summed).
+
+        ANTI-DOUBLE-COUNTING guard:
+            final = initial - entry_comm + pnl + partial_pnl   ← WRONG
+        This is the bug this test pins: partial_pnl was added to balance at TP1
+        AND included in trade.pnl at close; summing it again double-counts.
+
+        Hand-derivation (slippage_rate=0 for clarity):
+            initial    = 10_000.0
+            entry      = 100.0, size = 2000.0
+            entry_comm = 2000.0 * 0.00055 = 1.10
+
+            TP1 fires at 115 (partial_tp_atr_mult=1.5, ATR=10):
+              partial_size = 2000 * 0.5 = 1000
+              gross_partial = 1000 * (115 - 100) / 100 = 150.0
+              partial_comm  = 1000 * 0.00055 = 0.55
+              partial_pnl   = 150.0 - 0.55 = 149.45
+              balance       = 10_000 - 1.10 + 149.45 = 10_148.35
+
+            Full TP fires at 145 (atr_tp_mult=3, ATR=10, remaining=1000):
+              gross_full  = 1000 * (145 - 100) / 100 = 450.0
+              full_comm   = 1000 * 0.00055 = 0.55
+              net_full    = 450.0 - 0.55 = 449.45
+              balance     = 10_148.35 + 449.45 = 10_597.80
+
+            trade.pnl   = net_full + partial_pnl = 449.45 + 149.45 = 598.90
+
+        Conservation check:
+            initial - entry_comm + trade.pnl = 10_000 - 1.10 + 598.90 = 10_597.80 ✓
+        """
+        from bot.risk import RiskManager
+
+        entry_price = 100.0
+        size = 2000.0
+        sl = 85.0
+        full_tp = 145.0
+        tp1_price = 115.0
+        atr = 10.0
+        commission_rate = 0.00055
+        initial_balance = 10_000.0
+
+        engine = _make_engine(
+            initial_balance=initial_balance,
+            commission_rate=commission_rate,
+            slippage_rate=0.0,
+            atr_sl_mult=1.5,
+            atr_tp_mult=3.0,
+            partial_tp_enabled=True,
+            partial_tp_pct=0.5,
+            partial_tp_atr_mult=1.5,
+            move_sl_to_be_after_tp1=True,
+            breakeven_buffer_atr_mult=0.0,
+        )
+        risk_mgr = _risk_mgr(engine)
+
+        open_position(engine, side="long", entry_price=entry_price,
+                      stop_loss=sl, take_profit=full_tp, size=size,
+                      tp1_price=tp1_price, tp1_hit=False)
+
+        # Candle 1: high >= tp1_price (115) → partial TP fires; low stays above SL.
+        candle1 = make_candle(open_price=108.0, high=116.0, low=107.0,
+                              close=114.0, atr=atr)
+        engine._check_exit(candle1, "2024-01-02 01:00", risk_mgr)
+
+        assert engine.state.position is not None, "Position should still be open after TP1"
+        assert engine.state.position.tp1_hit, "tp1_hit should be True after partial exit"
+
+        # Candle 2: high >= full_tp (145) → full TP fires.
+        candle2 = make_candle(open_price=120.0, high=146.0, low=119.0,
+                              close=140.0, atr=atr)
+        engine._check_exit(candle2, "2024-01-02 02:00", risk_mgr)
+
+        assert engine.state.position is None, "Position should be fully closed after TP"
+        assert len(engine.state.trades) == 1
+
+        trade = engine.state.trades[0]
+        final_balance = engine.state.balance
+
+        # Hand-computed values (derivation in docstring above):
+        expected_entry_comm = size * commission_rate    # = 1.10
+        expected_partial_pnl = (                        # = 149.45
+            (size / 2) * (tp1_price - entry_price) / entry_price
+            - (size / 2) * commission_rate
+        )
+        expected_full_pnl = (                           # = 449.45
+            (size / 2) * (full_tp - entry_price) / entry_price
+            - (size / 2) * commission_rate
+        )
+        expected_trade_pnl = expected_partial_pnl + expected_full_pnl  # = 598.90
+        expected_balance = (
+            initial_balance - expected_entry_comm + expected_trade_pnl  # = 10_597.80
+        )
+
+        assert abs(trade.pnl - expected_trade_pnl) < 1e-6, (
+            f"trade.pnl={trade.pnl:.6f} expected={expected_trade_pnl:.6f}. "
+            "trade.pnl must equal partial_pnl + net_full_exit_pnl (engine.py:1273/1280)."
+        )
+        assert abs(final_balance - expected_balance) < 1e-6, (
+            f"Balance conservation violated.\n"
+            f"  final={final_balance:.6f}\n"
+            f"  expected={expected_balance:.6f} "
+            f"(initial - entry_comm + trade.pnl = "
+            f"{initial_balance} - {expected_entry_comm} + {trade.pnl:.4f})\n"
+            "ANTI-DOUBLE-COUNTING: do NOT add partial_pnl separately — "
+            "it is already included in trade.pnl (engine.py:1273)."
         )
 
     def test_no_entry_during_open_position(self):
@@ -1322,31 +1511,83 @@ class TestLookAheadPins:
         )
 
     def test_pin4_regime_per_row_early_candles_are_ranging(self):
-        """PIN-4: regime is computed per-row (rolling), not globally from future data.
+        """PIN-4 (ASYMMETRIC): regime is computed per-row (rolling), not globally.
 
         engine.py:219-229: for each row i, regime = detect_regime(df[:i+1]).
         Rows before atr_period + regime_lookback are assigned 'ranging' because
-        there isn't enough history for a meaningful calculation.
+        there isn't enough history for a meaningful calculation (warmup floor).
 
-        Behavioral test: with regime_filter enabled (skip_ranging=True), a SHORT
-        fixture (< warmup candles) must produce ZERO trades, because every row
-        has regime='ranging' and the filter blocks all entries.
+        Asymmetric fixture design
+        -------------------------
+        Bear leg (candles 0-19): EMA9 < EMA21, no crossover yet.
+        Bull leg (candles 20-89): sharp reversal causes EMA9 to cross above EMA21
+            at candle 31 (verified: `ema_cross_up=True` fires at position 31, which
+            is after EMA warmup 31 but BEFORE regime warmup 34).
 
-        If regime were computed globally from the full dataset (future look-ahead),
-        a longer bull run would be detected as 'trending' and entries would fire
-        even in the early candles.
+        EMA warmup  = max(ema_fast=9, ema_slow=21) + 10 = 31   (data.py:235)
+        Regime warmup = atr_period=14 + regime_lookback=20 = 34  (engine.py:224)
+
+        With per-row rolling (correct):
+            Crossover at candle 31 → regime loop assigns 'ranging' for i<34.
+            regime_filter ON → entry blocked → 0 trades.
+
+        With global detect_regime over full df (mutation/bug):
+            Full df = 20-candle bear + 70-candle bull → strongly trending.
+            detect_regime returns 'trending' → entry allowed at candle 31 → trades fire.
+
+        CONTROL assertion: same fixture with regime_filter OFF → >= 1 trade.
+        This proves the fixture CAN produce a trade; only the regime gate blocks it.
+
+        Mutation-verification (not in committed code — run manually to confirm teeth):
+            Temporarily set `backtest/engine.py:224` warmup check to `if False:`
+            so all rows call detect_regime() → global regime 'trending' propagates
+            to early rows → trades fire at candle 31 → new PIN-4 FAILS.
+            Revert: `git checkout backtest/engine.py`.
 
         Hand-derivation:
-            atr_period=14, regime_lookback=20 → warmup = 14+20=34 rows.
-            With n=30 candles, ALL rows have i < 34, so ALL get regime='ranging'.
-            regime_filter enabled with skip_ranging=True → ALL entries blocked.
-            Expected trades: 0.
+            atr_period=14, regime_lookback=20 → warmup = 34.
+            Crossover candle 31: i=31 < 34 → hardcoded 'ranging' (engine.py:224-225).
+            Entry exec at candle 32: i=32 < 34 → also 'ranging' → regime gate fires.
+            Result: 0 entries.
         """
-        # Short series — all rows will be below the regime warmup threshold
-        n = 30
-        df = make_trading_ohlcv(n)
+        # Asymmetric fixture: bear_20 + bull_70 — crossover fires at candle 31
+        # (within regime warmup=34 but after EMA warmup=31).
+        # Empirically verified: bear_len=20, move=3 → ema_cross_up at position 31.
+        n = 90
+        import pandas as pd
+        idx = pd.date_range("2024-01-01", periods=n, freq="1h")
+        rows = []
+        c = 1000.0
+        for i in range(n):
+            c += -3.0 if i < 20 else +3.0
+            rows.append({"open": c - 1.0, "high": c + 2.0,
+                         "low": c - 2.0, "close": c, "volume": 1000.0})
+        asym_df = pd.DataFrame(rows, index=idx)
 
-        cfg = trading_config(
+        # CONTROL: same fixture, regime_filter OFF → >= 1 trade.
+        # Proves the crossover fires and position opens when regime is not blocking.
+        cfg_off = trading_config(
+            atr_period=14,
+            regime_lookback=20,
+            regime_filter={"enabled": False},
+            cooldown_candles_after_sl=0,
+            cooldown_candles_after_close=0,
+        )
+        with patch("backtest.engine.add_funding_rate", side_effect=lambda d, _: d):
+            engine_off = BacktestEngine(cfg_off, initial_balance=10_000.0)
+            engine_off.run(asym_df.copy())
+
+        assert len(engine_off.state.trades) >= 1, (
+            "PIN-4 CONTROL FAILED: asymmetric fixture with regime_filter=OFF produced "
+            f"{len(engine_off.state.trades)} trades.  The fixture must fire at least 1 "
+            "entry so the regime=ON result (0 trades) is provably due to the gate, "
+            "not absent signal.  Check make_trading_ohlcv or crossover warmup logic."
+        )
+
+        # ASYMMETRIC PIN: same fixture, regime_filter ON → 0 trades.
+        # The crossover at candle 31 is within the regime warmup window (31 < 34),
+        # so the per-row loop assigns 'ranging' and the gate blocks all entries.
+        cfg_on = trading_config(
             atr_period=14,
             regime_lookback=20,
             regime_filter={"enabled": True, "skip_ranging": True, "skip_volatile": False},
@@ -1355,14 +1596,16 @@ class TestLookAheadPins:
         )
 
         with patch("backtest.engine.add_funding_rate", side_effect=lambda d, _: d):
-            engine = BacktestEngine(cfg, initial_balance=10_000.0)
-            engine.run(df)
+            engine_on = BacktestEngine(cfg_on, initial_balance=10_000.0)
+            engine_on.run(asym_df.copy())
 
-        # All candles are in ranging regime → regime_filter blocks all entries.
-        # If regime used global future data: some candles would be 'trending' → entries fire.
-        assert len(engine.state.trades) == 0, (
-            f"PIN-4 FAILED: {len(engine.state.trades)} trade(s) opened on a {n}-candle "
-            "fixture where ALL rows should have regime='ranging' (atr_period=14 + "
-            "regime_lookback=20 = 34 warmup bars > n=30). "
-            "Regime may be computed from future data (look-ahead) or per-row logic is broken."
+        # Per-row rolling: regime='ranging' for i<34 (warmup floor, engine.py:224-225).
+        # Crossover at candle 31 → regime gate fires → 0 entries.
+        # If regime were global (mutation): 'trending' → entries fire → this FAILS.
+        assert len(engine_on.state.trades) == 0, (
+            f"PIN-4 FAILED: {len(engine_on.state.trades)} trade(s) opened at the crossover "
+            "candle (position 31 = within regime warmup 34). "
+            "Engine may be computing regime globally (look-ahead) instead of per-row rolling. "
+            "Mutation-verify: temporarily remove warmup floor in engine.py:224 → this test "
+            "should FAIL (global regime sees 'trending') → revert."
         )
