@@ -68,8 +68,11 @@ _MAINNET_WS_BASE = "wss://fstream.binance.com/ws"
 #: Binance testnet fapiPrivate REST base domain (used for startup assertion)
 _TESTNET_REST_DOMAIN = "testnet.binancefuture.com"
 
-#: Binance mainnet fapiPrivate REST base domain
-_MAINNET_REST_DOMAIN = "fstream.binance.com"
+#: Binance mainnet fapiPrivate REST base domain (used ONLY for the startup
+#: assertion that the dedicated ccxt is pointing at the right REST endpoint).
+#: This is the REST host (fapi.binance.com), NOT the WS stream host
+#: (fstream.binance.com) — the two are separate on mainnet.
+_MAINNET_REST_DOMAIN = "fapi.binance.com"
 
 #: Keepalive PUT interval (Binance listenKey TTL is 60 min; PUT every ~30 min)
 LISTEN_KEY_KEEPALIVE_S: int = 1800
@@ -250,7 +253,7 @@ async def _reconcile_sweep(
 
     Args:
         wake_events: Shared wake events dict.
-        journal: A TradeLogger instance with .get_open_trades().
+        journal: A TradeJournal instance with .get_open_trades().
         last_sweep_time: Single-element list holding the last sweep timestamp.
     """
     now = time.monotonic()
@@ -363,36 +366,18 @@ async def run_user_data_stream(
     # 3. SOCKS pre-flight (fail-closed)
     # ------------------------------------------------------------------
     socks_proxy_str = socks_proxy or os.getenv("CCBT_SOCKS_PROXY", "").strip()
-    ws_connect_kwargs: dict = {}
 
     if socks_proxy_str:
-        # Lazy import python-socks connector for websockets
+        # Fail-closed: if python-socks is unavailable we cannot validate the
+        # proxy URL; refuse to open a raw WS that could leak the real IP.
+        # websockets 15 uses its own proxy=... kwarg (no python-socks needed
+        # at connect time), but we still import python-socks here so the
+        # pre-flight proves the package is installed and the URL is parseable.
         try:
             from python_socks.async_.asyncio import Proxy as _SocksProxy  # noqa: F401
 
-            # Build a proxy connector factory for websockets
-            from python_socks.async_.asyncio import Proxy
-
-            def _make_socks_connector(proxy_url: str):
-                """Return a websockets sock= factory using python-socks."""
-                import socket
-
-                async def _connect(uri, **kw):
-                    import websockets as _ws
-                    proxy = Proxy.from_url(proxy_url, rdns=True)
-                    # python_socks provides connect() which returns a socket
-                    host = uri.host
-                    port = uri.port or (443 if uri.secure else 80)
-                    sock = await proxy.connect(dest_host=host, dest_port=port)
-                    return await _ws.connect(
-                        str(uri),
-                        sock=sock,
-                        **kw,
-                    )
-
-                return _connect
-
-            ws_connect_kwargs["_socks_proxy_url"] = socks_proxy_str
+            # Validate that the proxy URL parses without error.
+            _SocksProxy.from_url(socks_proxy_str, rdns=True)
             logger.info(
                 "user_data_ws: SOCKS proxy configured: %s", socks_proxy_str
             )
@@ -438,10 +423,13 @@ async def run_user_data_stream(
     # ------------------------------------------------------------------
     journal = None
     try:
-        from bot.logger import TradeLogger
+        from bot.logger import TradeJournal
 
-        db_path = os.getenv("BOT_DATA_DIR", ".")
-        journal = TradeLogger(db_path=db_path)
+        # Pass db_path=None so TradeJournal uses its own default resolution:
+        # {BOT_DATA_DIR}/trades.db (or ./trades.db).  Passing the directory
+        # string directly would make sqlite3.connect() raise OperationalError
+        # because it tries to open the directory as a database file.
+        journal = TradeJournal(db_path=None)
     except Exception as exc:
         logger.warning(
             "user_data_ws: could not open journal for reconcile sweep (%s) — "
@@ -475,6 +463,7 @@ async def run_user_data_stream(
                 force_reconnect=force_reconnect,
                 journal=journal,
                 last_sweep_time=last_sweep_time,
+                retry_count=retry_count,
             )
         except asyncio.CancelledError:
             logger.info("user_data_ws: cancelled — stopping")
@@ -511,18 +500,13 @@ async def run_user_data_stream(
         except asyncio.TimeoutError:
             pass
 
-    # Final shutdown: best-effort DELETE
-    if listen_key[0]:
-        try:
-            await asyncio.wait_for(
-                asyncio.to_thread(
-                    dedicated_ex.fapiPrivateDeleteListenKey,
-                    {"listenKey": listen_key[0]},
-                ),
-                timeout=2.0,
-            )
-        except Exception:
-            pass
+    # Clean-exit (shutdown_event was set, while-loop broke): prefer letting
+    # the listenKey expire (60-min TTL) rather than DELETing it.  A DELETE
+    # invalidates a sibling process's stream when launchd restarts the bot
+    # (kickstart -k: old → SIGTERM → clean exit → DELETE same key that the
+    # new process already POSTed → new stream gets -1125 churn on next PUT).
+    # The CancelledError path above follows the same design but is already
+    # bounded and swallowed; we intentionally do NOT duplicate it here.
 
 
 # ---------------------------------------------------------------------------
@@ -539,6 +523,7 @@ async def _run_once(
     force_reconnect: list,
     journal,
     last_sweep_time: list,
+    retry_count: Optional[list] = None,
 ) -> None:
     """Single WS session.  Exits (raises or returns) when connection drops."""
     import websockets  # defer import so module is testable without websockets
@@ -585,20 +570,24 @@ async def _run_once(
     ws_url = f"{ws_base}/{listen_key[0]}"
     logger.info("user_data_ws: connecting to %s", ws_url)
 
-    # Build connect kwargs; SOCKS path uses a raw socket
+    # Build connect context manager.
+    # When CCBT_SOCKS_PROXY is set, pass proxy= to websockets.connect (native
+    # websockets 15 support).  This handles TLS/SNI correctly and avoids the
+    # fragile manual parse_uri + sock= approach.  Fail-closed: any error here
+    # means the proxy is unreachable; we refuse to fall back to a direct
+    # connection that would expose the real IP.
     if socks_proxy_str:
         try:
-            from python_socks.async_.asyncio import Proxy as _Proxy
-            proxy = _Proxy.from_url(socks_proxy_str, rdns=True)
-            uri = websockets.uri.parse_uri(ws_url)
-            host = uri.host
-            port = uri.port or (443 if uri.secure else 80)
-            sock = await proxy.connect(dest_host=host, dest_port=port)
-            ws_cm = websockets.connect(ws_url, sock=sock, ping_interval=20, ping_timeout=10)
+            ws_cm = websockets.connect(
+                ws_url,
+                proxy=socks_proxy_str,
+                ping_interval=20,
+                ping_timeout=10,
+            )
         except Exception as exc:
             logger.warning(
-                "user_data_ws: SOCKS connect failed (%s) — refusing to open "
-                "raw WS (IP-leak hazard); returning",
+                "user_data_ws: SOCKS connect setup failed (%s) — refusing to "
+                "open WS without proxy (IP-leak hazard); returning",
                 exc,
             )
             return
@@ -659,6 +648,11 @@ async def _run_once(
     try:
         async with ws_cm as ws:
             logger.info("user_data_ws: connected — listening for user-data events")
+            # Reset backoff on successful connect so the next reconnect
+            # (e.g. after the 24h Binance cap) starts at BACKOFF_BASE_S
+            # instead of the saturated MAX_BACKOFF_S.
+            if retry_count is not None:
+                retry_count[0] = 0
             last_frame_time = time.monotonic()
 
             while True:
