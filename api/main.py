@@ -55,9 +55,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # type: ignore[type-ar
     detector = create_detector(db_path=db_path, data_dir=data_dir, log_path=log_path)
     task = asyncio.create_task(detector.run_forever())
 
+    # Start the realtime markPrice WS client (public Binance stream — no API key).
+    from api.markprice import create_client as create_markprice_client
+    mp_client = create_markprice_client(
+        db_path=db_path,
+        broadcast_fn=snapshot_registry.broadcast,
+    )
+    mp_task = asyncio.create_task(mp_client.run_forever())
+
     try:
         yield
     finally:
+        # Cancel markprice task first (it may be sleeping between reconnects)
+        mp_task.cancel()
+        try:
+            await mp_task
+        except asyncio.CancelledError:
+            pass
+        mp_client.close()
+
         task.cancel()
         try:
             await task
