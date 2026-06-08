@@ -431,3 +431,57 @@ class TestPIN1RunBotPnlFracComputation:
             "This is why uniform 1% risk_per_trade is required in BOTS: "
             "pnl_frac = t.pnl / initial_balance (run_bot():348) encodes risk level directly."
         )
+
+
+# ============================================================================
+# PIN-1b — pin the ACTUAL historical-bug LINE (run_bot:348 pnl_frac = pnl/initial_balance)
+# Found by mutation testing: the replay-apply step was pinned, but a 10x inflation
+# injected at run_bot's pnl_frac computation went UNCAUGHT. This behavioral pin runs
+# run_bot() with its data-loader + engine monkeypatched so a fixed engine PnL yields a
+# known pnl_frac — so any change to line 348 (e.g. dropping risk-normalization) fails.
+# ============================================================================
+import types as _types
+import pandas as _pd
+import pytest as _pytest
+import research.portfolio_backtest_v2 as _pb
+
+
+class TestPIN1RunBotLine348:
+    def _patch(self, monkeypatch, fake_pnl):
+        # 60 recent rows so run_bot doesn't SKIP (<50) and survives filter_last_year
+        idx = _pd.date_range("2026-01-01", periods=60, freq="1h", tz="UTC")
+        df = _pd.DataFrame(
+            {"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0}, index=idx
+        )
+        monkeypatch.setattr(_pb, "load_signal_data", lambda *a, **k: df)
+        monkeypatch.setattr(_pb, "load_trend_data", lambda *a, **k: _pd.DataFrame())
+        monkeypatch.setattr(_pb, "filter_last_year", lambda d: d)
+
+        fake_trade = _types.SimpleNamespace(
+            pnl=fake_pnl, side="long", entry_price=1.0, exit_price=1.1,
+            entry_time=idx[0], exit_time=idx[1], close_reason="take_profit",
+        )
+
+        class _StubEngine:
+            def __init__(self, *a, **k):
+                self.state = _types.SimpleNamespace(trades=[fake_trade])
+            def run(self, *a, **k):
+                return None
+
+        monkeypatch.setattr(_pb, "BacktestEngine", _StubEngine)
+
+    def test_pnl_frac_equals_pnl_over_initial_balance(self, monkeypatch):
+        # engine initial_balance is hardcoded 10_000 in run_bot; a $1000 engine PnL
+        # must record pnl_frac = 1000/10000 = 0.10 (hand-computed, not via prod code).
+        self._patch(monkeypatch, fake_pnl=1000.0)
+        trades = _pb.run_bot("BTC", "ema", "1h", 1.5, 3.0, 5.0, "test", "btc")
+        assert len(trades) == 1
+        assert trades[0]["pnl_frac"] == _pytest.approx(0.10, rel=1e-9), (
+            "run_bot:348 must compute pnl_frac = engine_pnl / 10_000 (a 10x or "
+            "risk-unnormalized change here is the historical shared-wallet inflation bug)"
+        )
+
+    def test_loss_pnl_frac_sign(self, monkeypatch):
+        self._patch(monkeypatch, fake_pnl=-250.0)
+        trades = _pb.run_bot("BTC", "ema", "1h", 1.5, 3.0, 5.0, "test", "btc")
+        assert trades[0]["pnl_frac"] == _pytest.approx(-0.025, rel=1e-9)
