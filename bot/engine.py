@@ -317,6 +317,7 @@ def check_closed_positions(
             # duplicate Telegram alert).
             # ------------------------------------------------------------------
             is_primary_closer = True  # default: no shared registry
+            _close_key: Optional[str] = None
             if recently_closed is not None:
                 _close_key = norm_symbol
                 if _close_key in recently_closed:
@@ -331,8 +332,14 @@ def check_closed_positions(
                         },
                     )
                 else:
-                    # Mark this symbol as handled so later bots skip journal/alert.
-                    recently_closed[_close_key] = time.time()
+                    # Do NOT mark the registry here — the journal write has not
+                    # succeeded yet.  If log_trade_close raises (e.g. SQLite
+                    # locked) and we marked early, a sibling/retry bot would
+                    # see is_primary_closer=False and skip the journal entirely,
+                    # leaving the DB row stuck at status='open' and the loss
+                    # invisible to circuit breakers.  The mark is deferred to
+                    # the success path below.
+                    pass
 
             if is_primary_closer:
                 # Crash-safe close sequence: log first; only proceed (and mark as
@@ -356,8 +363,17 @@ def check_closed_positions(
                         extra={"trade_id": trade_id, "error": str(log_err)},
                     )
                     continue  # do NOT call record_trade_result or closed.append
+                    # NOTE: recently_closed is NOT yet marked, so the next loop
+                    # iteration (or a sibling bot) can still claim primary ownership
+                    # and retry the journal write.
 
                 risk_mgr.record_trade_result(estimated_pnl)
+
+                # Mark the registry NOW — journal + risk accounting both succeeded.
+                # Sibling bots arriving after this point will see is_primary_closer=False
+                # and skip the duplicate write correctly.
+                if recently_closed is not None and _close_key is not None:
+                    recently_closed[_close_key] = time.time()
 
             # STRUCTURAL double-count guard: mark as closed IMMEDIATELY after
             # risk accounting succeeds (or after dedup skip), BEFORE any

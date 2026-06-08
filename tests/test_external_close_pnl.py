@@ -409,6 +409,113 @@ class TestMultiBotDedup:
             f"Expected 2 alerts (one per symbol), got {len(alert_calls)}"
         )
 
+    def test_registry_not_poisoned_on_journal_failure(self):
+        """Regression: if log_trade_close raises (e.g. SQLite locked), the
+        recently_closed registry must NOT be marked.  On the next-loop retry
+        (or a sibling bot's call for the same symbol) there must be exactly
+        ONE journal row and ONE record_trade_result — never zero.
+
+        Bug path before fix (line 335 poisoning):
+          1. Primary bot marks recently_closed[sym] BEFORE log_trade_close.
+          2. log_trade_close raises → continue skips record_trade_result.
+          3. On retry the key is already present → is_primary_closer=False
+             → log_trade_close called 0 times, record_trade_result called 0 times
+             → DB row stays status='open', circuit breakers never see the loss.
+        """
+        symbol = "AXS/USDT:USDT"
+        trade_id = 999
+        entry = 5.0
+        sl = 4.6
+        tp = 5.5
+        exit_price = 4.65  # SL hit
+
+        recently_closed: dict = {}
+
+        # --- First attempt: log_trade_close raises (DB locked) ---------------
+        journal_attempt1 = _make_journal()
+        journal_attempt1.log_trade_close = MagicMock(
+            side_effect=RuntimeError("database is locked")
+        )
+        risk_mgr_attempt1 = _make_risk_mgr()
+
+        info = _make_trade_info(entry=entry, sl=sl, tp=tp, size=500.0)
+        client = MagicMock()
+        client.get_closed_pnl.return_value = [
+            {"side": "sell", "price": exit_price, "amount": 500.0}
+        ]
+        client.get_ticker_price.return_value = exit_price
+        client.cancel_all_orders.return_value = None
+
+        with patch("bot.engine.send_alert"):
+            result1 = check_closed_positions(
+                open_trade_ids={trade_id: info},
+                current_positions=[],  # position gone
+                journal=journal_attempt1,
+                risk_mgr=risk_mgr_attempt1,
+                calibration_tracker=None,
+                symbol=symbol,
+                client=client,
+                last_trade_close={},
+                recently_closed=recently_closed,
+            )
+
+        # After a failed journal write: trade must still be in the result
+        # (crash-safe: stays open for retry).
+        assert trade_id in result1, (
+            "After log_trade_close failure the trade_id must remain "
+            "in open_trade_ids for retry — got it removed (closed.append ran)"
+        )
+        # Registry must NOT have been marked — the close was never committed.
+        assert len(recently_closed) == 0, (
+            f"recently_closed poisoned after journal failure: {recently_closed}"
+        )
+        # record_trade_result must NOT have been called (no commit → no accounting).
+        risk_mgr_attempt1.record_trade_result.assert_not_called()
+
+        # --- Second attempt: DB is healthy now (same registry, same trade_id) ---
+        journal_attempt2 = _make_journal()  # succeeds
+        risk_mgr_attempt2 = _make_risk_mgr()
+
+        alert_calls: list = []
+        with patch(
+            "bot.engine.send_alert",
+            side_effect=lambda msg, **kw: alert_calls.append(msg),
+        ):
+            result2 = check_closed_positions(
+                open_trade_ids={trade_id: result1[trade_id]},  # carry over info
+                current_positions=[],
+                journal=journal_attempt2,
+                risk_mgr=risk_mgr_attempt2,
+                calibration_tracker=None,
+                symbol=symbol,
+                client=client,
+                last_trade_close={},
+                recently_closed=recently_closed,
+            )
+
+        # Retry must succeed: trade gone from open_trade_ids.
+        assert trade_id not in result2, (
+            "On retry the trade was not closed — log_trade_close succeeded but "
+            "trade_id still in open_trade_ids"
+        )
+        # Exactly ONE journal call total across both attempts.
+        total_journal = (
+            journal_attempt1.log_trade_close.call_count  # raised, counts as 1
+            + journal_attempt2.log_trade_close.call_count
+        )
+        # attempt1 raised (1 call, failed), attempt2 must have succeeded (1 call).
+        assert journal_attempt2.log_trade_close.call_count == 1, (
+            f"Expected retry to call log_trade_close exactly once; "
+            f"got {journal_attempt2.log_trade_close.call_count}"
+        )
+        # record_trade_result called exactly once (on retry, not on failure).
+        risk_mgr_attempt2.record_trade_result.assert_called_once()
+        # Registry must now be marked (retry succeeded).
+        assert len(recently_closed) == 1, (
+            f"recently_closed should have 1 entry after successful retry; "
+            f"got {recently_closed}"
+        )
+
     def test_no_recently_closed_arg_behaves_as_before(self):
         """If recently_closed is not passed (None), behaviour is unchanged —
         normal closes still journal + alert once (single-bot path)."""
