@@ -634,21 +634,31 @@ class TestCommission:
 
 
 # ============================================================================
-# Category 6 — Funding NOT charged (KNOWN GAP, PR-C fix)
+# Category 6 — Funding deduction (PR-C)
 # ============================================================================
 
-class TestFundingNotChargedKnownGap:
-    """KNOWN GAP: funding rate is merged onto the DataFrame but never deducted.
+class TestFundingDeduction:
+    """PR-C: funding charged at 8h settlement boundaries only.
 
-    engine.py:214 merges fundingRate column; nowhere in _check_exit or
-    _close_position is it consumed.  This will be fixed in PR-C.
-    Pinned here so PR-C has a clear before/after.
+    engine.py:_check_exit — settlement check at 00:00/08:00/16:00 UTC.
+    engine.py:_close_position — accrued_funding subtracted from pnl at close.
+
+    Mutations that must fail:
+      - Summing over all candles (ffill over-charge ~32x): PnL too low → fails.
+      - Charging wrong sign (short pays, long receives): PnL wrong direction → fails.
+      - Not charging at all: accrued_funding stays 0, pnl too high → fails.
     """
 
-    def test_funding_column_present_but_pnl_unchanged(self):
-        """Positive funding rate has NO effect on trade PnL (current behavior).
+    def test_non_settlement_candle_no_charge(self):
+        """Funding rate on a non-settlement candle does NOT charge funding.
 
-        KNOWN GAP: in PR-C, long holders pay funding — this test will need updating.
+        Candle at 01:00 UTC — not a settlement boundary.
+        fundingRate=0.01 must have zero effect on PnL.
+
+        Hand-derivation (no fees, no slippage, entry=100, exit=110, size=1000):
+            gross pnl = 1000 * (110 - 100)/100 = 100.0
+            accrued_funding = 0 (no settlement boundary crossed)
+            net pnl = 100.0
         """
         engine = _make_engine(initial_balance=10_000.0, commission_rate=0.0,
                               slippage_rate=0.0)
@@ -657,19 +667,172 @@ class TestFundingNotChargedKnownGap:
         open_position(engine, side="long", entry_price=100.0, stop_loss=95.0,
                       take_profit=110.0, size=1000.0)
 
-        # Candle with high funding rate (normally should cost the long holder)
-        candle = make_candle(open_price=108.0, high=111.0, low=107.0, close=109.0)
-        candle["fundingRate"] = 0.01  # 1% funding — would be costly if charged
+        candle = make_candle(open_price=108.0, high=111.0, low=107.0, close=109.0,
+                             timestamp="2024-01-01 01:00")  # Non-settlement hour
+        candle["fundingRate"] = 0.01  # 1% but at 01:00 — NOT a settlement
 
         engine._check_exit(candle, "2024-01-01 01:00", risk_mgr)
 
         trade = engine.state.trades[-1]
-        # PnL == gross move (no fees, no funding deducted)
-        # Hand-derivation: size * (exit - entry) / entry = 1000 * (110 - 100)/100 = 100.0
-        expected = 1000.0 * (110.0 - 100.0) / 100.0
-        assert abs(trade.pnl - expected) < 1e-8, (
-            f"KNOWN GAP: funding NOT charged; pnl={trade.pnl:.4f}, "
-            f"expected {expected:.4f} (funding ignored)"
+        expected_pnl = 1000.0 * (110.0 - 100.0) / 100.0  # 100.0
+        assert abs(trade.pnl - expected_pnl) < 1e-8, (
+            f"Non-settlement candle: funding must not be charged; "
+            f"pnl={trade.pnl:.4f}, expected {expected_pnl:.4f}"
+        )
+
+    def test_settlement_candle_charges_long(self):
+        """Positive funding at a settlement boundary charges the long holder.
+
+        Settlement at 08:00 UTC; position does NOT close this candle.
+        Close at a subsequent candle (TP hit).
+
+        Hand-derivation (no commission, no slippage):
+            size = 1000.0, rate = 0.001 (0.1%)
+            Settlement candle: accrued_funding += 1000.0 * 0.001 = 1.0
+            TP candle (no settlement): no new charge
+            gross pnl = 1000 * (110 - 100)/100 = 100.0
+            net pnl = 100.0 - 1.0 = 99.0
+
+        Mutation (sum all candles): would charge on EVERY candle with rate=0.001,
+        e.g. 3 candles × 1.0 = 3.0 → pnl = 97.0 → FAILS assertion.
+        """
+        engine = _make_engine(initial_balance=10_000.0, commission_rate=0.0,
+                              slippage_rate=0.0)
+        risk_mgr = _risk_mgr(engine)
+
+        open_position(engine, side="long", entry_price=100.0, stop_loss=95.0,
+                      take_profit=110.0, size=1000.0)
+
+        rate = 0.001
+        # Candle 1: settlement boundary (08:00 UTC), price stays in range (no exit)
+        c1 = make_candle(open_price=101.0, high=105.0, low=100.0, close=103.0,
+                         timestamp="2024-01-01 08:00")
+        c1["fundingRate"] = rate
+        engine._check_exit(c1, "2024-01-01 08:00", risk_mgr)
+        assert engine.state.position is not None, "Position should still be open after c1"
+        assert abs(engine.state.position.accrued_funding - 1.0) < 1e-10, (
+            f"After settlement candle: accrued_funding should be 1.0, "
+            f"got {engine.state.position.accrued_funding}"
+        )
+
+        # Candle 2: non-settlement (09:00 UTC), no exit
+        c2 = make_candle(open_price=103.0, high=106.0, low=102.0, close=104.0,
+                         timestamp="2024-01-01 09:00")
+        c2["fundingRate"] = rate  # ffill — but NOT a settlement candle
+        engine._check_exit(c2, "2024-01-01 09:00", risk_mgr)
+        # No additional charge (09:00 is not a settlement hour)
+        assert abs(engine.state.position.accrued_funding - 1.0) < 1e-10, (
+            f"After non-settlement candle: accrued_funding should still be 1.0 (not ffill-charged), "
+            f"got {engine.state.position.accrued_funding}"
+        )
+
+        # Candle 3: TP hit (high=111 >= take_profit=110)
+        c3 = make_candle(open_price=109.0, high=111.0, low=108.0, close=110.0,
+                         timestamp="2024-01-01 10:00")
+        c3["fundingRate"] = rate
+        engine._check_exit(c3, "2024-01-01 10:00", risk_mgr)
+
+        assert engine.state.position is None, "Position should be closed at TP"
+        trade = engine.state.trades[-1]
+        assert trade.close_reason == "take_profit"
+
+        # Hand-derived pnl: gross 100.0 - accrued_funding 1.0 = 99.0
+        expected_pnl = 100.0 - 1.0
+        assert abs(trade.pnl - expected_pnl) < 1e-8, (
+            f"Long funding: expected pnl={expected_pnl:.4f}, got {trade.pnl:.4f}\n"
+            f"  accrued_funding in trade should reduce gross pnl by 1.0"
+        )
+
+    def test_settlement_candle_credits_short(self):
+        """Positive funding at a settlement boundary credits the short holder (receives).
+
+        Short position: positive rate means longs pay, shorts receive.
+        accrued_funding on short = -1.0 → pnl increases by 1.0.
+
+        Hand-derivation (no commission, no slippage):
+            entry=100, TP=88, size=1000, rate=0.001
+            Settlement 08:00: accrued_funding += -(1000 * 0.001) = -1.0
+            TP: gross pnl = 1000 * (100 - 88)/100 = 120.0
+            net pnl = 120.0 - (-1.0) = 121.0  (short received funding = bonus)
+
+        Mutation (wrong sign — short pays instead of receives):
+            accrued_funding = +1.0 → pnl = 119.0 → FAILS assertion.
+        """
+        engine = _make_engine(initial_balance=10_000.0, commission_rate=0.0,
+                              slippage_rate=0.0)
+        risk_mgr = _risk_mgr(engine)
+
+        open_position(engine, side="short", entry_price=100.0, stop_loss=106.0,
+                      take_profit=88.0, size=1000.0)
+
+        rate = 0.001
+        # Settlement 08:00 — short receives
+        c1 = make_candle(open_price=99.0, high=100.0, low=97.0, close=98.0,
+                         timestamp="2024-01-01 08:00")
+        c1["fundingRate"] = rate
+        engine._check_exit(c1, "2024-01-01 08:00", risk_mgr)
+        assert engine.state.position is not None
+        # Short accrued_funding is negative (receives)
+        assert abs(engine.state.position.accrued_funding - (-1.0)) < 1e-10, (
+            f"Short at settlement: accrued_funding should be -1.0 (receives), "
+            f"got {engine.state.position.accrued_funding}"
+        )
+
+        # TP hit
+        c2 = make_candle(open_price=89.0, high=90.0, low=87.0, close=88.5,
+                         timestamp="2024-01-01 09:00")
+        c2["fundingRate"] = rate
+        engine._check_exit(c2, "2024-01-01 09:00", risk_mgr)
+
+        trade = engine.state.trades[-1]
+        assert trade.close_reason == "take_profit"
+
+        # gross pnl = 1000 * (100 - 88)/100 = 120.0
+        # accrued_funding = -1.0 → pnl -= -1.0 → net = 121.0
+        expected_pnl = 120.0 + 1.0  # = 121.0
+        assert abs(trade.pnl - expected_pnl) < 1e-8, (
+            f"Short funding: expected pnl={expected_pnl:.4f}, got {trade.pnl:.4f}\n"
+            f"  Short should RECEIVE funding (net pnl > gross). "
+            f"If less, sign is wrong."
+        )
+
+    def test_no_funding_column_zero_deduction(self):
+        """When fundingRate column is absent, accrued_funding stays 0.
+
+        This is the path taken by snapshot tests (patch suppresses the column).
+        No raise, no funding charged.
+        """
+        engine = _make_engine(initial_balance=10_000.0, commission_rate=0.0,
+                              slippage_rate=0.0)
+        risk_mgr = _risk_mgr(engine)
+
+        open_position(engine, side="long", entry_price=100.0, stop_loss=95.0,
+                      take_profit=110.0, size=1000.0)
+
+        # Candle at settlement hour but NO fundingRate column
+        c1 = make_candle(open_price=101.0, high=105.0, low=100.0, close=103.0,
+                         timestamp="2024-01-01 08:00")
+        # c1 does NOT have fundingRate (make_candle includes it at 0.0 — override it)
+        c1_no_funding = c1.drop("fundingRate")
+        engine._check_exit(c1_no_funding, "2024-01-01 08:00", risk_mgr)
+
+        assert engine.state.position is not None
+        assert engine.state.position.accrued_funding == 0.0, (
+            f"No fundingRate column: accrued_funding must stay 0.0, "
+            f"got {engine.state.position.accrued_funding}"
+        )
+
+        # TP close
+        c2 = make_candle(open_price=109.0, high=111.0, low=108.0, close=110.0,
+                         timestamp="2024-01-01 10:00")
+        c2_no_funding = c2.drop("fundingRate")
+        engine._check_exit(c2_no_funding, "2024-01-01 10:00", risk_mgr)
+
+        trade = engine.state.trades[-1]
+        expected_pnl = 1000.0 * (110.0 - 100.0) / 100.0  # 100.0 (no deduction)
+        assert abs(trade.pnl - expected_pnl) < 1e-8, (
+            f"No funding column: pnl should be unaffected; "
+            f"got {trade.pnl:.4f}, expected {expected_pnl:.4f}"
         )
 
 
@@ -678,19 +841,19 @@ class TestFundingNotChargedKnownGap:
 # ============================================================================
 
 class TestForexFundingNoOp:
-    """KNOWN GAP (cat 7 from test plan): no dedicated funding file for XAUUSD.
+    """PR-C cat 7 — XAUUSD (forex/gold) has no funding file → deduction == 0, no raise.
 
     When the funding_file path resolves to a file that doesn't exist,
-    add_funding_rate is called but makes no change to the DataFrame.
-    A different instrument's funding file (e.g. xagusdt) is never applied
-    to xauusd — they have separate paths.
+    add_funding_rate returns the df unchanged (no fundingRate column).
+    The engine's settlement check is then a no-op for every candle.
+    A different instrument's funding file (xagusdt) is never auto-applied.
 
-    This test verifies that a missing funding file doesn't crash the engine
-    and produces a fundingRate column of NaN (or 0) without raising.
+    These tests satisfy the test-plan requirement: no raise, no funding deducted,
+    mismatched file never applied.
     """
 
     def test_missing_funding_file_doesnt_raise(self):
-        """Engine runs without error when funding file doesn't exist."""
+        """Engine runs without error when funding file doesn't exist (XAUUSD path)."""
         cfg = base_config(symbol="XAUUSD", funding_file="/nonexistent/path.csv")
         # No patch — let the real add_funding_rate handle missing file
         df = make_ohlcv(30, base_price=2000.0, atr_value=10.0)
@@ -700,11 +863,66 @@ class TestForexFundingNoOp:
         except FileNotFoundError:
             pytest.fail("Engine raised FileNotFoundError for missing funding file")
 
+    def test_xauusd_funding_deduction_zero(self):
+        """XAUUSD with missing funding file: accrued_funding == 0, pnl unaffected.
+
+        PR-C no-op contract: when fundingRate column is absent (funding file missing),
+        the engine must produce exactly the same PnL as without funding — no raise,
+        no deduction, no phantom charge.
+
+        Hand-derivation (no fees, no slippage, entry=2000, TP=2100, size=100):
+            gross pnl = 100 * (2100 - 2000)/2000 = 5.0
+            accrued_funding = 0 (no fundingRate column)
+            net pnl = 5.0
+
+        Mutation (auto-apply a default funding file): if the engine fell back to
+        some default funding CSV and it happened to exist, this test would show
+        unexpected pnl — preventing silent cross-instrument contamination.
+        """
+        cfg = base_config(
+            symbol="XAUUSD",
+            funding_file="/nonexistent/xauusd_funding_rate.csv",
+            commission_rate=0.0,
+            slippage_rate=0.0,
+        )
+        engine = BacktestEngine(cfg, initial_balance=10_000.0)
+        risk_mgr = _risk_mgr(engine)
+
+        open_position(engine, side="long", entry_price=2000.0, stop_loss=1900.0,
+                      take_profit=2100.0, size=100.0)
+
+        # Settlement boundary candle — but no fundingRate column (file missing)
+        c1 = make_candle(open_price=2010.0, high=2020.0, low=2005.0, close=2015.0,
+                         timestamp="2024-01-01 08:00")
+        c1_no_fr = c1.drop("fundingRate")
+        engine._check_exit(c1_no_fr, "2024-01-01 08:00", risk_mgr)
+
+        assert engine.state.position is not None
+        assert engine.state.position.accrued_funding == 0.0, (
+            f"XAUUSD (no funding file): accrued_funding must be 0.0, "
+            f"got {engine.state.position.accrued_funding}"
+        )
+
+        # TP close
+        c2 = make_candle(open_price=2095.0, high=2105.0, low=2090.0, close=2100.0,
+                         timestamp="2024-01-01 10:00")
+        c2_no_fr = c2.drop("fundingRate")
+        engine._check_exit(c2_no_fr, "2024-01-01 10:00", risk_mgr)
+
+        trade = engine.state.trades[-1]
+        assert trade.close_reason == "take_profit"
+        expected_pnl = 100.0 * (2100.0 - 2000.0) / 2000.0  # 5.0
+        assert abs(trade.pnl - expected_pnl) < 1e-8, (
+            f"XAUUSD no-op: pnl should be {expected_pnl:.4f} (no funding), "
+            f"got {trade.pnl:.4f}"
+        )
+
     def test_wrong_instrument_funding_not_applied(self):
         """XAUUSD engine uses XAUUSD funding path, not XAGUSDT path.
 
         The funding_file is derived from the symbol, so XAUUSD resolves to
         data/xauusd_funding_rate.csv — never data/xagusdt_funding_rate.csv.
+        This is a path-derivation assertion (no engine run needed).
         """
         cfg_xau = base_config(symbol="XAUUSD")
         cfg_xag = base_config(symbol="XAGUSDT")
@@ -1659,4 +1877,366 @@ class TestLookAheadPins:
             "Engine may be computing regime globally (look-ahead) instead of per-row rolling. "
             "Mutation-verify: temporarily remove warmup floor in engine.py:224 → this test "
             "should FAIL (global regime sees 'trending') → revert."
+        )
+
+
+# ============================================================================
+# PIN-10 — Funding charged = independently hand-computed multi-settlement,
+#           size-changing (partial-TP mid-hold), BOTH long and short
+# ============================================================================
+
+class TestFundingPIN10:
+    """PIN-10: multi-settlement, size-changing funding accumulation.
+
+    Test plan requirement:
+      "Build a deterministic OHLCV fixture spanning ≥2 settlement boundaries
+       with a known per-settlement rate; assert the trade's total_pnl reflects
+       exactly the hand-summed funding (each settlement on the then-current size).
+       Mutation: summing over all candles (ffill) instead of settlements must FAIL it;
+       charging the wrong sign must FAIL it."
+
+    All values independently hand-derived below — NOT computed by calling the
+    engine code path under test.
+
+    Fixture design (long with partial-TP):
+      Candle 0: entry at 08:00 UTC (NOT a settlement — settlement fires BEFORE
+                entry in engine.py's per-candle loop order, but we use open_position
+                which seeds the position directly so settlement never sees it during
+                the "entry candle"; the first settlement charged is candle 1).
+      Candle 1: 08:00 UTC settlement (rate=0.001) — size=1000 → charge 1.0
+      Candle 2: 09:00 UTC NOT settlement — no charge; partial-TP fires, size→500
+      Candle 3: 16:00 UTC settlement (rate=0.001) — size=500 → charge 0.5
+      Candle 4: 17:00 UTC close (TP hit)
+
+    Hand-computed funding total: 1.0 + 0.5 = 1.5 (long pays)
+
+    Mutation A — sum over all 4 candles (ffill):
+        4 candles × 1000×0.001 = 4.0 (wrong — size unchanged across all candles)
+        OR: candle1 size=1000→1.0, candle2 size=1000→1.0, candle3 size=500→0.5, candle4 size=500→0.5 = 3.0
+        Either way ≠ 1.5 → assertion fails.
+
+    Mutation B — wrong sign (short pays instead of receives):
+        long accrued_funding would be ADDED instead of subtracted → pnl > gross → fails.
+    """
+
+    def _make_candle_with_funding(
+        self,
+        timestamp: str,
+        open_: float,
+        high: float,
+        low: float,
+        close: float,
+        funding_rate: float,
+    ) -> pd.Series:
+        """Build a candle Series with a fundingRate field."""
+        c = make_candle(
+            open_price=open_, high=high, low=low, close=close,
+            timestamp=timestamp,
+        )
+        c["fundingRate"] = funding_rate
+        return c
+
+    def test_pin10_long_multi_settlement_size_changing(self):
+        """PIN-10 (long): 2 settlements, partial-TP halves size between them.
+
+        Hand-derived expected values (no commission, no slippage):
+
+        Position: LONG, entry=100.0, size=1000.0, TP=120.0 (full), TP1=106.0 (partial, 50%)
+        Settlement rate: 0.001 per boundary.
+
+        Candle 1 (08:00 UTC — settlement):
+            charge = 1000.0 × 0.001 = 1.0
+            accrued_funding = 1.0
+            position stays open (no SL/TP hit)
+
+        Candle 2 (09:00 UTC — NOT settlement):
+            no charge
+            Partial-TP1 fires (high=107 ≥ tp1=106):
+              partial_size = 1000 * 0.5 = 500
+              partial_pnl_pct = (106 - 100) / 100 = 0.06
+              partial_pnl = 500 * 0.06 = 30.0
+              pos.size → 500
+            accrued_funding = 1.0 (unchanged)
+
+        Candle 3 (16:00 UTC — settlement):
+            charge = 500.0 × 0.001 = 0.5   ← THEN-CURRENT size after partial-TP
+            accrued_funding = 1.5
+            position stays open
+
+        Candle 4 (17:00 UTC — NOT settlement):
+            Full TP fires (high=121 ≥ take_profit=120):
+              _close_position called
+              pnl_from_exit = pos.size × (exit - entry)/entry
+                            = 500 × (120 - 100)/100 = 100.0
+              exit_commission = 0 (no commission)
+              pnl_from_exit = 100.0
+              pnl -= accrued_funding = 100.0 - 1.5 = 98.5
+              total_pnl = pnl_from_exit + partial_pnl = 98.5 + 30.0 = 128.5
+
+        Mutation A verification (sum over all candles):
+            If settlement check fires on every candle (not boundary-gated):
+              After c1: 1000×0.001=1.0
+              After c2: 1000×0.001=1.0 (before partial-TP check, size still 1000)
+                  OR 500×0.001=0.5 (after partial-TP if order wrong)
+              After c3: 500×0.001=0.5
+              After c4: 500×0.001=0.5 (before close)
+            → total 3.0 (worst case all candles, pre-partial) → pnl = 97.0 ≠ 98.5 → FAILS.
+
+        Mutation B (wrong sign — long receives instead of pays):
+            accrued_funding = -1.5 → pnl = 98.5 + 1.5 = 130.0 ≠ 128.5 → FAILS.
+        """
+        cfg = base_config(
+            commission_rate=0.0,
+            slippage_rate=0.0,
+            partial_tp_enabled=True,
+            partial_tp_pct=0.5,
+            move_sl_to_be_after_tp1=False,  # keep SL static for clarity
+        )
+        engine = BacktestEngine(cfg, initial_balance=10_000.0)
+        risk_mgr = _risk_mgr(engine)
+
+        open_position(
+            engine, side="long",
+            entry_price=100.0, stop_loss=90.0, take_profit=120.0,
+            size=1000.0, tp1_price=106.0,
+        )
+
+        rate = 0.001
+
+        # --- Candle 1: 08:00 UTC settlement → charges 1000 × 0.001 = 1.0
+        c1 = self._make_candle_with_funding(
+            "2024-01-01 08:00", open_=101.0, high=104.0, low=100.0, close=103.0,
+            funding_rate=rate,
+        )
+        engine._check_exit(c1, "2024-01-01 08:00", risk_mgr)
+        assert engine.state.position is not None, "Position should not close on c1"
+        assert abs(engine.state.position.accrued_funding - 1.0) < 1e-10, (
+            f"After c1 (settlement): accrued_funding={engine.state.position.accrued_funding:.6f}, "
+            f"expected 1.0"
+        )
+
+        # --- Candle 2: 09:00 UTC (NOT settlement) → partial-TP fires, size→500
+        c2 = self._make_candle_with_funding(
+            "2024-01-01 09:00", open_=103.0, high=107.0, low=102.0, close=104.0,
+            funding_rate=rate,  # ffill — but NOT settlement hour
+        )
+        engine._check_exit(c2, "2024-01-01 09:00", risk_mgr)
+        pos = engine.state.position
+        assert pos is not None, "Position should not fully close on c2"
+        assert pos.tp1_hit is True, "Partial TP1 should have fired on c2"
+        assert abs(pos.size - 500.0) < 1e-8, (
+            f"After partial-TP: size should be 500.0, got {pos.size}"
+        )
+        # No additional funding charge at non-settlement 09:00
+        assert abs(pos.accrued_funding - 1.0) < 1e-10, (
+            f"After c2 (non-settlement): accrued_funding should still be 1.0 "
+            f"(ffill must not charge), got {pos.accrued_funding}"
+        )
+
+        # --- Candle 3: 16:00 UTC settlement → charges 500 × 0.001 = 0.5
+        c3 = self._make_candle_with_funding(
+            "2024-01-01 16:00", open_=104.0, high=108.0, low=103.0, close=105.0,
+            funding_rate=rate,
+        )
+        engine._check_exit(c3, "2024-01-01 16:00", risk_mgr)
+        assert engine.state.position is not None, "Position should not close on c3"
+        assert abs(engine.state.position.accrued_funding - 1.5) < 1e-10, (
+            f"After c3 (settlement, size=500): accrued_funding should be 1.5, "
+            f"got {engine.state.position.accrued_funding}"
+        )
+
+        # --- Candle 4: 17:00 UTC — full TP fires (high=121 ≥ take_profit=120)
+        c4 = self._make_candle_with_funding(
+            "2024-01-01 17:00", open_=118.0, high=121.0, low=117.0, close=120.0,
+            funding_rate=rate,
+        )
+        engine._check_exit(c4, "2024-01-01 17:00", risk_mgr)
+
+        assert engine.state.position is None, "Position should be closed at full TP"
+        trade = engine.state.trades[-1]
+        assert trade.close_reason == "take_profit"
+
+        # Hand-derived total_pnl = 128.5
+        # (exit pnl on remaining 500 units: 100.0) - (accrued_funding: 1.5) + (partial_pnl: 30.0)
+        # = 98.5 + 30.0 = 128.5
+        expected_exit_pnl = 500.0 * (120.0 - 100.0) / 100.0  # = 100.0
+        expected_partial_pnl = 500.0 * (106.0 - 100.0) / 100.0  # = 30.0
+        expected_funding = 1.5
+        expected_total_pnl = (expected_exit_pnl - expected_funding) + expected_partial_pnl
+        assert abs(trade.pnl - expected_total_pnl) < 1e-8, (
+            f"PIN-10 (long): total_pnl={trade.pnl:.6f}, expected {expected_total_pnl:.6f}\n"
+            f"  Breakdown: exit_pnl={expected_exit_pnl:.1f} "
+            f"- funding={expected_funding:.1f} + partial={expected_partial_pnl:.1f}\n"
+            f"  If pnl < expected: wrong sign (long paying wrong direction).\n"
+            f"  If pnl == {expected_exit_pnl + expected_partial_pnl - 4 * rate * 1000:.1f}: "
+            f"all-candle ffill over-charge (Mutation A).\n"
+            f"  If pnl == {expected_exit_pnl + expected_partial_pnl + expected_funding:.1f}: "
+            f"wrong sign — long receives (Mutation B)."
+        )
+
+    def test_pin10_short_multi_settlement_size_changing(self):
+        """PIN-10 (short): 2 settlements, short RECEIVES funding; size changes via partial-TP.
+
+        Short position: positive funding rate → shorts receive (credit).
+        accrued_funding is NEGATIVE for short → pnl -= negative → net increases.
+
+        Hand-derived expected values (no commission, no slippage):
+
+        Position: SHORT, entry=100.0, size=1000.0, TP=82.0 (full), TP1=94.0 (partial, 50%)
+        Settlement rate: 0.001 per boundary.
+
+        Candle 1 (08:00 UTC — settlement):
+            settlement for short = -(1000 × 0.001) = -1.0
+            accrued_funding = -1.0  (short receives)
+
+        Candle 2 (09:00 UTC — NOT settlement):
+            no charge
+            Partial-TP1 fires (low=93 ≤ tp1=94):
+              partial_size = 1000 * 0.5 = 500
+              partial_pnl_pct = (100 - 94) / 100 = 0.06
+              partial_pnl = 500 * 0.06 = 30.0
+              pos.size → 500
+
+        Candle 3 (16:00 UTC — settlement):
+            settlement for short = -(500 × 0.001) = -0.5
+            accrued_funding = -1.5
+
+        Candle 4 (17:00 UTC — NOT settlement):
+            Full TP fires (low=81 ≤ take_profit=82):
+              pnl_from_exit = 500 × (100 - 82)/100 = 90.0
+              pnl -= accrued_funding → pnl -= (-1.5) = pnl + 1.5 = 91.5
+              total_pnl = 91.5 + 30.0 = 121.5
+
+        Mutation B verification (wrong sign — short pays instead of receives):
+            accrued_funding = +1.5 → pnl = 90.0 - 1.5 + 30.0 = 118.5 ≠ 121.5 → FAILS.
+        """
+        cfg = base_config(
+            commission_rate=0.0,
+            slippage_rate=0.0,
+            partial_tp_enabled=True,
+            partial_tp_pct=0.5,
+            move_sl_to_be_after_tp1=False,
+        )
+        engine = BacktestEngine(cfg, initial_balance=10_000.0)
+        risk_mgr = _risk_mgr(engine)
+
+        open_position(
+            engine, side="short",
+            entry_price=100.0, stop_loss=110.0, take_profit=82.0,
+            size=1000.0, tp1_price=94.0,
+        )
+
+        rate = 0.001
+
+        # Candle 1: 08:00 settlement — short receives
+        c1 = self._make_candle_with_funding(
+            "2024-01-01 08:00", open_=99.0, high=100.0, low=96.0, close=97.0,
+            funding_rate=rate,
+        )
+        engine._check_exit(c1, "2024-01-01 08:00", risk_mgr)
+        assert engine.state.position is not None
+        assert abs(engine.state.position.accrued_funding - (-1.0)) < 1e-10, (
+            f"Short at settlement: accrued_funding should be -1.0 (receives), "
+            f"got {engine.state.position.accrued_funding}"
+        )
+
+        # Candle 2: 09:00 (NOT settlement) — partial-TP fires
+        c2 = self._make_candle_with_funding(
+            "2024-01-01 09:00", open_=96.0, high=97.0, low=93.0, close=94.5,
+            funding_rate=rate,
+        )
+        engine._check_exit(c2, "2024-01-01 09:00", risk_mgr)
+        pos = engine.state.position
+        assert pos is not None
+        assert pos.tp1_hit is True
+        assert abs(pos.size - 500.0) < 1e-8
+        assert abs(pos.accrued_funding - (-1.0)) < 1e-10, (
+            f"After non-settlement c2: accrued_funding should still be -1.0, "
+            f"got {pos.accrued_funding}"
+        )
+
+        # Candle 3: 16:00 settlement — short receives again on reduced size
+        c3 = self._make_candle_with_funding(
+            "2024-01-01 16:00", open_=94.0, high=95.0, low=91.0, close=92.0,
+            funding_rate=rate,
+        )
+        engine._check_exit(c3, "2024-01-01 16:00", risk_mgr)
+        assert engine.state.position is not None
+        assert abs(engine.state.position.accrued_funding - (-1.5)) < 1e-10, (
+            f"After c3 (settlement, size=500): accrued_funding should be -1.5, "
+            f"got {engine.state.position.accrued_funding}"
+        )
+
+        # Candle 4: TP fires (low=81 ≤ take_profit=82)
+        c4 = self._make_candle_with_funding(
+            "2024-01-01 17:00", open_=84.0, high=85.0, low=81.0, close=82.5,
+            funding_rate=rate,
+        )
+        engine._check_exit(c4, "2024-01-01 17:00", risk_mgr)
+
+        assert engine.state.position is None
+        trade = engine.state.trades[-1]
+        assert trade.close_reason == "take_profit"
+
+        # Hand-derived total_pnl = 121.5
+        expected_exit_pnl = 500.0 * (100.0 - 82.0) / 100.0  # = 90.0
+        expected_partial_pnl = 500.0 * (100.0 - 94.0) / 100.0  # = 30.0
+        expected_funding = -1.5  # short receives
+        expected_total_pnl = (expected_exit_pnl - expected_funding) + expected_partial_pnl
+        # = (90.0 - (-1.5)) + 30.0 = 91.5 + 30.0 = 121.5
+        assert abs(trade.pnl - expected_total_pnl) < 1e-8, (
+            f"PIN-10 (short): total_pnl={trade.pnl:.6f}, expected {expected_total_pnl:.6f}\n"
+            f"  Breakdown: exit_pnl={expected_exit_pnl:.1f} "
+            f"- funding={expected_funding:.1f} + partial={expected_partial_pnl:.1f}\n"
+            f"  If pnl < expected: short is paying instead of receiving (wrong sign / Mutation B).\n"
+            f"  If pnl > expected and >> gross: all-candle ffill over-credit (Mutation A)."
+        )
+
+    def test_pin10_force_close_includes_funding(self):
+        """PIN-10 variant: force_close (backtest_end) also deducts accrued_funding.
+
+        Covers the force_close path (engine.py:1289-1304) which calls _close_position.
+        The funding accumulated before force_close must appear in the final trade.pnl.
+
+        Hand-derivation (no commission, no slippage):
+            entry=100.0, size=1000.0, rate=0.001
+            Settlement at 08:00: accrued_funding = 1.0
+            Force-close at 10:00 (not settlement): close at price 102.0
+              exit_pnl = 1000 × (102 - 100)/100 = 20.0
+              pnl -= 1.0 (accrued_funding)
+              net pnl = 19.0
+        """
+        engine = _make_engine(initial_balance=10_000.0, commission_rate=0.0,
+                              slippage_rate=0.0)
+        risk_mgr = _risk_mgr(engine)
+
+        open_position(engine, side="long", entry_price=100.0, stop_loss=90.0,
+                      take_profit=200.0, size=1000.0)
+
+        rate = 0.001
+        # Settlement candle — no SL/TP hit
+        c1 = self._make_candle_with_funding(
+            "2024-01-01 08:00", open_=101.0, high=103.0, low=100.0, close=101.5,
+            funding_rate=rate,
+        )
+        engine._check_exit(c1, "2024-01-01 08:00", risk_mgr)
+        assert engine.state.position is not None
+        assert abs(engine.state.position.accrued_funding - 1.0) < 1e-10
+
+        # force_close at 10:00 with close=102.0
+        last_row = self._make_candle_with_funding(
+            "2024-01-01 10:00", open_=101.0, high=103.0, low=100.0, close=102.0,
+            funding_rate=rate,
+        )
+        engine._force_close(last_row, "2024-01-01 10:00", "backtest_end")
+
+        assert engine.state.position is None
+        trade = engine.state.trades[-1]
+        assert trade.close_reason == "backtest_end"
+
+        # Hand-derived: 1000 × (102 - 100)/100 - 1.0 = 20.0 - 1.0 = 19.0
+        expected_pnl = 1000.0 * (102.0 - 100.0) / 100.0 - 1.0
+        assert abs(trade.pnl - expected_pnl) < 1e-8, (
+            f"force_close funding: expected pnl={expected_pnl:.4f}, "
+            f"got {trade.pnl:.4f}. accrued_funding must be deducted in force_close path."
         )

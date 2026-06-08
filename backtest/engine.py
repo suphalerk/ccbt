@@ -89,6 +89,10 @@ class BacktestTrade:
     # None means use the standard rolling regime per candle (default behaviour)
     entry_regime: str = ""
     regime_trail_mult: float = 0.0  # 0.0 = not set (use rolling per-candle regime)
+    # PR-C: accumulated funding charges while position is held.
+    # Tallied ONLY at 8h settlement boundaries (00/08/16 UTC) on then-current size.
+    # Long pays (+), short receives (-).  Subtracted from PnL at close.
+    accrued_funding: float = 0.0
 
 
 @dataclass
@@ -987,6 +991,31 @@ class BacktestEngine:
         if pos is None:
             return
 
+        # --- PR-C: funding accumulation at 8h settlement boundaries ---
+        # Settlements occur at 00:00, 08:00, 16:00 UTC only.  The fundingRate
+        # column is ffilled (data.py:1200) so a naive .sum() over all candles
+        # over-charges by ~32x on 15m data.  We tally ONLY at these boundaries,
+        # on the then-current position size (which may have shrunk via partial-TP
+        # or grown via pyramid add).
+        # No-op when:
+        #   - fundingRate column is absent (forex / test fixtures without funding)
+        #   - fundingRate is NaN or 0.0
+        #   - instrument is non-perpetual (rate would be 0 anyway)
+        if "fundingRate" in row.index:
+            rate = row["fundingRate"]
+            if pd.notna(rate) and rate != 0.0:
+                try:
+                    ts = pd.Timestamp(current_time)
+                    if ts.hour in (0, 8, 16) and ts.minute == 0:
+                        # Long PAYS (positive funding cost), short RECEIVES (negative cost)
+                        settlement = pos.size * rate  # sign: + for long pays, - for short gets
+                        if pos.side == "short":
+                            settlement = -settlement
+                        pos.accrued_funding += settlement
+                except Exception:
+                    pass  # Malformed timestamp — skip, no funding charged
+        # --- End funding accumulation ---
+
         close = row["close"]
         high = row["high"]
         low = row["low"]
@@ -1263,6 +1292,14 @@ class BacktestEngine:
         # Commission on exit
         commission = pos.size * self.commission_rate
         pnl -= commission
+
+        # PR-C: deduct accumulated funding charges.
+        # pos.accrued_funding is the total charge over all settlement boundaries
+        # crossed while holding the position (positive = long paid, negative = short received).
+        # Long: paid funding → deduct from pnl.  Short: received funding → pnl increases.
+        # The sign is already baked in (short sets negative settlement above), so
+        # we always subtract: subtracting a negative = adding to pnl for shorts.
+        pnl -= pos.accrued_funding
 
         # Update state
         self.state.balance += pnl
