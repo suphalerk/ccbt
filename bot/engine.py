@@ -1988,7 +1988,7 @@ class TradingEngine:
                 position_side=pos_side,
                 position_size=pos_size,
                 position_entry=pos_entry,
-                error_count=self._risk_mgr.state.consecutive_api_errors if self._risk_mgr else 0,
+                error_count=self._risk_mgr.state.api_error_count if self._risk_mgr else 0,
                 loop_count=self._loop_count,
             )
         except Exception:

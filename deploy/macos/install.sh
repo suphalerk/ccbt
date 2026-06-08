@@ -11,7 +11,7 @@ LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
 
 PLISTS=(
     "com.ccbt.trading-bot.plist"
-    "com.ccbt.dashboard.plist"
+    "com.ccbt.dashboard-v2.plist"
     "com.ccbt.rotate-logs.plist"
 )
 

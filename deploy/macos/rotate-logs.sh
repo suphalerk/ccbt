@@ -50,5 +50,7 @@ mkdir -p "$LOG_DIR"
 
 rotate_log "$LOG_DIR/bot.log"
 rotate_log "$LOG_DIR/bot-error.log"
-rotate_log "$LOG_DIR/dashboard.log"
-rotate_log "$LOG_DIR/dashboard-error.log"
+# Dashboard v2 (Vite+FastAPI) replaced Streamlit — rotate its logs, not the old dashboard.log
+rotate_log "$LOG_DIR/dashboard-v2.log"
+rotate_log "$LOG_DIR/dashboard-v2-error.log"
+rotate_log "$LOG_DIR/checkpoint.log"
