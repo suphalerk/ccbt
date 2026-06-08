@@ -11,3 +11,4 @@
 - [project_dashboard_round5_frontend_fix.md](project_dashboard_round5_frontend_fix.md) — Round 5 frontend fix: both blockers resolved by backend commit; 580 tests pass in clean run
 - [project_dashboard_round6_frontend_fix.md](project_dashboard_round6_frontend_fix.md) — Round 6 frontend fix: WS snapshot bots cache shape mismatch — portfolio grid showed 0, sidebar 40
 - [project_dashboard_round6_post_review.md](project_dashboard_round6_post_review.md) — Round 6 post-fix review: all 3 residuals verified fixed, 163+99 tests pass, build clean, nit on PortfolioSummary type noted
+- [project_realtime_upnl.md](project_realtime_upnl.md) — Realtime uPnL panel shipped; UpnlPanel + useLiveSnapshot; TS fix: erasableSyntaxOnly bans constructor param props

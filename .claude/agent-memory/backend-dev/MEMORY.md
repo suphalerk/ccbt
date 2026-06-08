@@ -30,6 +30,7 @@
 
 - [project_dashboard_round1_fixes_2026_06_07.md](project_dashboard_round1_fixes_2026_06_07.md) — Round 1: 4 blockers fixed (roster from start.sh, gate since=, lifespan safety, WS token); 292 tests pass
 - [project_dashboard_round2_nits_2026_06_07.md](project_dashboard_round2_nits_2026_06_07.md) — Round 2: segment-exact SPA guard, Cache-Control no-store, WS snapshot parity tests (13 tests)
+- [project_backtest_pr_a_2026_06_08.md](project_backtest_pr_a_2026_06_08.md) — PR-A: 77 characterization tests for backtest engine/metrics/replay/parity, zero behavior change, KNOWN GAPs documented
 
 ## Feedback
 - [feedback_review_style.md](feedback_review_style.md) — How thorough code reviews should be structured
