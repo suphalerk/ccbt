@@ -13,7 +13,7 @@
  */
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import type { WSEnvelope, WSSnapshotPayload, BotRow, WSSnapshotData } from '../ws-types'
+import type { WSEnvelope, WSSnapshotPayload, WSUpnlPayload, WSUpnlData, BotRow, WSSnapshotData } from '../ws-types'
 import type { BotListResponse, PortfolioSummaryResponse } from '../api/client'
 
 export type WsStatus = 'connecting' | 'connected' | 'reconnecting' | 'closed'
@@ -22,6 +22,8 @@ export interface LiveSnapshotState {
   status: WsStatus
   snapshot: WSSnapshotPayload | null
   lastUpdated: string | null
+  /** Realtime unrealized PnL feed (null until first upnl message received) */
+  upnl: WSUpnlData | null
 }
 
 // Query keys used by the REST endpoints — we update these caches from WS
@@ -59,6 +61,7 @@ export function useLiveSnapshot(): LiveSnapshotState {
   const [status, setStatus] = useState<WsStatus>('connecting')
   const [snapshot, setSnapshot] = useState<WSSnapshotPayload | null>(null)
   const [lastUpdated, setLastUpdated] = useState<string | null>(null)
+  const [upnl, setUpnl] = useState<WSUpnlData | null>(null)
 
   const connect = useCallback(() => {
     if (unmountedRef.current) return
@@ -86,6 +89,13 @@ export function useLiveSnapshot(): LiveSnapshotState {
 
       if (envelope.type === 'heartbeat') {
         // keep-alive — no cache update needed
+        return
+      }
+
+      if (envelope.type === 'upnl') {
+        // Realtime unrealized PnL from api/markprice.py — render only, no cache write
+        const upnlMsg = envelope as WSUpnlPayload
+        setUpnl(upnlMsg.data ?? null)
         return
       }
 
@@ -152,5 +162,5 @@ export function useLiveSnapshot(): LiveSnapshotState {
     }
   }, [connect])
 
-  return { status, snapshot, lastUpdated }
+  return { status, snapshot, lastUpdated, upnl }
 }

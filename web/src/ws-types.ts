@@ -72,5 +72,33 @@ export interface WSHeartbeat {
   timestamp?: string | null
 }
 
+// ---------------------------------------------------------------------------
+// uPnL feed — realtime unrealized PnL (api/markprice.py)
+// ---------------------------------------------------------------------------
+
+export interface PositionMark {
+  symbol: string
+  side: string
+  entry_price: number
+  size: number
+  mark_price: number
+  upnl: number
+  ts: string | null
+}
+
+export type FeedStatus = 'live' | 'stale' | 'offline'
+
+export interface WSUpnlData {
+  positions: PositionMark[]
+  total_upnl: number
+  feed_status: FeedStatus
+}
+
+export interface WSUpnlPayload {
+  type: 'upnl'
+  ts: string
+  data: WSUpnlData
+}
+
 /** Union type for all WS message envelopes */
-export type WSEnvelope = WSSnapshotPayload | WSLogPayload | WSHeartbeat
+export type WSEnvelope = WSSnapshotPayload | WSLogPayload | WSHeartbeat | WSUpnlPayload
