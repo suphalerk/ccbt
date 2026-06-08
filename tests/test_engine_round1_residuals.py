@@ -330,21 +330,19 @@ class TestPnlMagnitudeClamp:
         journal_kwargs = journal.log_trade_close.call_args[1] if journal.log_trade_close.called else {}
         return result, journal_kwargs, alert_calls
 
-    def test_same_band_contamination_3x_rejected(self):
-        """POL entry=0.09, contaminated exit=0.30 → ratio=3.3x (passes 5x
-        price-ratio guard) → pnl_pct ≈ +233%.  With leverage=5, cap is
-        500%.  At first glance this passes — but pnl_pct should still be
-        clamped/rejected because 233% on a single candle is implausible for
-        a 5x-leveraged position.
+    # The single-candle price-move ceiling (must match engine._MAX_CANDLE_MOVE_PCT).
+    _MOVE_CAP_PCT = 50.0
 
-        The cap formula is: leverage * 100.  For leverage=5: cap=500%.
-        A 233% pnl_pct is < 500% and will pass the magnitude guard in this
-        formulation — but with leverage=2 (cap=200%) it would be rejected.
+    def test_same_band_contamination_3x_rejected(self):
+        """POL entry=0.09, contaminated exit=0.30 → ratio=3.3x (passes the 5x
+        price-ratio guard) → +233% single-candle move.  This is rejected by the
+        leverage-INDEPENDENT single-candle move ceiling (50%), so it must hold at
+        the REAL deployed leverage (25x), not only at the toy leverage=2 the old
+        (mis-unit'd) leverage*100 cap needed.
         """
-        # Use leverage=2 to make the 233% implausible relative to cap=200%
         entry = 0.09
-        contaminated_exit = 0.30  # 3.33x entry — passes _MAX_EXIT_RATIO=5.0
-        leverage = 2  # cap = leverage * 100 = 200 %
+        contaminated_exit = 0.30  # 3.33x entry (passes _MAX_EXIT_RATIO=5.0); +233% move
+        leverage = 25  # the deployed fleet leverage — the old cap (2500%) never fired here
 
         result, journal_kwargs, alert_calls = self._run_check(
             entry=entry, exit_price=contaminated_exit, leverage=leverage
@@ -353,21 +351,22 @@ class TestPnlMagnitudeClamp:
         # Close must still be detected
         assert 1 not in result, "Close detection must still fire"
 
-        # pnl_pct must not exceed leverage * 100
+        # The +233% garbage must NOT be journaled — it falls to the bounded
+        # ticker/SL/TP reconcile path, so |pnl_pct| is far below the 50% ceiling.
         pnl_pct = abs(journal_kwargs.get("pnl_pct", 0))
-        cap = leverage * 100
-        assert pnl_pct <= cap, (
-            f"Journaled pnl_pct={pnl_pct:.1f}% exceeds leverage cap "
-            f"{cap}% (leverage={leverage})"
+        assert pnl_pct <= self._MOVE_CAP_PCT, (
+            f"Journaled pnl_pct={pnl_pct:.1f}% exceeds the single-candle move "
+            f"ceiling {self._MOVE_CAP_PCT}% at deployed leverage {leverage}"
         )
 
     def test_same_band_contamination_no_garbage_alert(self):
-        """The implausible pnl_pct must not appear in any Telegram alert."""
+        """The implausible +233% must not appear in any Telegram alert — at the
+        REAL deployed leverage (25x)."""
         import re
 
         entry = 0.09
         contaminated_exit = 0.30
-        leverage = 2  # cap = 200 %
+        leverage = 25  # deployed leverage
 
         _, _, alert_calls = self._run_check(
             entry=entry, exit_price=contaminated_exit, leverage=leverage
@@ -377,9 +376,9 @@ class TestPnlMagnitudeClamp:
             pct_matches = re.findall(r"([+-]?[\d,]+\.?\d*)\s*%", msg)
             for m in pct_matches:
                 val = float(m.replace(",", ""))
-                assert abs(val) <= leverage * 100, (
+                assert abs(val) <= self._MOVE_CAP_PCT, (
                     f"Alert contains implausible PnL {val:.1f}% "
-                    f"(cap={leverage * 100}%): {msg!r}"
+                    f"(> {self._MOVE_CAP_PCT}% single-candle ceiling): {msg!r}"
                 )
 
     def test_legitimate_high_leverage_move_not_false_rejected(self):

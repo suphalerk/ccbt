@@ -173,6 +173,17 @@ def check_closed_positions(
     # catching POLUSDT (0.09) being matched against an AXS (2.5) fill.
     _MAX_EXIT_RATIO = 5.0
 
+    # Single-candle PRICE-MOVE ceiling (percent, leverage-independent) for the
+    # exit fill of an absence-detected close.  `actual_pnl/size*100` reduces to the
+    # raw underlying price-move %, so this bounds it directly.  The _MAX_EXIT_RATIO
+    # guard above only rejects fills outside 0.2x-5x entry (a -80%..+400% move); a
+    # SAME-BAND cross-symbol fill (e.g. POL 0.09 matched to AXS 0.30 = +233%) passes
+    # the ratio check but is still implausible for one candle.  A real SL/TP/trail
+    # close moves only a few % of the underlying, so 50% is far above any genuine
+    # close yet rejects same-band contamination.  Leverage does NOT enter here —
+    # `size` is notional, so the % is the raw price move, not the leveraged return.
+    _MAX_CANDLE_MOVE_PCT = 50.0
+
     # TTL for recently_closed entries: after this window (seconds) the symbol
     # is allowed to journal + alert again so a genuine subsequent trade can
     # be reported.  60 s is long enough to cover all config-bots processing the
@@ -269,36 +280,30 @@ def check_closed_positions(
 
                             # --------------------------------------------------
                             # PnL-magnitude clamp (defense-in-depth).
-                            # The price-ratio guard above catches extreme
-                            # cross-symbol contamination (e.g. 28x).  A
-                            # moderate same-band contamination (e.g. POL 0.09
-                            # matched against AXS 0.30 = 3.3x, ratio < MAX)
-                            # still passes the price check but yields ~+233%
-                            # pnl_pct, which is implausible for a single candle.
-                            # Reject if |pnl_pct| > leverage * 100; fall through
-                            # to the reconcile/fallback path — never journal or
-                            # alert an implausible PnL.
-                            # Default cap when leverage is unknown: 1000 % (very
-                            # permissive so ordinary closes are never suppressed).
-                            _leverage = 1000  # safe default
-                            if config is not None:
-                                _leverage = int(config.get("leverage", 1000))
-                            _pnl_pct_cap = _leverage * 100.0
-                            _candidate_pnl_pct = (
-                                actual_pnl / info["size"] * 100
-                                if info["size"] > 0
+                            # The _MAX_EXIT_RATIO guard above catches EXTREME
+                            # cross-symbol contamination (e.g. 28x → -2685%).  A
+                            # MODERATE same-band contamination (e.g. POL 0.09
+                            # matched against AXS 0.30 = 3.3x, ratio < MAX) passes
+                            # the price-ratio check but yields ~+233% — implausible
+                            # for a single candle.  Bound the raw single-candle
+                            # price move directly (leverage-INDEPENDENT — `size` is
+                            # notional, so this % is the underlying move, not the
+                            # leveraged return).  Reject + fall through to the
+                            # reconcile/fallback path; never journal/alert garbage.
+                            _candidate_move_pct = (
+                                abs(exit_price - entry) / entry * 100
+                                if entry > 0
                                 else 0.0
                             )
-                            if abs(_candidate_pnl_pct) > _pnl_pct_cap:
+                            if _candidate_move_pct > _MAX_CANDLE_MOVE_PCT:
                                 logger.warning(
-                                    "exit_pnl_pct_exceeds_leverage_cap_rejected",
+                                    "exit_price_move_exceeds_candle_cap_rejected",
                                     extra={
                                         "symbol": symbol,
                                         "entry": entry,
                                         "candidate_exit": candidate_price,
-                                        "candidate_pnl_pct": round(_candidate_pnl_pct, 2),
-                                        "leverage": _leverage,
-                                        "cap_pct": _pnl_pct_cap,
+                                        "candidate_move_pct": round(_candidate_move_pct, 2),
+                                        "cap_pct": _MAX_CANDLE_MOVE_PCT,
                                     },
                                 )
                                 exit_price = None
