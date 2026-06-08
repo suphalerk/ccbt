@@ -6,6 +6,16 @@
 > `notional` (Σ abs(entry)·abs(size), matching canonical `/api/risk`). Review caught a missing notional pin
 > test (short with negative size → makes abs() load-bearing) — added. 22 markprice + 218 vitest pass.
 >
+> **Follow-ups (2026-06-08, post-merge):**
+> - **Today's PnL → Bangkok GMT+7** — `get_today_pnl` now groups on `DATE(timestamp,'+7 hours')` (was UTC).
+>   Fixed a pre-existing DUPLICATE `get_today_pnl` def (the old UTC one shadowed it) + a WS-clobber bug
+>   (`_build_snapshot` omitted `today_pnl`/`notional` → cards flipped to `—` after the first WS snapshot).
+> - **Today Net PnL card** (supersedes the plain "Today's PnL" card, testId `header-today-pnl` kept): shows
+>   NET = realized(today) + unrealized(live) with a 2-line breakdown + ● live dot; `net_today` computed in
+>   the markPrice payload (Python, TTL-cached 5s), read verbatim in TS. Offline fallback → realized-only +
+>   "feed offline". Review caught silent-freeze (added `_stale_rebroadcast_loop`) + a toothless net test
+>   (poisoned `net_today` to pin server-read). User-approved design "A". 248 vitest + 29 markprice pass.
+>
 > From [README.md](README.md) ADD_NOW #3, #5. Branch: `ui-batch2-livetrade`. TDD + review.
 > No new exchange call. Backend changes are small + server-side (no math in TS).
 

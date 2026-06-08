@@ -236,8 +236,17 @@ BOT_DATA_DIR                 — Data directory (default: ./data in Docker, . lo
   [docs/tickets/dashboard-ui-improvements/README.md](docs/tickets/dashboard-ui-improvements/README.md).
 - **Realtime uPnL** (`api/markprice.py`): public Binance markPrice WS (no API key) broadcasts `type:"upnl"`
   frames on the same `/ws` channel — per-position unrealized PnL + server-computed `dist_to_stop_pct` /
-  `rr_remaining` (shown in UpnlPanel) + `feed_status` (live/stale/offline). never-interfere: the dashboard
-  never calls the trading account.
+  `rr_remaining` (shown in UpnlPanel) + `feed_status` (live/stale/offline) + `today_realized` + `net_today`
+  (= today_realized + total_upnl, drives the **Today Net PnL** header card; net is computed in Python, never
+  re-summed in TS). A `_stale_rebroadcast_loop` re-emits the payload every ~STALE_AFTER_S/2 so a SILENT feed
+  freeze (WS up, no frames) still flips the card to `feed_status:'stale'` → offline fallback (no frozen
+  "live" net). never-interfere: the dashboard never calls the trading account.
+- **Today's PnL is Bangkok (GMT+7)**: `dashboard.queries.get_today_pnl()` groups on
+  `DATE(timestamp,'+7 hours') = DATE('now','+7 hours')` (timestamps are stored UTC). It feeds both
+  `PortfolioSummaryResponse.today_pnl` (REST) and the markPrice `today_realized`. **The WS `_build_snapshot`
+  portfolio payload (`api/ws.py`) MUST carry the full REST shape (incl. `today_pnl` + `notional`)** — it
+  overwrites the `['portfolio','summary']` cache in `useLiveSnapshot`, so any field it omits flips to
+  `—` a few seconds after load.
 - **Realtime TP/SL alerts** (`CCBT_USERDATA_WS=1`, `bot/user_data_stream.py`): ON for testnet
   (`deploy/macos/start.sh`), **OFF for mainnet** until proxied-WS egress is validated. A single account-wide
   Binance user-data WS is a TRIGGER only (set-only; never alerts/DB/PnL); on an `ACCOUNT_UPDATE pa==0` /
