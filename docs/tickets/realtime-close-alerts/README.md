@@ -1,8 +1,23 @@
 # Ticket — Realtime TP/SL Close Alerts (user-data WS as TRIGGER, REST as TRUTH)
 
-Status: DESIGN / READY-TO-BUILD  
+Status: **PR1 ✅ + PR2 ✅ merged (flag-OFF, dormant) — PR3 (live testnet validation) PENDING user GO**  
 Owner: TBD  
 Flag: `CCBT_USERDATA_WS=1` (flag-OFF == today's behaviour, byte-for-byte)
+
+**Progress (2026-06-08):**
+- **PR1 ✅** (commit b41cc7b) — wake plumbing: `wake_events` registry, 3-way `_interruptible_sleep` race
+  (both call sites), `_verify_close_after_ws` (exception-safe, latched `_woke_via_ws`, snapshot cache).
+  Review caught a BLOCKER (flag clobber) + the Py3.9 Event-binding doc — fixed. 32+263 tests, flag-OFF parity verified.
+- **PR2 ✅** (commit b33d256) — `bot/user_data_stream.py`: dedicated ccxt for listenKey, keepalive,
+  run_forever+backoff, SET-ONLY frame handler (`ACCOUNT_UPDATE pa=='0'` primary + `ORDER_TRADE_UPDATE`
+  secondary), fail-closed SOCKS (lazy `python-socks` import; `websockets.connect(proxy=...)`), debounced
+  reconcile sweep on open DB trades; launched flag-gated in `async_main`. Review caught 2 BLOCKERS (mainnet
+  REST domain = `fapi.binance.com` not the WS host; broken proxied connect → native `proxy=` kwarg) + 4
+  MAJORS — fixed. 73 tests. Remaining: MAJOR-5 (CancelledError DELETE on overlapping restart) + 10 minors
+  are mainnet/proxy ops concerns deferred to PR3.
+- **PR3 ⏳ PENDING** — enable `CCBT_USERDATA_WS=1` on **testnet**, restart, validate a real SL/TP fill wakes
+  within seconds + routes through `check_closed_positions`, no duplicate alerts, WS-down → candle backstop.
+  Needs a bot restart (touches live positions) → **requires explicit user GO**. Mainnet stays flag-OFF.
 
 ---
 
