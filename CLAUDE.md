@@ -208,6 +208,39 @@ OANDA_ACCOUNT_ID             — OANDA account ID (gold bot)
 CONFIG_FILE                  — Config file path (default: config.json)
 YOLO_MODE                    — Set to "1" to enable YOLO validation limits
 BOT_DATA_DIR                 — Data directory (default: ./data in Docker, . locally)
+
+# Portfolio Kill-Switch (Tier 1, realized-only) — bot/portfolio_killswitch.py
+CCBT_KILL_SWITCH             — Set to "1" to enable the portfolio kill-switch monitor.
+                               Default OFF == byte-for-byte today (no monitor task, no
+                               mode-file writes, can_open() unchanged).
+CCBT_KILL_HALT_PCT           — Realized loss % threshold for Tier 1 halt (default: 6.0,
+                               meaning -6% of start-of-day equity). NOTE: -6% is NOT
+                               validated against CCBT's equity-curve drawdown distribution.
+                               Set conservatively (8-10%) until the equity-curve replay
+                               (Open Decision 1) is completed. NEVER use the default live
+                               without that measurement.
+CCBT_KILL_CONFIRM_M          — M in M-of-N hysteresis: how many of the last N samples must
+                               breach the threshold before tripping (default: 3).
+CCBT_KILL_CONFIRM_N          — N in M-of-N hysteresis: sliding window size (default: 4).
+                               Loop period is 15s; with N=4, the window covers ~60s.
+
+# Kill-Switch Design Notes
+# - Tier 1 ONLY in this build: in-process is_halted gate, NO mode-file writes.
+#   Writing GRACEFUL_STOP to a flat bot permanently kills its coroutine (engine.py:961
+#   breaks when _tracked_trades is empty). The entry gate (can_open()→False) is the
+#   only Tier 1 action.
+# - Realized-only: metric = get_today_realized_by_close() bucketed by CLOSE time
+#   (close_timestamp column), not open time. Trades opened yesterday but closed today
+#   at a loss correctly count on today's Bangkok day.
+# - Equity denominator = totalWalletBalance (realized equity incl. locked margin) from
+#   Binance USDT-M fetch_balance()["info"]["totalWalletBalance"]. NOT free balance.
+# - Bangkok day boundary (GMT+7): matches dashboard and get_today_realized_by_close().
+#   Per-bot reset_daily uses UTC — 7h divergence window. Documented gap; sized via
+#   Open Decision 1.
+# - Restart persistence: data/portfolio_halt.json (bangkok_date keyed). Same-day
+#   restart restores is_halted=True for Tier 1. start_of_day_equity back-calculated
+#   as current_equity - realized_today_by_close() on mid-day restart.
+# - No Tier 2 (FLATTEN), no PANIC mode files, no unrealized metric in this build.
 ```
 
 **Key selection is automatic**: `use_testnet: true` → testnet keys, `use_testnet: false` → mainnet keys. Bot raises `ValueError` if mainnet keys are missing.
@@ -217,6 +250,8 @@ BOT_DATA_DIR                 — Data directory (default: ./data in Docker, . lo
   enriched (dashboard-engine-followups): `tp` / `stop_loss` (hard SL, loss) / `trail_stop` (stop that
   ratcheted into profit — a winning exit) / `breakeven` (pnl≥0 near entry) / `panic` / `graceful_shutdown`
   / `orphan_reconcile`. Classification is by **pnl sign first** (a loss is never `trail_stop`/`breakeven`).
+  `close_timestamp` (TEXT, UTC ISO) — populated by `log_trade_close()`; NULL for pre-migration rows (fallback
+  to open-time `timestamp`). Used by `get_today_realized_by_close()` to bucket by CLOSE time in Bangkok tz.
 - `ai_calibration` — AI decision outcomes for accuracy tracking
 - `bot_health` — Per-bot live status (position, errors, loop count, mode, PnL)
 - `bot_ohlcv` — Recent OHLCV+indicators (ema9/ema21/rsi14) per symbol/timeframe, written by the bot from

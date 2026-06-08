@@ -358,6 +358,51 @@ def get_today_pnl(
         conn.close()
 
 
+def get_today_realized_by_close(
+    db_path: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> float:
+    """Realized PnL for trades CLOSED today in **Bangkok time (GMT+7)**.
+
+    Buckets by CLOSE time (``close_timestamp``), not the trade open time. This
+    is the correct source for the portfolio kill-switch: a position opened
+    yesterday but closed today at a big loss counts on *today's* Bangkok day,
+    not yesterday.
+
+    For legacy rows where ``close_timestamp`` is NULL (pre-migration), falls
+    back to the open-time ``timestamp`` column — an approximation, but better
+    than omitting the row entirely.
+
+    Excludes orphan_reconcile rows (same rule as get_today_pnl).
+
+    Returns 0.0 on any error or when no trades match.
+    """
+    if not db_exists(db_path):
+        return 0.0
+    filt, params = _symbol_filter(symbol)
+    conn = _get_connection(db_path)
+    try:
+        row = conn.execute(
+            f"""
+            SELECT COALESCE(SUM(pnl), 0) as total_pnl
+            FROM trades
+            WHERE status = 'closed'
+              AND COALESCE(close_reason, '') != 'orphan_reconcile'
+              AND DATE(
+                    COALESCE(close_timestamp, timestamp),
+                    '+7 hours'
+                  ) = DATE('now', '+7 hours'){filt}
+            """,
+            params,
+        ).fetchone()
+        val = float(row["total_pnl"]) if row and row["total_pnl"] is not None else 0.0
+        return val if val == val and val not in (float("inf"), float("-inf")) else 0.0
+    except Exception:
+        return 0.0
+    finally:
+        conn.close()
+
+
 def get_today_trade_count(
     db_path: Optional[str] = None,
     symbol: Optional[str] = None,

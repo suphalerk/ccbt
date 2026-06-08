@@ -80,6 +80,10 @@ class PortfolioManager:
     2. Duplicate-coin gate — at most one bot at a time may hold a position
        in any given symbol.
 
+    When CCBT_KILL_SWITCH=1, also enforces the process-wide portfolio
+    kill-switch:  if ``is_halted`` is True, ``can_open()`` returns False for
+    ALL symbols regardless of the cap or coin gate.
+
     All methods that mutate state are protected by an ``asyncio.Lock`` so
     they are safe to call concurrently from many bot coroutines.
     """
@@ -95,6 +99,21 @@ class PortfolioManager:
         # Dict is keyed by normalised symbol, value is the close timestamp.
         self.recently_closed: dict = {}
 
+        # -------------------------------------------------------------------
+        # Kill-switch state (flag-gated: CCBT_KILL_SWITCH=1)
+        # All mutations below are guarded by _lock.
+        # When _kill_switch_enabled is False these fields exist but can_open()
+        # never reads them — byte-for-byte today's behaviour.
+        # -------------------------------------------------------------------
+        self._kill_switch_enabled: bool = os.getenv("CCBT_KILL_SWITCH") == "1"
+        self.is_halted: bool = False
+        self.halt_reason: str = ""
+        self.halt_tier: int = 0
+        # Bangkok-day equity snapshot (set at arm / start-of-day)
+        self.start_of_day_equity: Optional[float] = None
+        # Bangkok date string (YYYY-MM-DD) when halt was recorded
+        self._halt_bangkok_date: str = ""
+
     @property
     def open_count(self) -> int:
         # Count by UNIQUE coin — multiple strategy-bots share one netted
@@ -107,15 +126,50 @@ class PortfolioManager:
         """Return True if a new position may be opened for *symbol*.
 
         Checks both the global position cap and the duplicate-coin gate.
+        When the kill-switch is enabled and the portfolio is halted, returns
+        False for every symbol before any other check.
+
         Does NOT modify state — call :meth:`register_open` after the order
         is successfully placed.
         """
         async with self._lock:
+            # Kill-switch gate — FIRST check (before cap/dup checks)
+            # Flag-OFF: _kill_switch_enabled is False → this branch never taken
+            if self._kill_switch_enabled and self.is_halted:
+                return False
             if len(self._open_coins) >= self.max_positions:
                 return False
             if symbol in self._open_coins:
                 return False
             return True
+
+    async def trip(self, tier: int, reason: str) -> None:
+        """Set the portfolio into a halted state (Tier 1: entry-gate only).
+
+        Idempotent: if already halted at the same tier, does nothing.
+        The kill-switch monitor calls this; no-op when flag is OFF.
+        """
+        if not self._kill_switch_enabled:
+            return
+        async with self._lock:
+            if self.is_halted:
+                return  # already halted — no state change, alert fires once
+            self.is_halted = True
+            self.halt_tier = tier
+            self.halt_reason = reason
+
+    async def clear(self, tier: int) -> None:
+        """Clear a halted state.
+
+        Only clears if the current halt_tier matches *tier* and the flag is ON.
+        """
+        if not self._kill_switch_enabled:
+            return
+        async with self._lock:
+            if self.halt_tier == tier:
+                self.is_halted = False
+                self.halt_tier = 0
+                self.halt_reason = ""
 
     async def register_open(self, symbol: str) -> None:
         """Record that a new position has been opened for *symbol*.
@@ -614,6 +668,47 @@ async def async_main(
     )
     tasks.append(telegram_task)
 
+    # Portfolio kill-switch monitor (flag-gated: CCBT_KILL_SWITCH=1).
+    # When enabled, runs a single async task that monitors aggregate realized
+    # loss and trips PortfolioManager.is_halted after M-of-N consecutive
+    # threshold breaches. Tier 1 only: NO mode file writes — just the
+    # in-process can_open() gate. Bangkok daily rollover + restart persistence.
+    # Flag-OFF (default): task NOT created; behaviour byte-for-byte today.
+    if os.getenv("CCBT_KILL_SWITCH") == "1":
+        from bot.portfolio_killswitch import run_portfolio_killswitch
+        _ks_data_dir = os.environ.get("BOT_DATA_DIR", "data")
+        _ks_db_path = str(Path(_ks_data_dir) / "trades.db") if _ks_data_dir != "data" else "trades.db"
+        # Build an equity getter that calls SharedMarketData.get_equity(fresh=True)
+        # (or falls back to a direct exchange call if shared_market_data is None)
+        if shared_market_data is not None:
+            def _get_equity() -> Optional[float]:
+                return shared_market_data.get_equity(fresh=True)
+        else:
+            def _get_equity() -> Optional[float]:
+                try:
+                    raw = shared_exchange.fetch_balance()
+                    if "info" in raw and isinstance(raw["info"], dict):
+                        val = raw["info"].get("totalWalletBalance")
+                        return float(val) if val is not None else None
+                    return None
+                except Exception:
+                    return None
+        ks_task = asyncio.create_task(
+            run_portfolio_killswitch(
+                shutdown_event=shutdown_event,
+                portfolio_manager=portfolio_manager,
+                get_equity_fn=_get_equity,
+                db_path=_ks_db_path,
+                data_dir=_ks_data_dir,
+            ),
+            name="portfolio-kill-switch",
+        )
+        tasks.append(ks_task)
+        logger.info(
+            "portfolio_killswitch_task_launched",
+            extra={"data_dir": _ks_data_dir, "db_path": _ks_db_path},
+        )
+
     # PR2 — user-data WS trigger task (flag-gated: CCBT_USERDATA_WS=1).
     # When enabled, this task listens to the Binance user-data stream and
     # .set()s per-engine wake events on SL/TP fills, waking bots early.
@@ -628,10 +723,10 @@ async def async_main(
         tasks.append(user_data_task)
         logger.info("user_data_ws_task_launched")
 
-    # bot_count = bots only (exclude telegram-handler and user-data-ws)
+    # bot_count = bots only (exclude telegram-handler, user-data-ws, kill-switch)
     _non_bot_tasks = sum(
         1 for t in tasks
-        if t.get_name() in {"telegram-handler", "user-data-ws"}
+        if t.get_name() in {"telegram-handler", "user-data-ws", "portfolio-kill-switch"}
     )
     bot_count = len(tasks) - _non_bot_tasks
     logger.info("all_bots_launched", extra={"count": bot_count})

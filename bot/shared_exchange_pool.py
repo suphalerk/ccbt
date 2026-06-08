@@ -200,9 +200,15 @@ class SharedMarketData:
         self._clock: Callable[[], float] = clock if clock is not None else time.time
         self._lock = threading.Lock()
 
-        # Balance cache
+        # Balance cache (free USDT)
         self._balance_value: Optional[float] = None
         self._balance_ts: float = -_BALANCE_TTL_S  # forces miss on first call
+
+        # Equity cache (totalWalletBalance — realized equity incl. locked margin)
+        # NOT used as a rolling-TTL cache for the kill-switch denominator.
+        # The kill-switch reads it once at arm/start-of-day via get_equity(fresh=True).
+        self._equity_value: Optional[float] = None
+        self._equity_ts: float = -_BALANCE_TTL_S  # forces miss on first call
 
         # OHLCV cache: key → (df, last_closed_open_time_s, served_limit)
         self._ohlcv_cache: dict[Tuple[str, str], Tuple[pd.DataFrame, int, int]] = {}
@@ -254,6 +260,62 @@ class SharedMarketData:
             self._balance_ts = self._clock()  # refresh timestamp after fetch
 
         return balance
+
+    def get_equity(self, fresh: bool = False) -> Optional[float]:
+        """Return Binance USDT-M totalWalletBalance (realized equity including locked margin).
+
+        This is the correct denominator for the portfolio kill-switch loss %.
+        It includes locked margin from open positions, unlike get_balance() which
+        returns only free USDT.
+
+        The kill-switch calls this with fresh=True at arm time (start-of-day) and
+        daily rollover — NOT on every 15s monitor tick.  The 30s TTL cache is
+        available for other callers (e.g. informational display) but the kill-switch
+        must NOT use a stale TTL value as its denominator.
+
+        Returns None on any failure — callers must treat None as degraded-data
+        (never substitute 0, which would cause false trips or divide-by-zero).
+
+        Args:
+            fresh: If True, bypass the cache and always call the exchange.
+
+        Returns:
+            totalWalletBalance as float, or None on any error.
+        """
+        now = self._clock()
+
+        # fast path: TTL cache (only used by non-kill-switch callers)
+        if not fresh:
+            with self._lock:
+                if (
+                    self._equity_value is not None
+                    and (now - self._equity_ts) <= _BALANCE_TTL_S
+                ):
+                    return self._equity_value
+
+        # slow path: fetch WITHOUT holding the lock
+        try:
+            raw = self._exchange.fetch_balance()
+            # Binance USDT-M futures: raw["info"]["totalWalletBalance"]
+            equity_val = None
+            if "info" in raw and isinstance(raw["info"], dict):
+                equity_val = raw["info"].get("totalWalletBalance")
+            # Test-fake support: allow {"totalWalletBalance": v} at top level
+            if equity_val is None and "totalWalletBalance" in raw:
+                equity_val = raw["totalWalletBalance"]
+            if equity_val is None:
+                return None
+            equity = float(equity_val)
+        except Exception as exc:
+            logger.warning("get_equity_failed", extra={"error": str(exc)})
+            return None
+
+        # write-through under lock
+        with self._lock:
+            self._equity_value = equity
+            self._equity_ts = self._clock()
+
+        return equity
 
     def get_ohlcv(
         self,

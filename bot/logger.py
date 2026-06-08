@@ -222,6 +222,17 @@ class TradeJournal:
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(timestamp)"
         )
+        # Non-destructive migration: add close_timestamp column if it doesn't exist.
+        # NULL for pre-existing rows — get_today_realized_by_close() falls back to
+        # the open timestamp for NULL rows.
+        existing_cols = {
+            row[1]
+            for row in self._conn.execute("PRAGMA table_info(trades)").fetchall()
+        }
+        if "close_timestamp" not in existing_cols:
+            self._conn.execute(
+                "ALTER TABLE trades ADD COLUMN close_timestamp TEXT"
+            )
         # Candle producer table — created here so the table exists from bot startup
         # even before the first upsert_candles() call.
         _ensure_bot_ohlcv_table(self._conn)
@@ -305,14 +316,16 @@ class TradeJournal:
             close_reason: Reason for closing (tp, sl, trailing_sl, manual, circuit_breaker).
             duration_seconds: Trade duration in seconds.
         """
+        close_ts = datetime.now(timezone.utc).isoformat()
         self._conn.execute(
             """
             UPDATE trades SET exit_price = ?, pnl = ?, pnl_pct = ?,
                               status = 'closed', close_reason = ?,
-                              duration_seconds = ?
+                              duration_seconds = ?,
+                              close_timestamp = ?
             WHERE id = ?
             """,
-            (exit_price, pnl, pnl_pct, close_reason, duration_seconds, trade_id),
+            (exit_price, pnl, pnl_pct, close_reason, duration_seconds, close_ts, trade_id),
         )
         self._conn.commit()
 
