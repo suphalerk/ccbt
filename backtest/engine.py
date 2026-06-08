@@ -992,16 +992,16 @@ class BacktestEngine:
         low = row["low"]
 
         # Check stop loss hit (using high/low for intracandle)
-        # Item 10: When both SL and TP hit on same candle, use candle direction as tiebreaker
-        open_price = row["open"]
+        # PR-B: SL-first (conservative) — when a single candle's range touches BOTH the
+        # stop-loss and the take-profit, assume the stop-loss fills first.  Intra-candle
+        # order is unknown; taking the pessimistic assumption avoids inflating backtest PnL.
+        # (Replaces the former optimistic candle-body-direction tiebreak from PR-A.)
         if pos.side == "long":
             sl_hit = low <= pos.stop_loss
             tp_hit = high >= pos.take_profit
             if sl_hit and tp_hit:
-                if close > open_price:  # Bullish candle → TP filled first
-                    self._close_position(pos.take_profit, current_time, "take_profit", risk_mgr, candle_idx)
-                else:
-                    self._close_position(pos.stop_loss, current_time, "stop_loss", risk_mgr, candle_idx)
+                # SL-first: stop-loss wins regardless of candle direction
+                self._close_position(pos.stop_loss, current_time, "stop_loss", risk_mgr, candle_idx)
                 return
             if sl_hit:
                 self._close_position(pos.stop_loss, current_time, "stop_loss", risk_mgr, candle_idx)
@@ -1010,10 +1010,8 @@ class BacktestEngine:
             sl_hit = high >= pos.stop_loss
             tp_hit = low <= pos.take_profit
             if sl_hit and tp_hit:
-                if close < open_price:  # Bearish candle → TP filled first
-                    self._close_position(pos.take_profit, current_time, "take_profit", risk_mgr, candle_idx)
-                else:
-                    self._close_position(pos.stop_loss, current_time, "stop_loss", risk_mgr, candle_idx)
+                # SL-first: stop-loss wins regardless of candle direction
+                self._close_position(pos.stop_loss, current_time, "stop_loss", risk_mgr, candle_idx)
                 return
             if sl_hit:
                 self._close_position(pos.stop_loss, current_time, "stop_loss", risk_mgr, candle_idx)
