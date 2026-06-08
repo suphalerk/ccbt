@@ -180,22 +180,32 @@ class TestIntrabarExits:
 
 
 # ============================================================================
-# Category 1 — Same-candle SL+TP tiebreak (CURRENT OPTIMISTIC behavior)
+# Category 1 — Same-candle SL+TP tiebreak (PR-B: SL-FIRST conservative)
 # ============================================================================
 
 class TestSameCandleTiebreak:
-    """PIN-7 (CURRENT): candle body direction determines SL vs TP fill.
+    """PIN-7 (PR-B): SL-first — when both SL and TP are touched on the same candle,
+    the stop-loss always fills first.
 
-    engine.py:1000-1017 — THIS IS THE OPTIMISTIC TIEBREAK.
-    PR-B changes this to SL-first (conservative).  Until then we characterize
-    what the code does TODAY so PR-B has a clear before/after.
+    engine.py:994-1019 — THE SL-FIRST TIEBREAK (conservative / pessimistic).
+
+    Rationale: intra-candle fill order is unknown; assuming TP-first inflates
+    backtest PnL.  The safe assumption is that the adverse move (SL) happened
+    before the favorable one (TP).
+
+    Mutation test: reverting _check_exit to the old candle-body logic must fail
+    test_sl_first_long_bullish_candle and test_sl_first_short_bearish_candle
+    (those are the only two cases where candle-body gave TP, now give SL).
     """
 
-    def test_bullish_candle_picks_tp_for_long(self):
-        """Long, bullish candle (close > open) → TP wins the tiebreak (OPTIMISTIC).
+    def test_sl_first_long_bullish_candle(self):
+        """Long, bullish candle: both SL+TP touched → SL fills first (loss).
 
-        KNOWN BEHAVIOR: this is the optimistic candle-body guess.
-        PR-B will replace it with SL-first.
+        PR-A (candle-body): bullish close → TP wins (optimistic).
+        PR-B (SL-first):    SL wins regardless of candle direction.
+
+        Mutation guard: if you revert to the candle-body tiebreak,
+        close_reason becomes 'take_profit' and this test fails.
         """
         engine = _make_engine(initial_balance=10_000.0)
         risk_mgr = _risk_mgr(engine)
@@ -204,19 +214,26 @@ class TestSameCandleTiebreak:
                       take_profit=110.0, size=100.0)
 
         # Both SL (low=94 ≤ 95) and TP (high=111 ≥ 110) touched.
-        # close(106) > open(98) → bullish → current code takes TP (optimistic).
+        # Candle is BULLISH (close=106 > open=98) — under PR-A this picked TP.
+        # Under PR-B it must pick SL.
         candle = make_candle(open_price=98.0, high=111.0, low=94.0, close=106.0)
         engine._check_exit(candle, "2024-01-02 01:00", risk_mgr)
 
-        assert engine.state.trades[-1].close_reason == "take_profit", (
-            "Bullish candle with both SL+TP touched should pick TP (current optimistic behavior)"
+        trade = engine.state.trades[-1]
+        assert trade.close_reason == "stop_loss", (
+            f"SL-first: bullish candle with both SL+TP touched must exit at stop_loss, "
+            f"got {trade.close_reason!r}.  If 'take_profit', the candle-body tiebreak is still active."
+        )
+        # The exit must be a loss (exit price ≤ entry price for a long)
+        assert trade.pnl < 0, (
+            f"SL-first long exit must be a loss, got pnl={trade.pnl:.4f}"
         )
 
-    def test_bearish_candle_picks_sl_for_long(self):
-        """Long, bearish candle (close < open) → SL wins the tiebreak (PESSIMISTIC for LONG).
+    def test_sl_first_long_bearish_candle(self):
+        """Long, bearish candle: both SL+TP touched → SL fills first (already was SL under PR-A).
 
-        This is the one same-candle scenario that already happens to be SL-first
-        for longs: bearish close triggers SL-first in the current code.
+        Both PR-A and PR-B pick SL here (bearish body for long → pessimistic in both regimes).
+        Pin ensures no regression.
         """
         engine = _make_engine(initial_balance=10_000.0)
         risk_mgr = _risk_mgr(engine)
@@ -224,14 +241,21 @@ class TestSameCandleTiebreak:
         open_position(engine, side="long", entry_price=100.0, stop_loss=95.0,
                       take_profit=110.0, size=100.0)
 
-        # Both touched; close(95) < open(104) → bearish → current code picks SL.
+        # Both touched; close(95) < open(104) → bearish
         candle = make_candle(open_price=104.0, high=111.0, low=94.0, close=95.0)
         engine._check_exit(candle, "2024-01-02 01:00", risk_mgr)
 
         assert engine.state.trades[-1].close_reason == "stop_loss"
 
-    def test_bearish_candle_picks_tp_for_short(self):
-        """Short, bearish candle (close < open) → TP wins the tiebreak (OPTIMISTIC for SHORT)."""
+    def test_sl_first_short_bearish_candle(self):
+        """Short, bearish candle: both SL+TP touched → SL fills first (loss for short).
+
+        PR-A (candle-body): bearish close → TP wins for short (optimistic).
+        PR-B (SL-first):    SL wins regardless of candle direction.
+
+        Mutation guard: if you revert to the candle-body tiebreak,
+        close_reason becomes 'take_profit' and this test fails.
+        """
         engine = _make_engine(initial_balance=10_000.0)
         risk_mgr = _risk_mgr(engine)
 
@@ -239,11 +263,38 @@ class TestSameCandleTiebreak:
                       take_profit=90.0, size=100.0)
 
         # Both hit: high=107 ≥ 106 (SL) and low=89 ≤ 90 (TP)
-        # close(91) < open(103) → bearish → current code picks TP for short (optimistic).
+        # Candle is BEARISH (close=91 < open=103) — under PR-A this picked TP for short.
+        # Under PR-B it must pick SL.
         candle = make_candle(open_price=103.0, high=107.0, low=89.0, close=91.0)
         engine._check_exit(candle, "2024-01-02 01:00", risk_mgr)
 
-        assert engine.state.trades[-1].close_reason == "take_profit"
+        trade = engine.state.trades[-1]
+        assert trade.close_reason == "stop_loss", (
+            f"SL-first: bearish candle with both SL+TP touched (short) must exit at stop_loss, "
+            f"got {trade.close_reason!r}.  If 'take_profit', the candle-body tiebreak is still active."
+        )
+        # The exit must be a loss (exit price ≥ entry price for a short)
+        assert trade.pnl < 0, (
+            f"SL-first short exit must be a loss, got pnl={trade.pnl:.4f}"
+        )
+
+    def test_sl_first_short_bullish_candle(self):
+        """Short, bullish candle: both SL+TP touched → SL fills first (also SL under PR-A).
+
+        Bullish body for short is pessimistic in both PR-A and PR-B.
+        Pin ensures no regression.
+        """
+        engine = _make_engine(initial_balance=10_000.0)
+        risk_mgr = _risk_mgr(engine)
+
+        open_position(engine, side="short", entry_price=100.0, stop_loss=106.0,
+                      take_profit=90.0, size=100.0)
+
+        # Both hit; close(104) > open(92) → bullish → SL for short in both PR-A and PR-B
+        candle = make_candle(open_price=92.0, high=107.0, low=89.0, close=104.0)
+        engine._check_exit(candle, "2024-01-02 01:00", risk_mgr)
+
+        assert engine.state.trades[-1].close_reason == "stop_loss"
 
 
 # ============================================================================

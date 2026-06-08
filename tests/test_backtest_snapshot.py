@@ -1,4 +1,4 @@
-"""Golden snapshot test: simplest deterministic backtest (PR-A baseline).
+"""Golden snapshot test — PR-B (SL-first) baseline.
 
 Config: single ema_crossover signal, all optional features OFF
         (no partial TP, no pyramid, no adaptive sizing, no regime filter,
@@ -6,23 +6,21 @@ Config: single ema_crossover signal, all optional features OFF
 
 Purpose: any change to backtest/engine.py or backtest/metrics.py that
 affects core fill/PnL math will break this test.  That is the intent.
-This snapshot encodes the CURRENT (PR-A) behavior.
+This snapshot encodes the CURRENT (PR-B / SL-first) behavior.
 
 NOTE — SNAPSHOT COVERAGE:
   SNAPSHOT 1 (TestGoldenSnapshot): 300-candle alternating bull/bear, all trades
-    win (5x TP), PF=inf, max_dd=0.  Exercises TP path only.  Will NOT move
-    under PR-B's SL-first tiebreak because no same-candle-both-touched bar fires.
-    Moves under PR-C (funding) only if a funding settlement lands in the window.
+    win (5x TP), PF=inf, max_dd=0.  Exercises TP path only.  NOT moved by
+    PR-B's SL-first tiebreak (no same-candle-both-touched bar fires in this
+    fixture).  Moves under PR-C (funding) only if a settlement lands in window.
 
-  SNAPSHOT 2 (TestLossSnapshot): same fixture but candles 64 and 115 are
+  SNAPSHOT 2 (TestLossSnapshot): same base fixture but candles 64 and 115 are
     injected as wide wicks that touch both SL and TP on the same candle.
-    Results in >= 1 LOSING trade.  PR-B's SL-first tiebreak WILL move this
-    snapshot (win_rate drops 0.80→0.60, PF drops ~8.4→~2.0).  Use this snapshot
-    to verify PR-B changes are consistent and intentional.
+    PR-B (SL-first) MOVED this snapshot: win_rate 0.80→0.60, PF ~8.4→~2.4.
+    Under PR-B candle 64 (SHORT, bearish body) now exits at SL instead of TP.
 
 SNAPSHOT REGENERATION:
-  After PR-B (SL-first tiebreak) or PR-C (funding deduction) intentionally
-  changes the engine behavior, run:
+  After PR-C (funding deduction) intentionally changes the engine behavior, run:
 
       python tests/test_backtest_snapshot.py --regen
 
@@ -348,16 +346,15 @@ def _build_loss_snapshot_df() -> pd.DataFrame:
 
       Candle 64: wide BEARISH (open=c+10, high=c+15, low=c-15, close=c-5)
         → A SHORT position is open at this candle.  Both sl_hit AND tp_hit.
-        → Bearish candle body → current engine picks TP (optimistic for SHORT).
-        → Trade closes as WIN.
+        → PR-A (candle-body): bearish close → TP wins (optimistic for SHORT) → WIN.
+        → PR-B (SL-first):    SL wins regardless of body direction → LOSS.
 
       Candle 115: wide BEARISH (open=c+10, high=c+20, low=c-20, close=c-8)
         → A LONG position is open at this candle.  Both sl_hit AND tp_hit.
-        → Bearish candle body → current engine picks SL (pessimistic for LONG).
-        → Trade closes as LOSS.
+        → PR-A + PR-B: bearish body for long → SL wins in both regimes → LOSS.
 
-    PR-B (SL-first everywhere) will change candle 64's outcome from TP→SL,
-    flipping win_rate from 0.80 to 0.60 and collapsing PF from ~8.4 to ~2.0.
+    PR-B (SL-first) changed candle 64 from TP→SL:
+    win_rate flipped 0.80→0.60, PF collapsed ~8.4→~2.4 (EXPECTED_LOSS_SNAPSHOT updated).
 
     NOTE: do NOT change candle positions without re-running the regen helper
     (_generate_loss_snapshot) and updating EXPECTED_LOSS_SNAPSHOT below.
@@ -431,32 +428,35 @@ def _generate_loss_snapshot():
         print(f'    "{k}": {v!r},')
 
 
-# Loss-bearing golden snapshot — captured 2026-06-08, PR-A baseline.
+# Loss-bearing golden snapshot — regenerated 2026-06-08, PR-B baseline.
 # Fixture: same 300-candle base, candles 64+115 are wide wicks hitting both SL+TP.
-# Candle 64 (SHORT position): bearish body → TP wins (optimistic) → WIN.
-# Candle 115 (LONG position): bearish body → SL wins (pessimistic for long) → LOSS.
-# PR-B (SL-first) will flip candle 64 to SL → win_rate drops, PF drops.
+# Candle 64 (SHORT position): SL-first → SL wins (was TP under PR-A) → now LOSS.
+# Candle 115 (LONG position): SL-first → SL wins (same as PR-A for bearish long) → LOSS.
+# Both same-candle-both-touched bars now exit at SL: win_rate drops 0.80→0.60, PF ~8.4→~2.4.
 EXPECTED_LOSS_SNAPSHOT: dict = {
     "total_trades":  5,
-    "win_rate":      0.8,
-    "profit_factor": 8.4357,
+    "win_rate":      0.6,
+    "profit_factor": 2.3964,
     "max_drawdown":  0.0076,
-    "sharpe_ratio":  15.0408,
-    "final_balance": 10534.073351,
+    "sharpe_ratio":  5.6854,
+    "final_balance": 10223.426576,
 }
 
 
 class TestLossSnapshot:
-    """PIN the loss-bearing fixture so same-candle tiebreak changes are visible.
+    """PIN the loss-bearing fixture at PR-B (SL-first) baseline.
 
     This snapshot has >= 1 LOSING trade AND >= 1 same-candle-both-touched bar.
-    It WILL change under PR-B (SL-first).  It will NOT change under PR-C unless
-    a funding settlement happens to land in the open-position windows.
+    Under PR-B (SL-first) candle 64 (SHORT position, bearish body) now exits at
+    SL instead of TP: win_rate = 0.60, PF ~2.4 (was 0.80 / ~8.4 under PR-A).
 
-    Teeth proof (performed 2026-06-08, not in CI):
-      Temporarily flip _check_exit to always-SL on same-candle-both-touched:
-        win_rate drops to 0.60, profit_factor drops to ~2.00 → snapshot FAILS.
-      This confirms the pin has real discriminating power against PR-B.
+    Mutation guard (verified 2026-06-08):
+      Reverting _check_exit to the candle-body tiebreak flips candle 64 back to
+      TP → win_rate rises to 0.80, snapshot fails.  The pin has discriminating
+      power: it will catch any revert to the optimistic candle-body behavior.
+
+    Will NOT change under PR-C unless a funding settlement happens to land in
+    the open-position windows.
     """
 
     def test_loss_snapshot_deterministic(self):
@@ -470,28 +470,27 @@ class TestLossSnapshot:
     def test_loss_snapshot_has_loss(self):
         """Fixture produces at least 1 losing trade (smoke test).
 
-        win_rate < 1.0 confirms the LOSS trade (candle 115) fired.
+        win_rate < 1.0 confirms the LOSS trades (candles 64 and 115) fired.
         """
         snap = _run_loss_snapshot()
         assert snap["win_rate"] < 1.0, (
             f"Loss fixture produced no losses (win_rate={snap['win_rate']}). "
-            "Check candle 115 injection in _build_loss_snapshot_df()."
+            "Check candle 64 + 115 injections in _build_loss_snapshot_df()."
         )
 
     def test_loss_snapshot_has_same_candle_both_touched(self):
-        """Fixture contains at least 1 same-candle-both-touched bar.
+        """Fixture contains 2 same-candle-both-touched bars (candles 64 and 115).
 
-        Verified by: at least 1 trade where close_reason is tp (not sl) fired
-        on a wide candle, meaning the tiebreak was invoked.  We detect this
-        indirectly: win_rate==0.80 and total_trades==5 together mean exactly
-        1 loss out of 5, which matches the known injection pattern.
+        Under SL-first both fire as losses: win_rate == 0.60 (2 losses / 5 trades).
+        If win_rate were 0.80, only 1 loss fired → tiebreak reverted to PR-A behavior.
         """
         snap = _run_loss_snapshot()
         assert snap["total_trades"] == 5, (
             f"Expected 5 trades from loss fixture, got {snap['total_trades']}"
         )
-        assert abs(snap["win_rate"] - 0.8) < 1e-6, (
-            f"Expected win_rate=0.80 (1 loss/5 trades), got {snap['win_rate']}"
+        assert abs(snap["win_rate"] - 0.6) < 1e-6, (
+            f"Expected win_rate=0.60 (2 losses/5 trades under SL-first), got {snap['win_rate']}. "
+            "If 0.80, candle 64 is returning TP (candle-body tiebreak still active)."
         )
 
     def test_loss_snapshot_values_match_expected(self):
