@@ -88,6 +88,12 @@ class PortfolioManager:
         self.max_positions = max_positions
         self._open_coins: set[str] = set()
         self._lock = asyncio.Lock()
+        # Shared close-dedup registry passed to every TradingEngine.  When
+        # multiple config-bots share one netted exchange position (e.g. AXS
+        # has 7 bots), the first bot to detect the absence journals + alerts;
+        # subsequent bots only remove their local trade_id (silent dedup).
+        # Dict is keyed by normalised symbol, value is the close timestamp.
+        self.recently_closed: dict = {}
 
     @property
     def open_count(self) -> int:
@@ -384,6 +390,7 @@ async def run_bot(
             shared_exchange=shared_exchange,
             portfolio_manager=portfolio_manager,
             market_data=market_data,
+            recently_closed=portfolio_manager.recently_closed if portfolio_manager is not None else None,
         )
         await engine.run()
     except Exception as e:

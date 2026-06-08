@@ -167,8 +167,23 @@ def check_closed_positions(
     # catching POLUSDT (0.09) being matched against an AXS (2.5) fill.
     _MAX_EXIT_RATIO = 5.0
 
+    # TTL for recently_closed entries: after this window (seconds) the symbol
+    # is allowed to journal + alert again so a genuine subsequent trade can
+    # be reported.  60 s is long enough to cover all config-bots processing the
+    # same candle tick (they all run within a few seconds of each other) but
+    # short enough that a re-entry and re-close on the same symbol 5+ minutes
+    # later is not suppressed.
+    _RECENTLY_CLOSED_TTL = 60.0
+
     if not open_trade_ids:
         return open_trade_ids
+
+    # Purge stale recently_closed entries before processing this batch.
+    if recently_closed is not None:
+        _now = time.time()
+        _stale = [k for k, v in recently_closed.items() if _now - v > _RECENTLY_CLOSED_TTL]
+        for k in _stale:
+            del recently_closed[k]
 
     # Determine which sides have active positions on exchange
     active_sides: set[str] = set()
@@ -578,12 +593,16 @@ class TradingEngine:
         shared_exchange=None,
         portfolio_manager=None,
         market_data=None,
+        recently_closed: Optional[dict] = None,
     ) -> None:
         self._config = config
         self._shutdown_event = shutdown_event
         self._shared_exchange = shared_exchange
         self._portfolio_manager = portfolio_manager  # Optional global position limit
         self._market_data = market_data  # Optional SharedMarketData (T4)
+        # Shared close-dedup registry (multi-bot: same dict for all bots sharing
+        # a symbol so only one bot journals + alerts per netted-position close).
+        self._recently_closed = recently_closed
 
         # Components (constructed in run() after initial balance fetch)
         self._client: Optional[BybitClient] = None
@@ -956,6 +975,7 @@ class TradingEngine:
             symbol=self._config["symbol"],
             client=self._client,
             last_trade_close=self._last_trade_close,
+            recently_closed=self._recently_closed,
         )
         # Notify portfolio manager when positions are closed by exchange (SL/TP)
         if self._portfolio_manager is not None:
