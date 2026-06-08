@@ -607,6 +607,47 @@ class TestReconcileSweepOnReconnect:
 
 
 # ===========================================================================
+# T_socks_scheme — socks5h/socks4a scheme normalization (PR3 testnet finding)
+# ===========================================================================
+
+class TestNormalizeSocksScheme:
+    """PR3: the bot's proxy is 'socks5h://' (curl/PySocks remote-DNS), which
+    python-socks + websockets reject ('Invalid scheme component: socks5h').
+    _normalize_socks_scheme must map it to the bare 'socks5://' form (remote DNS
+    is python-socks' default, so intent is preserved) — and python-socks'
+    Proxy.from_url must then accept the result.
+    """
+
+    def test_socks5h_normalized_to_socks5(self):
+        from bot.user_data_stream import _normalize_socks_scheme
+        assert _normalize_socks_scheme("socks5h://127.0.0.1:1080") == "socks5://127.0.0.1:1080"
+
+    def test_socks4a_normalized_to_socks4(self):
+        from bot.user_data_stream import _normalize_socks_scheme
+        assert _normalize_socks_scheme("socks4a://host:9050") == "socks4://host:9050"
+
+    def test_bare_schemes_and_empty_unchanged(self):
+        from bot.user_data_stream import _normalize_socks_scheme
+        assert _normalize_socks_scheme("socks5://h:1") == "socks5://h:1"
+        assert _normalize_socks_scheme("") == ""
+        assert _normalize_socks_scheme(None) == ""
+
+    def test_normalized_url_accepted_by_python_socks(self):
+        """The whole point: python-socks Proxy.from_url rejects socks5h but
+        accepts the normalized socks5 (this is the exact failure PR3 hit live)."""
+        try:
+            from python_socks.async_.asyncio import Proxy
+        except ImportError:
+            import pytest as _pt
+            _pt.skip("python-socks not installed")
+        from bot.user_data_stream import _normalize_socks_scheme
+        # raw socks5h must raise; normalized must not
+        import pytest as _pt
+        with _pt.raises(Exception):
+            Proxy.from_url("socks5h://127.0.0.1:1080", rdns=True)
+        Proxy.from_url(_normalize_socks_scheme("socks5h://127.0.0.1:1080"), rdns=True)
+
+
 # T_socks — SOCKS pre-flight: import failure → return without opening WS
 # ===========================================================================
 

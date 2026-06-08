@@ -112,6 +112,25 @@ def _is_testnet_from_exchange(shared_exchange) -> bool:
         return True
 
 
+def _normalize_socks_scheme(proxy_url: Optional[str]) -> str:
+    """Normalise a SOCKS proxy URL scheme for python-socks / websockets.
+
+    ccxt / PySocks accept the curl-style remote-DNS schemes ``socks5h`` /
+    ``socks4a``, but python-socks + websockets' proxy parser reject them
+    ("Invalid scheme component: socks5h"). python-socks resolves DNS through the
+    proxy by default (rdns=True), so the remote-DNS intent of the 'h'/'a' suffix
+    is preserved — map the scheme prefix to the bare ``socks5`` / ``socks4`` form
+    both accept. Returns '' for a falsy input; leaves already-bare schemes intact.
+    """
+    s = (proxy_url or "").strip()
+    if not s:
+        return ""
+    for variant, bare in (("socks5h://", "socks5://"), ("socks4a://", "socks4://")):
+        if s.startswith(variant):
+            return bare + s[len(variant):]
+    return s
+
+
 def _get_exchange_credentials(shared_exchange) -> tuple[str, str, Optional[str]]:
     """Extract apiKey, secret, and optional SOCKS proxy from shared exchange."""
     api_key: str = getattr(shared_exchange, "apiKey", "") or ""
@@ -366,6 +385,8 @@ async def run_user_data_stream(
     # 3. SOCKS pre-flight (fail-closed)
     # ------------------------------------------------------------------
     socks_proxy_str = socks_proxy or os.getenv("CCBT_SOCKS_PROXY", "").strip()
+
+    socks_proxy_str = _normalize_socks_scheme(socks_proxy_str)
 
     if socks_proxy_str:
         # Fail-closed: if python-socks is unavailable we cannot validate the

@@ -48,6 +48,14 @@ export CCBT_SOCKS_PROXY="${CCBT_SOCKS_PROXY:-socks5h://127.0.0.1:1080}"
 # Default is OFF in code — this is the canonical place to enable it for production.
 export CCBT_SHARED_MARKETDATA=1
 
+# Realtime TP/SL alerts (PR3 testnet validation): one account-wide Binance
+# user-data WS task TRIGGERS each bot to verify+alert within seconds instead of
+# waiting for the next candle. Flag-OFF == byte-for-byte candle-paced behaviour.
+# Routes through CCBT_SOCKS_PROXY (needs python-socks). TESTNET validation only —
+# keep OFF for mainnet until the proxied WS egress is confirmed (ticket PR3).
+# See docs/tickets/realtime-close-alerts/README.md.
+export CCBT_USERDATA_WS=1
+
 # Pre-flight: refuse to start unless the proxy egresses the whitelisted IP.
 # launchd (SuccessfulExit=false) will retry every ThrottleInterval until the
 # tunnel is healthy — never trade with the wrong outbound IP.
