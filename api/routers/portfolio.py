@@ -124,7 +124,7 @@ async def portfolio_summary(db: str = Depends(get_db_path)) -> PortfolioSummaryR
         import numpy as _np
         ep = open_df["entry_price"].fillna(0.0).astype(float)
         sz = open_df["size"].fillna(0.0).astype(float)
-        notional_series = (ep * sz.abs())
+        notional_series = (ep.abs() * sz.abs())  # mirror canonical /api/risk notional (dashboard/queries)
         notional = float(notional_series.sum())
         if _np.isnan(notional) or _np.isinf(notional):
             notional = 0.0
