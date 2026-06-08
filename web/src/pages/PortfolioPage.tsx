@@ -26,7 +26,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
-import type { BotRow, TradeRow, PortfolioSummaryResponse, DailyPnlResponse, ModeResponse } from '../api/client'
+import type { BotRow, TradeRow, PortfolioSummaryResponse, ModeResponse } from '../api/client'
 import { formatMoney, formatPct, formatPF } from '../utils/format'
 import { EquityCurve, PerBotPnl, DailyPnl, UnderwaterChart } from '../components/Charts'
 import { UpnlPanel } from '../components/UpnlPanel'
@@ -63,17 +63,18 @@ function MetricCard({ label, value, testId, valueClass = 'text-slate-100' }: Met
 
 interface PortfolioHeaderProps {
   summary: PortfolioSummaryResponse | undefined
-  /** All daily-pnl days; last entry is today's PnL. */
-  dailyDays: DailyPnlResponse['days']
 }
 
-function PortfolioHeader({ summary, dailyDays }: PortfolioHeaderProps) {
+function PortfolioHeader({ summary }: PortfolioHeaderProps) {
   const totalPnl = summary?.total_pnl ?? null
   const pnlClass =
     totalPnl === null ? 'text-slate-100' : totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'
 
-  // Today's PnL: last point of the daily-pnl series (already fetched for the bar chart)
-  const todayPnl = dailyDays.length > 0 ? dailyDays[dailyDays.length - 1].pnl : null
+  // Today's PnL: Bangkok-day (GMT+7) realized PnL, computed server-side in
+  // portfolio/summary (no math in TS). 0 when no closed trades today — never a
+  // stale prior day (the old "last daily-pnl point" was UTC-grouped + could show
+  // yesterday when today had no trades).
+  const todayPnl = summary?.today_pnl ?? null
   const todayPnlClass =
     todayPnl === null ? 'text-slate-100' : todayPnl >= 0 ? 'text-emerald-400' : 'text-red-400'
 
@@ -991,7 +992,7 @@ export function PortfolioPage({ upnl = null }: PortfolioPageProps) {
       <PortfolioAlertBanner bots={bots} />
 
       {/* Header metrics + bulk controls */}
-      <PortfolioHeader summary={summary} dailyDays={dailyDays} />
+      <PortfolioHeader summary={summary} />
 
       {/* Realtime unrealized PnL (from public markPrice WS — no API key) */}
       <div className="mb-4">

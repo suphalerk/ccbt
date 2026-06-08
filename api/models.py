@@ -39,6 +39,7 @@ class PortfolioSummaryResponse(BaseModel):
     win_rate_pct: float
     profit_factor: float
     total_pnl: float
+    today_pnl: float = 0.0  # realized PnL for today in Bangkok time (GMT+7)
     best_bot: Optional[str]
     worst_bot: Optional[str]
     active_bots: int

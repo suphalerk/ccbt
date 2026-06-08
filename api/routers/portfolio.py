@@ -108,10 +108,11 @@ def _trade_row_from_dict(d: Dict[str, Any]) -> TradeRow:
 @router.get("/portfolio/summary", response_model=PortfolioSummaryResponse)
 async def portfolio_summary(db: str = Depends(get_db_path)) -> PortfolioSummaryResponse:
     """Aggregated portfolio-level stats."""
-    from dashboard.queries import get_per_bot_summary, get_trade_stats
+    from dashboard.queries import get_per_bot_summary, get_today_pnl, get_trade_stats
 
     stats = get_trade_stats(db_path=db)
     per_bot = get_per_bot_summary(db_path=db)
+    today_pnl = get_today_pnl(db_path=db)  # Bangkok (GMT+7) realized PnL for today
 
     # Open count: number of distinct symbols with at least one open trade
     from dashboard.queries import get_open_trades
@@ -146,6 +147,7 @@ async def portfolio_summary(db: str = Depends(get_db_path)) -> PortfolioSummaryR
         win_rate_pct=round(_safe_float_required(stats.get("win_rate")) * 100, 1),
         profit_factor=pf,
         total_pnl=round(_safe_float_required(stats.get("total_pnl")), 2),
+        today_pnl=round(today_pnl, 2),
         best_bot=best_bot,
         worst_bot=worst_bot,
         active_bots=active_bots,

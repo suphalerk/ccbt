@@ -326,11 +326,17 @@ def get_today_pnl(
     db_path: Optional[str] = None,
     symbol: Optional[str] = None,
 ) -> float:
-    """Get today's total PnL."""
+    """Realized PnL for trades dated TODAY in **Bangkok time (GMT+7)**.
+
+    Trade timestamps are stored UTC (``...+00:00``); SQLite ``DATE(ts, '+7 hours')``
+    shifts to Bangkok local before extracting the date, so a fill at 18:00 UTC
+    (= 01:00 next-day Bangkok) correctly counts on the next Bangkok day. Mirrors
+    get_daily_pnl's filter (closed, non-orphan) but for the single current Bangkok
+    day. Returns 0.0 when there are no trades today (the 'Today's PnL' card then
+    shows a truthful 0, never a stale prior day).
+    """
     if not db_exists(db_path):
         return 0.0
-
-    today = datetime.utcnow().strftime("%Y-%m-%d")
     filt, params = _symbol_filter(symbol)
     conn = _get_connection(db_path)
     try:
@@ -338,11 +344,14 @@ def get_today_pnl(
             f"""
             SELECT COALESCE(SUM(pnl), 0) as total_pnl
             FROM trades
-            WHERE timestamp LIKE ? AND status = 'closed' AND COALESCE(close_reason, '') != 'orphan_reconcile'{filt}
+            WHERE status = 'closed'
+              AND COALESCE(close_reason, '') != 'orphan_reconcile'
+              AND DATE(timestamp, '+7 hours') = DATE('now', '+7 hours'){filt}
             """,
-            (f"{today}%",) + params,
+            params,
         ).fetchone()
-        return float(row["total_pnl"]) if row else 0.0
+        val = float(row["total_pnl"]) if row and row["total_pnl"] is not None else 0.0
+        return val if val == val and val not in (float("inf"), float("-inf")) else 0.0
     except Exception:
         return 0.0
     finally:

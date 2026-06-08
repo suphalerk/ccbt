@@ -572,6 +572,12 @@ export interface components {
       profit_factor: number;
       /** Total Pnl */
       total_pnl: number;
+      /**
+       * Today Pnl
+       * @description realized PnL for today in Bangkok time (GMT+7)
+       * @default 0
+       */
+      today_pnl?: number;
       /** Best Bot */
       best_bot: string | null;
       /** Worst Bot */

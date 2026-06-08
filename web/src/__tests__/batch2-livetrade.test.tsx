@@ -215,17 +215,15 @@ describe('PortfolioPage — Today\'s PnL card', () => {
     vi.clearAllMocks()
   })
 
-  it('renders Today\'s PnL card with the last daily-pnl entry', async () => {
-    vi.mocked(api.portfolioSummary).mockResolvedValue(makeSummary())
+  it('renders Today\'s PnL card from summary.today_pnl (Bangkok-day, server-computed)', async () => {
+    vi.mocked(api.portfolioSummary).mockResolvedValue(makeSummary({ today_pnl: 75.5 }))
     vi.mocked(api.listBots).mockResolvedValue({ bots: [] })
     vi.mocked(api.listTrades).mockResolvedValue({ trades: [], total: 0 })
     vi.mocked(api.equityCurve).mockResolvedValue({ symbol: null, points: [] })
+    // daily-pnl is the bar chart's source; the card no longer reads it.
     vi.mocked(api.dailyPnl).mockResolvedValue({
       symbol: null,
-      days: [
-        { date: '2026-06-07', pnl: -10.0, trade_count: 2 },
-        { date: '2026-06-08', pnl: 75.5, trade_count: 5 },
-      ],
+      days: [{ date: '2026-06-08', pnl: -10.0, trade_count: 2 }],
     })
 
     const Wrapper = makeWrapper()
@@ -234,52 +232,13 @@ describe('PortfolioPage — Today\'s PnL card', () => {
     await act(async () => {})
 
     const todayEl = await screen.findByTestId('header-today-pnl')
-    // Should show today's PnL: $75.50
+    // Shows summary.today_pnl ($75.50), NOT the daily-pnl bar value (-10)
     expect(todayEl.textContent).toContain('75.50')
+    expect(todayEl.textContent).not.toContain('10')
   })
 
   it('colors Today\'s PnL green for a positive value', async () => {
-    vi.mocked(api.portfolioSummary).mockResolvedValue(makeSummary())
-    vi.mocked(api.listBots).mockResolvedValue({ bots: [] })
-    vi.mocked(api.listTrades).mockResolvedValue({ trades: [], total: 0 })
-    vi.mocked(api.equityCurve).mockResolvedValue({ symbol: null, points: [] })
-    vi.mocked(api.dailyPnl).mockResolvedValue({
-      symbol: null,
-      days: [{ date: '2026-06-08', pnl: 75.5, trade_count: 5 }],
-    })
-
-    const Wrapper = makeWrapper()
-    render(<PortfolioPage />, { wrapper: Wrapper })
-
-    await act(async () => {})
-
-    const todayEl = await screen.findByTestId('header-today-pnl')
-    // Green color class for positive PnL
-    expect(todayEl.className).toContain('emerald')
-  })
-
-  it('colors Today\'s PnL red for a negative value', async () => {
-    vi.mocked(api.portfolioSummary).mockResolvedValue(makeSummary())
-    vi.mocked(api.listBots).mockResolvedValue({ bots: [] })
-    vi.mocked(api.listTrades).mockResolvedValue({ trades: [], total: 0 })
-    vi.mocked(api.equityCurve).mockResolvedValue({ symbol: null, points: [] })
-    vi.mocked(api.dailyPnl).mockResolvedValue({
-      symbol: null,
-      days: [{ date: '2026-06-08', pnl: -25.0, trade_count: 3 }],
-    })
-
-    const Wrapper = makeWrapper()
-    render(<PortfolioPage />, { wrapper: Wrapper })
-
-    await act(async () => {})
-
-    const todayEl = await screen.findByTestId('header-today-pnl')
-    // Red color class for negative PnL
-    expect(todayEl.className).toContain('red')
-  })
-
-  it('shows "—" for Today\'s PnL when daily-pnl is empty', async () => {
-    vi.mocked(api.portfolioSummary).mockResolvedValue(makeSummary())
+    vi.mocked(api.portfolioSummary).mockResolvedValue(makeSummary({ today_pnl: 75.5 }))
     vi.mocked(api.listBots).mockResolvedValue({ bots: [] })
     vi.mocked(api.listTrades).mockResolvedValue({ trades: [], total: 0 })
     vi.mocked(api.equityCurve).mockResolvedValue({ symbol: null, points: [] })
@@ -291,7 +250,42 @@ describe('PortfolioPage — Today\'s PnL card', () => {
     await act(async () => {})
 
     const todayEl = await screen.findByTestId('header-today-pnl')
-    expect(todayEl.textContent).toBe('—')
+    expect(todayEl.className).toContain('emerald')
+  })
+
+  it('colors Today\'s PnL red for a negative value', async () => {
+    vi.mocked(api.portfolioSummary).mockResolvedValue(makeSummary({ today_pnl: -25.0 }))
+    vi.mocked(api.listBots).mockResolvedValue({ bots: [] })
+    vi.mocked(api.listTrades).mockResolvedValue({ trades: [], total: 0 })
+    vi.mocked(api.equityCurve).mockResolvedValue({ symbol: null, points: [] })
+    vi.mocked(api.dailyPnl).mockResolvedValue({ symbol: null, days: [] })
+
+    const Wrapper = makeWrapper()
+    render(<PortfolioPage />, { wrapper: Wrapper })
+
+    await act(async () => {})
+
+    const todayEl = await screen.findByTestId('header-today-pnl')
+    expect(todayEl.textContent).toContain('25.00')
+    expect(todayEl.className).toContain('red')
+  })
+
+  it('shows a truthful $0.00 for Today\'s PnL when no closed trades today', async () => {
+    // today_pnl=0 (no fills today) must render a real 0, NOT a stale prior day or "—"
+    vi.mocked(api.portfolioSummary).mockResolvedValue(makeSummary({ today_pnl: 0 }))
+    vi.mocked(api.listBots).mockResolvedValue({ bots: [] })
+    vi.mocked(api.listTrades).mockResolvedValue({ trades: [], total: 0 })
+    vi.mocked(api.equityCurve).mockResolvedValue({ symbol: null, points: [] })
+    vi.mocked(api.dailyPnl).mockResolvedValue({ symbol: null, days: [] })
+
+    const Wrapper = makeWrapper()
+    render(<PortfolioPage />, { wrapper: Wrapper })
+
+    await act(async () => {})
+
+    const todayEl = await screen.findByTestId('header-today-pnl')
+    expect(todayEl.textContent).toContain('0.00')
+    expect(todayEl.textContent).not.toBe('—')
   })
 })
 
