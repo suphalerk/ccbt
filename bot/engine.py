@@ -131,6 +131,7 @@ def check_closed_positions(
     client=None,
     last_trade_close: Optional[dict] = None,
     recently_closed: Optional[dict] = None,
+    config: Optional[dict] = None,
 ) -> dict:
     """Detect positions closed by exchange (SL/TP fill) and update state.
 
@@ -155,6 +156,11 @@ def check_closed_positions(
             running the same symbol.  When a symbol is already recorded here
             the second (and further) bots skip journaling and alerting but
             still remove the trade_id from their local open_trade_ids.
+        config: Optional bot config dict.  When present, ``config["leverage"]``
+            is used to derive a per-trade PnL-magnitude cap (leverage * 100 %).
+            Fills that pass the _MAX_EXIT_RATIO price-ratio guard but still yield
+            an implausible pnl_pct are rejected to the reconcile/fallback path
+            (defense-in-depth against same-band cross-symbol contamination).
 
     Returns:
         Updated open_trade_ids dict with closed trades removed.
@@ -260,6 +266,45 @@ def check_closed_positions(
                                 actual_pnl = (exit_price - entry) / entry * info["size"]
                             else:
                                 actual_pnl = (entry - exit_price) / entry * info["size"]
+
+                            # --------------------------------------------------
+                            # PnL-magnitude clamp (defense-in-depth).
+                            # The price-ratio guard above catches extreme
+                            # cross-symbol contamination (e.g. 28x).  A
+                            # moderate same-band contamination (e.g. POL 0.09
+                            # matched against AXS 0.30 = 3.3x, ratio < MAX)
+                            # still passes the price check but yields ~+233%
+                            # pnl_pct, which is implausible for a single candle.
+                            # Reject if |pnl_pct| > leverage * 100; fall through
+                            # to the reconcile/fallback path — never journal or
+                            # alert an implausible PnL.
+                            # Default cap when leverage is unknown: 1000 % (very
+                            # permissive so ordinary closes are never suppressed).
+                            _leverage = 1000  # safe default
+                            if config is not None:
+                                _leverage = int(config.get("leverage", 1000))
+                            _pnl_pct_cap = _leverage * 100.0
+                            _candidate_pnl_pct = (
+                                actual_pnl / info["size"] * 100
+                                if info["size"] > 0
+                                else 0.0
+                            )
+                            if abs(_candidate_pnl_pct) > _pnl_pct_cap:
+                                logger.warning(
+                                    "exit_pnl_pct_exceeds_leverage_cap_rejected",
+                                    extra={
+                                        "symbol": symbol,
+                                        "entry": entry,
+                                        "candidate_exit": candidate_price,
+                                        "candidate_pnl_pct": round(_candidate_pnl_pct, 2),
+                                        "leverage": _leverage,
+                                        "cap_pct": _pnl_pct_cap,
+                                    },
+                                )
+                                exit_price = None
+                                actual_pnl = None
+                                continue  # try next fill candidate; fall to reconcile if none
+
                             break
                 except Exception as e:
                     logger.warning("failed_to_fetch_actual_pnl", extra={"error": str(e)})
@@ -315,6 +360,19 @@ def check_closed_positions(
             # symbol within the same close window only remove their trade_id
             # from open_trade_ids (silent dedup — no duplicate DB row, no
             # duplicate Telegram alert).
+            #
+            # INVARIANT: this block must remain SYNCHRONOUS — there must be NO
+            # `await` between the `_close_key in recently_closed` check and the
+            # registry mark below (in the success path).  An await would allow
+            # a sibling bot coroutine to interleave, both observe the key absent,
+            # both claim is_primary_closer=True, and double-journal the close.
+            #
+            # INVARIANT: _RECENTLY_CLOSED_TTL (currently 60 s) must stay well
+            # below the shortest deployed candle period.  The shortest live TF
+            # is 1h = 3600 s.  If the TTL were raised close to or above the
+            # candle period, a genuine re-entry and re-close on the same symbol
+            # could be silently suppressed (deduped as if it were the same close
+            # event).  Do not raise the TTL above 300 s without a full audit.
             # ------------------------------------------------------------------
             is_primary_closer = True  # default: no shared registry
             _close_key: Optional[str] = None
@@ -890,14 +948,41 @@ class TradingEngine:
         (Bybit merges same-direction positions into one net position).
         Also registers restored positions with the PortfolioManager so
         the global position cap and duplicate-coin gate stay accurate.
+
+        SYMBOL FILTER: only DB rows whose normalised symbol matches this bot's
+        configured symbol are eligible for restore.  Without this guard a
+        multi-bot restart can restore a DIFFERENT coin's open DB row into a
+        same-side bot, causing the bot to track and compute PnL against the
+        wrong coin's price — the root cause of cross-symbol contamination.
         """
         config = self._config
+
+        def _norm(s: str) -> str:
+            """Normalise symbol for comparison (same logic as check_closed_positions)."""
+            return s.replace("/", "").replace(":USDT", "").replace("-", "").upper()
+
+        bot_norm = _norm(config["symbol"])
+
         try:
             existing_positions = self._client.get_positions()
             open_db_trades = self._journal.get_open_trades()
             restored_sides: set[str] = set()
             for db_trade in open_db_trades:
                 trade_id = db_trade["id"]
+
+                # SYMBOL FILTER — reject DB rows for a different coin.
+                db_symbol = db_trade.get("symbol", "")
+                if _norm(db_symbol) != bot_norm:
+                    logger.info(
+                        "restore_skipped_wrong_symbol",
+                        extra={
+                            "trade_id": trade_id,
+                            "db_symbol": db_symbol,
+                            "bot_symbol": config["symbol"],
+                        },
+                    )
+                    continue
+
                 trade_side = "long" if db_trade["side"] == "buy" else "short"
                 if trade_side in restored_sides:
                     continue  # Already restored one trade for this side
@@ -992,6 +1077,7 @@ class TradingEngine:
             client=self._client,
             last_trade_close=self._last_trade_close,
             recently_closed=self._recently_closed,
+            config=self._config,
         )
         # Notify portfolio manager when positions are closed by exchange (SL/TP)
         if self._portfolio_manager is not None:
