@@ -277,6 +277,7 @@ class ChangeDetector:
                 get_bot_health,
                 get_open_trades,
                 get_per_bot_summary,
+                get_today_pnl,
                 get_trade_stats,
             )
 
@@ -284,6 +285,7 @@ class ChangeDetector:
             per_bot_df = get_per_bot_summary(db_path=self.db_path)
             health_df = get_bot_health(db_path=self.db_path)
             open_df = get_open_trades(db_path=self.db_path)
+            today_pnl = get_today_pnl(db_path=self.db_path)  # Bangkok (GMT+7)
 
             def _safe(v: Any, default: Any = None) -> Any:
                 if v is None:
@@ -307,15 +309,30 @@ class ChangeDetector:
                 else 0
             )
 
+            # Notional = Σ abs(entry_price * size) over open positions (mirror
+            # /api/portfolio/summary so the WS payload matches the REST shape —
+            # otherwise the WS snapshot clobbers these fields to undefined).
+            notional = 0.0
+            if not open_df.empty and "entry_price" in open_df.columns and "size" in open_df.columns:
+                try:
+                    ep = open_df["entry_price"].fillna(0.0).astype(float).abs()
+                    sz = open_df["size"].fillna(0.0).astype(float).abs()
+                    n = float((ep * sz).sum())
+                    notional = n if (n == n and n not in (float("inf"), float("-inf"))) else 0.0
+                except Exception:
+                    notional = 0.0
+
             portfolio: Dict[str, Any] = {
                 "total_trades": int(stats.get("total_trades") or 0),
                 "closed_trades": int(stats.get("total_trades") or 0),
                 "win_rate_pct": round(float(_safe(stats.get("win_rate"), 0.0)) * 100, 1),
                 "profit_factor": _safe(stats.get("profit_factor"), 0.0),
                 "total_pnl": round(float(_safe(stats.get("total_pnl"), 0.0)), 2),
+                "today_pnl": round(float(_safe(today_pnl, 0.0)), 2),
                 "best_bot": None,
                 "worst_bot": None,
                 "active_bots": active_bots,
+                "notional": round(notional, 2),
             }
 
             # Full BotRow shape — mirrors api/routers/portfolio.py list_bots()
