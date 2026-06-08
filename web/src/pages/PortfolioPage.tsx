@@ -414,10 +414,13 @@ function pillLabel(symbol: string): string {
 }
 
 function BotPill({ bot }: { bot: BotRow }) {
-  const isActive = bot.status === 'active'
-  const isError = bot.status === 'error'
+  // Backend emits 'running' or 'stopped' (bot/engine.py). Treat 'running' as
+  // the active/green state; treat error_count > 0 as the error/red state
+  // (status='error' is never emitted — driving color off error_count is correct).
+  const isRunning = bot.status === 'running'
+  const isError = (bot.error_count ?? 0) > 0
 
-  const baseClass = isActive
+  const baseClass = isRunning
     ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
     : isError
     ? 'bg-red-500/10 border-red-500/40 text-red-300'
@@ -435,7 +438,7 @@ function BotPill({ bot }: { bot: BotRow }) {
       <span
         aria-hidden="true"
         className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-          isActive ? 'bg-emerald-400' : isError ? 'bg-red-400' : 'bg-slate-500'
+          isRunning ? 'bg-emerald-400' : isError ? 'bg-red-400' : 'bg-slate-500'
         }`}
       />
       {/* Truncated symbol label (3–6 chars, USDT stripped) */}
@@ -728,9 +731,9 @@ function BotOverviewTable({ bots }: { bots: BotRow[] }) {
                       <td className="px-3 py-2">
                         <span
                           className={`text-xs ${
-                            bot.status === 'active'
+                            bot.status === 'running'
                               ? 'text-emerald-400'
-                              : bot.status === 'error'
+                              : (bot.error_count ?? 0) > 0
                               ? 'text-red-400'
                               : 'text-slate-500'
                           }`}

@@ -35,11 +35,12 @@ import { api } from '../api/client'
 // ---- fixtures ---------------------------------------------------------------
 
 function makeBot(overrides: Partial<BotRow> = {}): BotRow {
+  // Default status uses what bot/engine.py actually emits ('running'/'stopped').
   return {
     symbol: 'BTCUSDT',
     strategy: 'ema_crossover',
     timeframe: '15m',
-    status: 'active',
+    status: 'running',
     position_side: null,
     position_size: null,
     unrealized_pnl: null,
@@ -49,6 +50,7 @@ function makeBot(overrides: Partial<BotRow> = {}): BotRow {
     trade_count: 0,
     last_updated: null,
     mode: 'NORMAL',
+    error_count: 0,
     ...overrides,
   }
 }
@@ -270,9 +272,10 @@ describe('PortfolioPage — Bot grid', () => {
     expect(screen.getByText('PANIC')).toBeTruthy()
   })
 
-  it('shows running status (green) for active bots', async () => {
+  it('shows running status (green) for running bots', async () => {
+    // Status 'running' is what bot/engine.py actually emits — not 'active'.
     const bots: BotRow[] = [
-      makeBot({ symbol: 'BTCUSDT', status: 'active' }),
+      makeBot({ symbol: 'BTCUSDT', status: 'running' }),
     ]
     vi.mocked(api.listBots).mockResolvedValue({ bots })
 

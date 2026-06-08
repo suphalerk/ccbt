@@ -51,11 +51,13 @@ function makeEquityPoint(
 }
 
 function makeBot(overrides: Partial<BotRow> = {}): BotRow {
+  // Default status matches what bot/engine.py actually emits ('running'/'stopped').
+  // Do NOT use 'active'/'error' — those are never sent by the backend.
   return {
     symbol: 'BTCUSDT',
     strategy: 'ema_crossover',
     timeframe: '15m',
-    status: 'active',
+    status: 'running',
     position_side: null,
     position_size: null,
     unrealized_pnl: null,
@@ -129,6 +131,21 @@ describe('UnderwaterChart', () => {
     render(<UnderwaterChart points={points} />)
     const container = screen.getByTestId('underwater-chart')
     expect(container.getAttribute('data-has-drawdown')).toBe('true')
+  })
+
+  it('exposes data-max-depth with the correct minimum underwater value', () => {
+    // MAJOR 3: pin the actual magnitude the chart consumes.
+    // A 10x corruption of the value (underwater * 10) must fail this assertion.
+    const points: EquityPoint[] = [
+      makeEquityPoint('2026-01-01T00:00:00Z', 10, 0),
+      makeEquityPoint('2026-01-02T00:00:00Z', 5, -5),
+      makeEquityPoint('2026-01-03T00:00:00Z', 20, 0),
+      makeEquityPoint('2026-01-04T00:00:00Z', 12, -8),
+    ]
+    render(<UnderwaterChart points={points} />)
+    const container = screen.getByTestId('underwater-chart')
+    // min([0, -5, 0, -8]) === -8
+    expect(container.getAttribute('data-max-depth')).toBe('-8')
   })
 
   it('sets data-has-drawdown=false when all underwater values are 0', () => {
@@ -260,11 +277,14 @@ describe('BotPill — visible symbol label (#7)', () => {
 import { PortfolioPage } from '../pages/PortfolioPage'
 
 describe('BotOverviewTable — filters (#8)', () => {
+  // Statuses use only values the backend actually emits: 'running' or 'stopped'.
+  // 'active' and 'error' are NEVER sent by bot/engine.py — using them gives
+  // false confidence that color branches exercise in prod.
   const bots: BotRow[] = [
-    makeBot({ symbol: 'BTCUSDT', status: 'active', strategy: 'ema_crossover', total_pnl: 100 }),
+    makeBot({ symbol: 'BTCUSDT', status: 'running', strategy: 'ema_crossover', total_pnl: 100 }),
     makeBot({ symbol: 'ETHUSDT', status: 'stopped', strategy: 'ichimoku', total_pnl: -20 }),
-    makeBot({ symbol: 'SOLUSDT', status: 'active', strategy: 'ema_crossover', total_pnl: 30 }),
-    makeBot({ symbol: 'AVAXUSDT', status: 'error', strategy: 'supertrend', total_pnl: 5 }),
+    makeBot({ symbol: 'SOLUSDT', status: 'running', strategy: 'ema_crossover', total_pnl: 30 }),
+    makeBot({ symbol: 'AVAXUSDT', status: 'stopped', strategy: 'supertrend', total_pnl: 5 }),
   ]
 
   beforeEach(() => {
@@ -308,7 +328,8 @@ describe('BotOverviewTable — filters (#8)', () => {
     await renderPage()
 
     const statusSelect = screen.getByTestId('bot-filter-status')
-    fireEvent.change(statusSelect, { target: { value: 'active' } })
+    // Filter by 'running' — the value bot/engine.py actually emits
+    fireEvent.change(statusSelect, { target: { value: 'running' } })
 
     const table = screen.getByTestId('bot-overview-table')
     expect(within(table).getByText('BTCUSDT')).toBeTruthy()
@@ -331,16 +352,62 @@ describe('BotOverviewTable — filters (#8)', () => {
   it('composing search + status filter narrows results correctly', async () => {
     await renderPage()
 
-    // Search "usdt" (matches all), then status=active → BTC + SOL only
+    // Search "SOL", then status=running → only SOLUSDT (SOL is running; AVAX is stopped)
     const searchInput = screen.getByTestId('bot-filter-search')
     fireEvent.change(searchInput, { target: { value: 'SOL' } })
 
     const statusSelect = screen.getByTestId('bot-filter-status')
-    fireEvent.change(statusSelect, { target: { value: 'active' } })
+    fireEvent.change(statusSelect, { target: { value: 'running' } })
 
     const table = screen.getByTestId('bot-overview-table')
     expect(within(table).getByText('SOLUSDT')).toBeTruthy()
     expect(within(table).queryByText('BTCUSDT')).toBeNull()
+  })
+
+  it('strategy filter uses exact-match not substring (ema vs ema_crossover)', async () => {
+    // MAJOR 2: pin === semantics — a substring mutation .includes() must fail this test.
+    // 'ema' is a strict prefix of 'ema_crossover'; exact-match must exclude 'ema_crossover'.
+    vi.mocked(api.listBots).mockResolvedValue({
+      bots: [
+        makeBot({ symbol: 'BTCUSDT', strategy: 'ema', total_pnl: 10 }),
+        makeBot({ symbol: 'ETHUSDT', strategy: 'ema_crossover', total_pnl: 20 }),
+      ],
+    })
+    const Wrapper = makeWrapper()
+    render(<PortfolioPage />, { wrapper: Wrapper })
+    await act(async () => {})
+    await screen.findByTestId('bot-overview-filters')
+
+    const stratSelect = screen.getByTestId('bot-filter-strategy')
+    fireEvent.change(stratSelect, { target: { value: 'ema' } })
+
+    const table = screen.getByTestId('bot-overview-table')
+    // Only 'ema' exact match — 'ema_crossover' must be excluded
+    expect(within(table).getByText('BTCUSDT')).toBeTruthy()
+    expect(within(table).queryByText('ETHUSDT')).toBeNull()
+  })
+
+  it('status filter uses exact-match not substring (run vs running)', async () => {
+    // MAJOR 2: same pin for status — 'run' is a prefix of 'running'.
+    // Distinct statuses come from the data, so we inject 'run' as a real status.
+    vi.mocked(api.listBots).mockResolvedValue({
+      bots: [
+        makeBot({ symbol: 'BTCUSDT', status: 'run', total_pnl: 10 }),
+        makeBot({ symbol: 'ETHUSDT', status: 'running', total_pnl: 20 }),
+      ],
+    })
+    const Wrapper = makeWrapper()
+    render(<PortfolioPage />, { wrapper: Wrapper })
+    await act(async () => {})
+    await screen.findByTestId('bot-overview-filters')
+
+    const statusSelect = screen.getByTestId('bot-filter-status')
+    fireEvent.change(statusSelect, { target: { value: 'run' } })
+
+    const table = screen.getByTestId('bot-overview-table')
+    // Only 'run' exact match — 'running' must be excluded
+    expect(within(table).getByText('BTCUSDT')).toBeTruthy()
+    expect(within(table).queryByText('ETHUSDT')).toBeNull()
   })
 
   it('shows empty "no match" state when filters exclude all rows', async () => {
@@ -375,15 +442,15 @@ describe('BotOverviewTable — filters (#8)', () => {
   it('sort still works after applying a filter', async () => {
     await renderPage()
 
-    // Filter to just active bots (BTC + SOL)
+    // Filter to just running bots (BTC + SOL)
     const statusSelect = screen.getByTestId('bot-filter-status')
-    fireEvent.change(statusSelect, { target: { value: 'active' } })
+    fireEvent.change(statusSelect, { target: { value: 'running' } })
 
     const table = screen.getByTestId('bot-overview-table')
     // Both BTC and SOL should be in the filtered table
     expect(within(table).getByText('BTCUSDT')).toBeTruthy()
     expect(within(table).getByText('SOLUSDT')).toBeTruthy()
-    // ETH not in active
+    // ETH is stopped, not in running
     expect(within(table).queryByText('ETHUSDT')).toBeNull()
   })
 
@@ -394,9 +461,9 @@ describe('BotOverviewTable — filters (#8)', () => {
     const filtersBar = screen.getByTestId('bot-overview-filters')
     expect(filtersBar.textContent).toMatch(/4\s*\/\s*4 bots/)
 
-    // Apply status filter
+    // Apply status filter — 'running' matches BTC + SOL (2 of 4)
     const statusSelect = screen.getByTestId('bot-filter-status')
-    fireEvent.change(statusSelect, { target: { value: 'active' } })
+    fireEvent.change(statusSelect, { target: { value: 'running' } })
 
     // Counter should update to 2/4
     expect(filtersBar.textContent).toMatch(/2\s*\/\s*4 bots/)

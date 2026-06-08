@@ -326,6 +326,7 @@ export function UnderwaterChart({ points, height = 100 }: UnderwaterChartProps) 
       data-testid="underwater-chart"
       data-has-drawdown={hasDrawdown ? 'true' : 'false'}
       data-point-count={String(points.length)}
+      data-max-depth={String(maxDepth)}
       style={{ height }}
     >
       <ResponsiveContainer width="100%" height="100%">
