@@ -614,7 +614,26 @@ async def async_main(
     )
     tasks.append(telegram_task)
 
-    bot_count = len(tasks) - 1  # Exclude telegram handler
+    # PR2 — user-data WS trigger task (flag-gated: CCBT_USERDATA_WS=1).
+    # When enabled, this task listens to the Binance user-data stream and
+    # .set()s per-engine wake events on SL/TP fills, waking bots early.
+    # Flag-OFF (default): task is NOT created; wake_events stays inert;
+    # behaviour is byte-for-byte PR1-flag-OFF == today.
+    if os.getenv("CCBT_USERDATA_WS") == "1":
+        from bot.user_data_stream import run_user_data_stream
+        user_data_task = asyncio.create_task(
+            run_user_data_stream(shutdown_event, shared_exchange, wake_events),
+            name="user-data-ws",
+        )
+        tasks.append(user_data_task)
+        logger.info("user_data_ws_task_launched")
+
+    # bot_count = bots only (exclude telegram-handler and user-data-ws)
+    _non_bot_tasks = sum(
+        1 for t in tasks
+        if t.get_name() in {"telegram-handler", "user-data-ws"}
+    )
+    bot_count = len(tasks) - _non_bot_tasks
     logger.info("all_bots_launched", extra={"count": bot_count})
 
     # Single summary alert instead of 167 individual start messages
