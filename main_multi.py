@@ -595,7 +595,7 @@ async def async_main(
     # Launch Telegram command handler alongside bots
     from bot.telegram_commands import run_telegram_handler
     telegram_task = asyncio.create_task(
-        run_telegram_handler(shutdown_event),
+        run_telegram_handler(shutdown_event, exchange=shared_exchange),
         name="telegram-handler",
     )
     tasks.append(telegram_task)

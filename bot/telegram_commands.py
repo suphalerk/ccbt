@@ -8,6 +8,7 @@ Commands:
     /balance   — show current USDT balance
     /pnl       — show today's PnL + total PnL
     /positions — show currently open positions
+    /upnl      — show live unrealized PnL of all open positions
     /bots      — list all bots with status (running/stopped)
     /mode      — show current mode for all bots
     /panic     — set ALL bots to PANIC mode
@@ -53,6 +54,23 @@ _BALANCE_CACHE_TTL: float = 60.0
 # ---------------------------------------------------------------------------
 
 _PROCESS_START: float = time.time()
+
+# ---------------------------------------------------------------------------
+# Module-level exchange holder (injected by main_multi.py for /upnl)
+# ---------------------------------------------------------------------------
+
+_EXCHANGE: Optional[object] = None
+
+
+def set_exchange(exchange: Optional[object]) -> None:
+    """Set the shared ccxt exchange instance used by /upnl.
+
+    Args:
+        exchange: A synchronous ccxt exchange instance (e.g. from
+            get_shared_exchange()), or None to clear it.
+    """
+    global _EXCHANGE
+    _EXCHANGE = exchange
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +426,72 @@ def _cmd_positions() -> str:
     return "\n".join(lines)
 
 
+def _cmd_upnl() -> str:
+    """Build /upnl reply — live unrealized PnL from exchange positions.
+
+    Calls fetch_positions() on the shared exchange instance. Filters out
+    flat positions (contracts == 0). Returns a graceful message when the
+    exchange is not connected or when the call fails.
+    """
+    if _EXCHANGE is None:
+        return (
+            "<b>💰 Unrealized PnL</b>\n"
+            "━━━━━━━━━━━━━━━\n"
+            "<i>Live uPnL unavailable — exchange not connected.</i>"
+        )
+
+    try:
+        positions = _EXCHANGE.fetch_positions()
+    except Exception as exc:
+        logger.warning("upnl_fetch_failed", extra={"error": str(exc)})
+        return (
+            "<b>💰 Unrealized PnL</b>\n"
+            "━━━━━━━━━━━━━━━\n"
+            f"<i>Error fetching uPnL: {exc}</i>"
+        )
+
+    # Keep only positions with nonzero size
+    open_positions = [
+        p for p in positions
+        if abs(float(p.get("contracts") or 0)) > 0
+    ]
+
+    if not open_positions:
+        return (
+            "<b>💰 Unrealized PnL</b>\n"
+            "━━━━━━━━━━━━━━━\n"
+            "No open positions."
+        )
+
+    lines = ["<b>💰 Unrealized PnL</b>", "━━━━━━━━━━━━━━━"]
+    total_upnl = 0.0
+
+    for p in open_positions:
+        sym = p.get("symbol", "?")
+        short_sym = sym.replace("/USDT:USDT", "").replace("USDT", "")
+        side = (p.get("side") or "?").upper()
+        upnl = float(p.get("unrealizedPnl") or 0)
+        entry = p.get("entryPrice")
+        mark = p.get("markPrice")
+        total_upnl += upnl
+
+        icon = "🟢" if upnl >= 0 else "🔴"
+        sign = "+" if upnl >= 0 else ""
+        line = f"{icon} <b>{short_sym}</b> {side}: {sign}{upnl:.2f} USDT"
+        if entry is not None and mark is not None:
+            try:
+                line += f" ({float(entry):.4g}→{float(mark):.4g})"
+            except (ValueError, TypeError):
+                pass
+        lines.append(line)
+
+    lines.append("━━━━━━━━━━━━━━━")
+    total_icon = "🟢" if total_upnl >= 0 else "🔴"
+    total_sign = "+" if total_upnl >= 0 else ""
+    lines.append(f"{total_icon} Total uPnL: <b>{total_sign}{total_upnl:.2f} USDT</b>")
+    return "\n".join(lines)
+
+
 def _cmd_bots() -> str:
     """Build /bots reply — compact symbol list grouped by status."""
     running, stopped = _classify_bots()
@@ -477,6 +561,7 @@ def _cmd_help() -> str:
         "/balance   — unrealized PnL from DB\n"
         "/pnl       — today's and total PnL\n"
         "/positions — currently open positions\n"
+        "/upnl      — live unrealized PnL (exchange)\n"
         "/bots      — all bots (running/stopped)\n"
         "/mode      — mode breakdown for all bots\n"
         "/panic     — close all positions immediately\n"
@@ -495,6 +580,7 @@ _COMMAND_MAP: dict[str, callable] = {
     "/balance": _cmd_balance,
     "/pnl": _cmd_pnl,
     "/positions": _cmd_positions,
+    "/upnl": _cmd_upnl,
     "/bots": _cmd_bots,
     "/mode": _cmd_mode,
     "/panic": _cmd_panic,
@@ -533,7 +619,10 @@ def _dispatch(text: str) -> Optional[str]:
 # Main polling loop
 # ---------------------------------------------------------------------------
 
-async def run_telegram_handler(shutdown_event: asyncio.Event) -> None:
+async def run_telegram_handler(
+    shutdown_event: asyncio.Event,
+    exchange: Optional[object] = None,
+) -> None:
     """Run the Telegram command handler as an async background task.
 
     Polls getUpdates every few seconds and responds to recognised commands
@@ -542,7 +631,12 @@ async def run_telegram_handler(shutdown_event: asyncio.Event) -> None:
 
     Args:
         shutdown_event: When set, this coroutine exits cleanly.
+        exchange: Optional shared ccxt exchange instance injected for /upnl.
+            When provided, set_exchange() is called so _cmd_upnl can fetch
+            live positions.  Defaults to None (graceful degradation).
     """
+    set_exchange(exchange)
+
     if not _BOT_TOKEN or not _CHAT_ID:
         logger.info("telegram_handler_disabled — no TELEGRAM_BOT_TOKEN/CHAT_ID configured")
         return
@@ -582,7 +676,9 @@ async def run_telegram_handler(shutdown_event: asyncio.Event) -> None:
                     continue  # Ignore non-command messages silently
 
                 logger.info("telegram_command_received", extra={"text": text[:80]})
-                reply = _dispatch(text)
+                reply = await asyncio.get_event_loop().run_in_executor(
+                    None, _dispatch, text
+                )
                 if reply:
                     await asyncio.get_event_loop().run_in_executor(
                         None, lambda r=reply: _send_message(r)
