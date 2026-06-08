@@ -20,7 +20,7 @@ import { NewPanelsPage } from './pages/NewPanelsPage'
 import { useLiveSnapshot } from './hooks/useLiveSnapshot'
 
 function App() {
-  const { status: wsStatus, lastUpdated } = useLiveSnapshot()
+  const { status: wsStatus, lastUpdated, upnl } = useLiveSnapshot()
 
   return (
     <div className="flex flex-col h-screen bg-[#0E1117] text-slate-100 overflow-hidden">
@@ -33,7 +33,7 @@ function App() {
 
         <main className="flex-1 overflow-y-auto">
           <Routes>
-            <Route path="/" element={<PortfolioPage />} />
+            <Route path="/" element={<PortfolioPage upnl={upnl} />} />
             <Route path="/bots/:symbol" element={<BotDetailPage />} />
             <Route path="/ai" element={<AIAnalyticsPage />} />
             <Route path="/logs" element={<LogViewerPage />} />

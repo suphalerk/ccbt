@@ -29,6 +29,8 @@ import { api } from '../api/client'
 import type { BotRow, TradeRow, PortfolioSummaryResponse } from '../api/client'
 import { formatMoney, formatPct, formatPF } from '../utils/format'
 import { EquityCurve, PerBotPnl, DailyPnl } from '../components/Charts'
+import { UpnlPanel } from '../components/UpnlPanel'
+import type { WSUpnlData } from '../ws-types'
 
 // ============================================================================
 // Header metric card
@@ -539,7 +541,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 // Main PortfolioPage
 // ============================================================================
 
-export function PortfolioPage() {
+interface PortfolioPageProps {
+  upnl?: WSUpnlData | null
+}
+
+export function PortfolioPage({ upnl = null }: PortfolioPageProps) {
   const { data: summary } = useQuery({
     queryKey: ['portfolio', 'summary'],
     queryFn: () => api.portfolioSummary(),
@@ -592,6 +598,11 @@ export function PortfolioPage() {
 
       {/* Header metrics */}
       <PortfolioHeader summary={summary} />
+
+      {/* Realtime unrealized PnL (from public markPrice WS — no API key) */}
+      <div className="mb-4">
+        <UpnlPanel upnl={upnl} />
+      </div>
 
       {/* Charts row: Equity curve + Daily PnL */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
