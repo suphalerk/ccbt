@@ -19,3 +19,6 @@ trading_bot.log
 logs/
 data/
 .claude/worktrees/
+
+# Claude Code runtime scheduler lock
+.claude/scheduled_tasks.lock

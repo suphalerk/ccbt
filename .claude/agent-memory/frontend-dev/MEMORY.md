@@ -12,3 +12,8 @@
 - [project_dashboard_round6_frontend_fix.md](project_dashboard_round6_frontend_fix.md) — Round 6 frontend fix: WS snapshot bots cache shape mismatch — portfolio grid showed 0, sidebar 40
 - [project_dashboard_round6_post_review.md](project_dashboard_round6_post_review.md) — Round 6 post-fix review: all 3 residuals verified fixed, 163+99 tests pass, build clean, nit on PortfolioSummary type noted
 - [project_realtime_upnl.md](project_realtime_upnl.md) — Realtime uPnL panel shipped; UpnlPanel + useLiveSnapshot; TS fix: erasableSyntaxOnly bans constructor param props
+- [project_dashboard_batch1_operational.md](project_dashboard_batch1_operational.md) — Batch 1 operational controls: mode buttons on BotDetailPage, bulk stop/panic/resume on PortfolioPage, alert banner
+- [project_dashboard_batch1_review_fixes.md](project_dashboard_batch1_review_fixes.md) — Batch 1 review fixes: mode casing BLOCKER (DB lowercase), dead error banner, a11y confirm dialogs
+- [project_dashboard_batch2_livetrade.md](project_dashboard_batch2_livetrade.md) — Batch 2 live-trade context: SL/TP/R:R in uPnL panel + Today's PnL/Notional header cards
+- [project_dashboard_batch2_review_fixes.md](project_dashboard_batch2_review_fixes.md) — Batch 2 review fix: notional pin test added (TestPortfolioSummary); abs() mutation coverage; 90 py + 218 ts pass
+- [project_dashboard_batch3_analytics.md](project_dashboard_batch3_analytics.md) — Batch 3 analytics: underwater chart (server-side), pill labels, table filters; 6 py + 21 ts tests; build clean
