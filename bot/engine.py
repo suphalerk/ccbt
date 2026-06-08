@@ -121,6 +121,27 @@ def _candle_seconds(tf: str) -> int:
     return 900  # safe 15-minute fallback
 
 
+def _format_duration(seconds) -> str:
+    """Human-friendly trade duration for Telegram alerts.
+
+    < 60 min  -> ``"42 min"``
+    >= 60 min -> ``"2 hr 1 min"`` (the minutes part is dropped when zero: ``"2 hr"``)
+
+    Examples:
+        90   -> "1 min"        (90 s)
+        3660 -> "1 hr 1 min"   (61 m)
+        7320 -> "2 hr 2 min"   (122 m)
+        7200 -> "2 hr"         (120 m)
+    """
+    if seconds is None:
+        return "?"
+    total_min = int(seconds) // 60
+    hours, mins = divmod(total_min, 60)
+    if hours > 0:
+        return f"{hours} hr {mins} min" if mins else f"{hours} hr"
+    return f"{mins} min"
+
+
 def check_closed_positions(
     open_trade_ids: dict,
     current_positions: list,
@@ -519,7 +540,7 @@ def check_closed_positions(
                 send_alert(
                     f"{pnl_emoji} <b>{symbol}</b> {info['side'].upper()} closed ({close_reason})\n"
                     f"PnL: ${estimated_pnl:+,.2f} ({pnl_pct:+.1f}%)\n"
-                    f"Duration: {duration//60}m"
+                    f"Duration: {_format_duration(duration)}"
                 )
             except Exception as log_alert_err:
                 logger.warning(
