@@ -217,6 +217,71 @@ class TestPortfolioSummary:
         finally:
             _reset_overrides(app)
 
+    # ------------------------------------------------------------------
+    # Notional pin: SUM(abs(entry_price * size)) over open positions.
+    # The short with a negative size is load-bearing — it exercises the
+    # sz.abs() call in api/routers/portfolio.py so that dropping the
+    # .abs() would produce a negative notional and fail this test.
+    # ------------------------------------------------------------------
+
+    def test_notional_pin_long_and_short(self, tmp_path):
+        """Notional = SUM(abs(entry_price * size)) over open trades.
+
+        Seeds:
+          Long  BTC: entry=30000, size=+0.5  → 30000*0.5 = 15000.0
+          Short ETH: entry=2000,  size=-3.0  → 2000*3.0  =  6000.0
+
+        Expected notional = 21000.0.
+
+        Mutation that should fail but WON'T without this test:
+        drop sz.abs() → ETH contributes -6000.0 → notional = 9000.0.
+        """
+        db_path = str(tmp_path / "notional_pin.db")
+        conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(
+            """CREATE TABLE trades (
+               id INTEGER PRIMARY KEY, symbol TEXT, side TEXT, status TEXT,
+               close_reason TEXT, pnl REAL, pnl_pct REAL, timestamp TEXT,
+               entry_price REAL, exit_price REAL, size REAL, stop_loss REAL,
+               ai_decision TEXT, ai_confidence REAL, ai_reasoning TEXT,
+               ai_override INTEGER, duration_seconds INTEGER, strategy TEXT)"""
+        )
+        # Two open positions
+        conn.execute(
+            "INSERT INTO trades (id,symbol,side,status,entry_price,size,timestamp)"
+            " VALUES (1,'BTC/USDT:USDT','long','open',30000.0,0.5,'2026-01-01T00:00:00')"
+        )
+        conn.execute(
+            "INSERT INTO trades (id,symbol,side,status,entry_price,size,timestamp)"
+            " VALUES (2,'ETH/USDT:USDT','short','open',2000.0,-3.0,'2026-01-01T01:00:00')"
+        )
+        conn.commit()
+        conn.close()
+
+        client, app = _get_client(db_path)
+        try:
+            data = client.get("/api/portfolio/summary").json()
+            expected_notional = round(30000.0 * 0.5 + 2000.0 * 3.0, 2)  # 21000.0
+            assert abs(data["notional"] - expected_notional) < 0.01, (
+                f"notional must be {expected_notional} (abs of each leg); "
+                f"got {data['notional']} — likely sz.abs() is missing for short positions"
+            )
+        finally:
+            _reset_overrides(app)
+
+    def test_notional_zero_when_no_open_trades(self, tmp_path):
+        """Notional must be 0.0 when there are no open positions."""
+        db = _create_empty_db(tmp_path)
+        client, app = _get_client(db)
+        try:
+            data = client.get("/api/portfolio/summary").json()
+            assert data["notional"] == 0.0, (
+                f"notional must be 0.0 with no open trades; got {data['notional']}"
+            )
+        finally:
+            _reset_overrides(app)
+
     def test_empty_db_200_not_500(self, tmp_path):
         db = _create_empty_db(tmp_path)
         client, app = _get_client(db)
