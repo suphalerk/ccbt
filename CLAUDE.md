@@ -1,9 +1,9 @@
 # CCBT — Crypto & Gold Trading Bot with Claude AI
 
 ## Project Overview
-Automated trading bot for BTC perpetual futures (Binance/Bybit via ccxt) and Gold XAU/USD (OANDA forex) with Claude AI advisor integration, Streamlit dashboard, and production deployment infrastructure.
+Automated trading bot for BTC perpetual futures (Binance/Bybit via ccxt) and Gold XAU/USD (OANDA forex) with Claude AI advisor integration, a Vite + React + FastAPI dashboard, and production deployment infrastructure.
 
-**Language**: Python 3.11 | **Exchanges**: Binance/Bybit (ccxt) + OANDA (forex) | **AI**: Claude Sonnet via Anthropic SDK | **Dashboard**: Streamlit + Plotly | **DB**: SQLite (WAL mode)
+**Language**: Python 3.11 | **Exchanges**: Binance/Bybit (ccxt) + OANDA (forex) | **AI**: Claude Sonnet via Anthropic SDK | **Dashboard**: Vite + React SPA + FastAPI + WebSocket (`api/` + `web/`) | **DB**: SQLite (WAL mode)
 
 ## 📚 Documentation Index
 Detailed reference lives in `docs/` — read the relevant file when working on that area (keeps this file lean and loaded every session):
@@ -41,11 +41,9 @@ bot/
 ├── telegram_commands.py → Interactive Telegram commands (/status /pnl /panic etc.)
 └── logger.py            → SQLite trade journal + AI calibration tracker + bot_health table
 dashboard/
-├── app.py               → Streamlit web UI (multi-bot portfolio + single-bot drill-down) — current deployed UI
-├── components.py        → Plotly chart components (per-bot PnL bar, portfolio table)
-└── queries.py           → SQLite query helpers (symbol-filtered) + log file reader — SHARED with the v2 API
-api/                     → [v2, MERGED — not yet cutover] FastAPI + WS service; reuses dashboard/queries.py (single source of truth for all financial math), serves the Vite SPA. See docs/tickets/dashboard-rewrite/
-web/                     → [v2] Vite + React + Tailwind SPA (builds to web/dist, served by FastAPI on one port)
+└── queries.py           → SQLite query helpers (symbol-filtered) + log file reader — SINGLE SOURCE OF TRUTH for all dashboard financial math; imported by the FastAPI `api/`. (The old Streamlit app.py + Plotly components.py were retired 2026-06-08.)
+api/                     → FastAPI + WebSocket dashboard service; reuses dashboard/queries.py, serves the Vite SPA on one port. Plan/history: docs/tickets/dashboard-rewrite/
+web/                     → Vite + React + Tailwind SPA (builds to web/dist, served by FastAPI)
 backtest/
 ├── engine.py            → Event-driven backtesting simulator (own signal dispatch — see strategy checklist)
 ├── data_loader.py       → Historical data loading
@@ -74,8 +72,9 @@ python main_multi.py --group ichimoku-1h
 python main_multi.py --configs config_avax_ichi.json config_near_ichi.json
 python main_multi.py --pattern "config_*ichi*.json"
 
-# Dashboard
-streamlit run dashboard/app.py
+# Dashboard (v2 — FastAPI serves the Vite SPA + API + WS on one port)
+.venv-dash/bin/python -m uvicorn api.main:app --host 127.0.0.1 --port 8501
+# (managed in prod by launchd com.ccbt.dashboard-v2; web bundle: npm --prefix web run build)
 
 # Tests
 pytest tests/ -v
@@ -228,7 +227,7 @@ BOT_DATA_DIR                 — Data directory (default: ./data in Docker, . lo
 - **All bots in a single process** via `main_multi.py` (shared ccxt exchange pool); ~59 active configs as of 2026-06-07 (roster lives in `deploy/macos/start.sh`)
 - **RAM**: ~340 MB total (vs ~25 GB if running each bot as a separate Docker container)
 - **Start/stop**: `bash scripts/start_all_bots.sh` / `bash scripts/start_all_bots.sh stop`
-- **Dashboard**: Streamlit local on port 8501 (`streamlit run dashboard/app.py`) — still the deployed/running UI. A **v2 rewrite (Vite SPA + FastAPI + WebSocket)** is now **MERGED to main but NOT yet cutover** (Streamlit keeps running). Run v2 locally: `.venv-dash/bin/python -m uvicorn api.main:app --host 127.0.0.1 --port 8610` (serves API + SPA on one port). Plan/tickets/build-status: [docs/tickets/dashboard-rewrite/README.md](docs/tickets/dashboard-rewrite/README.md). Cutover is N12/N13 (loads `com.ccbt.dashboard-v2` on a distinct port, soaks alongside Streamlit, retires Streamlit only after parity sign-off — the plist is written but NOT loaded).
+- **Dashboard**: **Vite + React SPA + FastAPI + WebSocket** (`api/` serves the `web/dist` bundle + REST + WS on one port). Managed by launchd `com.ccbt.dashboard-v2` on **127.0.0.1:8501** (`deploy/macos/start-dashboard-v2.sh`, `.venv-dash` Python 3.12); restart with `launchctl kickstart -k gui/$(id -u)/com.ccbt.dashboard-v2`. The old Streamlit dashboard was **retired + deleted 2026-06-08** (cutover N12/N13 complete); `dashboard/queries.py` is kept as the shared data layer. Rebuild the web bundle after a `web/` change: `npm --prefix web run build`. Plan/history: [docs/tickets/dashboard-rewrite/README.md](docs/tickets/dashboard-rewrite/README.md).
 - **Per-bot mode control**: mode files in `data/mode_{symbol}.json` (read each loop tick)
 - **Exchange**: Binance testnet (set `use_testnet: false` in configs to go live)
 - Docker deployment still supported for VPS: `docker compose up -d --build`
