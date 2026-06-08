@@ -1,0 +1,1611 @@
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+Loading data and running bots...
+Total bots: 47
+
+  Running BTC (EMA 15m, 15m) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        70
+Win Rate:            34.29%
+Profit Factor:       1.19
+Avg R:R Actual:      2.29
+Sharpe Ratio:        0.68
+Sortino Ratio:       2.84
+Max Drawdown:        5.44%
+Avg Trade Duration:  0 days 01:43:04.285714
+==================================================
+MONTHLY RETURNS:
+  2025-03: $5.57
+  2025-04: $-422.65
+  2025-05: $-110.99
+  2025-06: $69.65
+  2025-07: $-10.20
+  2025-08: $-111.07
+  2025-09: $73.47
+  2025-10: $542.74
+  2025-11: $646.49
+  2025-12: $-239.22
+  2026-01: $174.23
+  2026-02: $126.24
+  2026-03: $-59.12
+==================================================
+    -> 70 trades
+  Running WIF (EMA 15m, 15m) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        49
+Win Rate:            36.73%
+Profit Factor:       1.30
+Avg R:R Actual:      2.23
+Sharpe Ratio:        0.86
+Sortino Ratio:       4.19
+Max Drawdown:        6.54%
+Avg Trade Duration:  0 days 02:14:23.265306
+==================================================
+MONTHLY RETURNS:
+  2025-03: $-105.39
+  2025-04: $475.32
+  2025-05: $521.17
+  2025-06: $-417.89
+  2025-07: $-120.45
+  2025-08: $232.52
+  2025-09: $146.31
+  2025-10: $-258.02
+  2025-11: $-0.80
+  2025-12: $433.29
+  2026-01: $359.21
+  2026-02: $-510.02
+==================================================
+    -> 49 trades
+  Running ARC (EMA 15m, 15m) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        36
+Win Rate:            30.56%
+Profit Factor:       0.73
+Avg R:R Actual:      1.65
+Sharpe Ratio:        -0.77
+Sortino Ratio:       -2.70
+Max Drawdown:        5.08%
+Avg Trade Duration:  0 days 02:17:30
+==================================================
+MONTHLY RETURNS:
+  2025-03: $-108.80
+  2025-04: $-352.15
+  2025-05: $-99.28
+  2025-06: $370.88
+  2025-07: $-25.86
+  2025-08: $56.45
+  2025-09: $189.61
+  2025-10: $-334.38
+  2025-11: $-74.15
+  2026-03: $-101.15
+==================================================
+    -> 36 trades
+  Running AVAX (Ichi 1H, 1h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        11
+Win Rate:            36.36%
+Profit Factor:       2.64
+Avg R:R Actual:      4.63
+Sharpe Ratio:        1.31
+Sortino Ratio:       4.97
+Max Drawdown:        1.84%
+Avg Trade Duration:  0 days 15:27:16.363636
+==================================================
+MONTHLY RETURNS:
+  2025-03: $499.25
+  2025-04: $-0.61
+  2025-05: $-16.74
+  2025-07: $-175.89
+  2025-09: $252.72
+  2025-12: $144.73
+  2026-01: $-33.15
+  2026-02: $-44.90
+==================================================
+    -> 11 trades
+  Running POL (Ichi 1H Trail, 1h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        14
+Win Rate:            50.00%
+Profit Factor:       6.86
+Avg R:R Actual:      6.86
+Sharpe Ratio:        2.14
+Sortino Ratio:       25.21
+Max Drawdown:        2.38%
+Avg Trade Duration:  1 days 05:21:25.714285
+==================================================
+MONTHLY RETURNS:
+  2025-04: $-151.17
+  2025-05: $1447.32
+  2025-07: $1584.17
+  2025-08: $-37.41
+  2025-09: $135.40
+  2025-10: $364.92
+  2026-01: $-137.90
+  2026-02: $773.29
+  2026-03: $-148.20
+==================================================
+    -> 14 trades
+  Running GUN (Ichi 1H, 1h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        17
+Win Rate:            64.71%
+Profit Factor:       4.01
+Avg R:R Actual:      2.19
+Sharpe Ratio:        2.52
+Sortino Ratio:       16.21
+Max Drawdown:        2.01%
+Avg Trade Duration:  0 days 14:00:00
+==================================================
+MONTHLY RETURNS:
+  2025-04: $248.72
+  2025-05: $23.30
+  2025-06: $148.56
+  2025-07: $-59.68
+  2025-08: $202.95
+  2025-10: $315.86
+  2026-01: $-65.42
+  2026-02: $268.84
+  2026-03: $576.07
+==================================================
+    -> 17 trades
+  Running BERA (Ichi 1H, 1h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        20
+Win Rate:            55.00%
+Profit Factor:       2.91
+Avg R:R Actual:      2.38
+Sharpe Ratio:        1.91
+Sortino Ratio:       6.84
+Max Drawdown:        2.02%
+Avg Trade Duration:  0 days 15:39:00
+==================================================
+MONTHLY RETURNS:
+  2025-03: $81.20
+  2025-04: $219.16
+  2025-05: $291.63
+  2025-06: $187.58
+  2025-07: $-31.89
+  2025-08: $52.70
+  2025-09: $-63.96
+  2025-11: $263.74
+  2025-12: $-110.99
+  2026-01: $148.69
+  2026-02: $-105.45
+  2026-03: $269.67
+==================================================
+    -> 20 trades
+  Running ATH (Ichi 1H, 1h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        17
+Win Rate:            47.06%
+Profit Factor:       2.50
+Avg R:R Actual:      2.81
+Sharpe Ratio:        1.63
+Sortino Ratio:       6.04
+Max Drawdown:        2.62%
+Avg Trade Duration:  0 days 16:07:03.529411
+==================================================
+MONTHLY RETURNS:
+  2025-05: $-115.43
+  2025-07: $245.60
+  2025-09: $-150.00
+  2025-10: $-100.38
+  2025-11: $-9.66
+  2025-12: $192.73
+  2026-01: $125.35
+  2026-02: $329.70
+  2026-03: $332.96
+==================================================
+    -> 17 trades
+  Running INJ (Ichi 1H, 1h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        9
+Win Rate:            44.44%
+Profit Factor:       2.44
+Avg R:R Actual:      3.06
+Sharpe Ratio:        0.98
+Sortino Ratio:       4.36
+Max Drawdown:        2.56%
+Avg Trade Duration:  1 days 03:06:40
+==================================================
+MONTHLY RETURNS:
+  2025-04: $100.86
+  2025-05: $250.46
+  2025-06: $-34.22
+  2025-07: $-123.80
+  2025-08: $-106.88
+  2026-02: $296.28
+==================================================
+    -> 9 trades
+  Running TRUMP (Ichi 1H, 1h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        19
+Win Rate:            52.63%
+Profit Factor:       1.65
+Avg R:R Actual:      1.48
+Sharpe Ratio:        0.85
+Sortino Ratio:       3.31
+Max Drawdown:        3.54%
+Avg Trade Duration:  0 days 18:18:56.842105
+==================================================
+MONTHLY RETURNS:
+  2025-03: $-149.46
+  2025-04: $287.94
+  2025-05: $-256.32
+  2025-06: $57.55
+  2025-07: $22.60
+  2025-08: $10.58
+  2025-09: $-193.48
+  2025-10: $426.10
+  2025-11: $-77.63
+  2026-03: $320.75
+==================================================
+    -> 19 trades
+  Running ANIME (Ichi 1H, 1h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        17
+Win Rate:            47.06%
+Profit Factor:       1.53
+Avg R:R Actual:      1.72
+Sharpe Ratio:        0.76
+Sortino Ratio:       3.87
+Max Drawdown:        5.15%
+Avg Trade Duration:  0 days 14:00:00
+==================================================
+MONTHLY RETURNS:
+  2025-04: $262.32
+  2025-06: $146.89
+  2025-07: $529.58
+  2025-08: $-149.77
+  2025-09: $-55.48
+  2025-12: $-162.08
+  2026-01: $-171.43
+  2026-02: $-19.60
+==================================================
+    -> 17 trades
+  Running IP (Ichi 1H, 1h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        16
+Win Rate:            56.25%
+Profit Factor:       1.83
+Avg R:R Actual:      1.43
+Sharpe Ratio:        1.07
+Sortino Ratio:       9.50
+Max Drawdown:        1.78%
+Avg Trade Duration:  0 days 18:22:30
+==================================================
+MONTHLY RETURNS:
+  2025-04: $-75.14
+  2025-05: $2.61
+  2025-06: $-101.37
+  2025-07: $121.03
+  2025-08: $59.72
+  2025-09: $-101.70
+  2025-10: $288.23
+  2025-12: $241.28
+  2026-01: $-185.97
+  2026-02: $203.23
+  2026-03: $81.03
+==================================================WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+
+    -> 16 trades
+  Running 1000SHIB (Ichi 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        4
+Win Rate:            75.00%
+Profit Factor:       18.51
+Avg R:R Actual:      6.17
+Sharpe Ratio:        2.65
+Sortino Ratio:       2.37
+Max Drawdown:        0.22%
+Avg Trade Duration:  5 days 00:00:00
+==================================================
+MONTHLY RETURNS:
+  2025-05: $165.18
+  2025-06: $81.87
+  2025-09: $-22.52
+  2026-01: $169.76
+==================================================
+    -> 4 trades
+  Running TAO (Ichi 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        9
+Win Rate:            66.67%
+Profit Factor:       6.14
+Avg R:R Actual:      3.07
+Sharpe Ratio:        2.78
+Sortino Ratio:       12.38
+Max Drawdown:        0.74%
+Avg Trade Duration:  2 days 00:00:00
+==================================================
+MONTHLY RETURNS:
+  2025-04: $160.22
+  2025-05: $-53.80
+  2025-06: $324.75
+  2025-07: $-77.44
+  2025-10: $163.82
+  2026-01: $166.13
+  2026-02: $141.13
+==================================================
+    -> 9 trades
+  Running RENDER (Ichi 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        7
+Win Rate:            57.14%
+Profit Factor:       4.73
+Avg R:R Actual:      3.55
+Sharpe Ratio:        1.86
+Sortino Ratio:       4.23
+Max Drawdown:        1.01%
+Avg Trade Duration:  3 days 00:34:17.142857
+==================================================
+MONTHLY RETURNS:
+  2025-04: $159.40
+  2025-05: $-23.00
+  2025-09: $151.35
+  2025-10: $-103.95
+  2026-01: $326.43
+==================================================
+    -> 7 trades
+  Running ARB (Ichi 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        4
+Win Rate:            50.00%
+Profit Factor:       2.98
+Avg R:R Actual:      2.98
+Sharpe Ratio:        1.36
+Sortino Ratio:       4.95
+Max Drawdown:        0.19%
+Avg Trade Duration:  3 days 02:00:00
+==================================================
+MONTHLY RETURNS:
+  2025-10: $-51.84
+  2025-11: $131.89
+  2026-01: $79.54
+  2026-02: $-19.05
+==================================================
+    -> 4 trades
+  Running SIGN (Ichi 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        7
+Win Rate:            28.57%
+Profit Factor:       1.73
+Avg R:R Actual:      4.31
+Sharpe Ratio:        0.60
+Sortino Ratio:       2.00
+Max Drawdown:        2.24%
+Avg Trade Duration:  2 days 04:34:17.142857
+==================================================
+MONTHLY RETURNS:
+  2025-06: $198.83
+  2025-07: $150.20
+  2025-08: $-22.84
+  2025-11: $-103.07
+  2026-02: $-1.16
+  2026-03: $-53.22
+==================================================
+    -> 7 trades
+  Running TIA (Ichi 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        11
+Win Rate:            54.55%
+Profit Factor:       1.54
+Avg R:R Actual:      1.28
+Sharpe Ratio:        0.67
+Sortino Ratio:       2.35
+Max Drawdown:        1.80%
+Avg Trade Duration:  2 days 13:27:16.363636
+==================================================
+MONTHLY RETURNS:
+  2025-06: $-44.61
+  2025-07: $-81.55
+  2025-08: $29.54
+  2025-09: $35.39
+  2025-10: $-85.03
+  2025-11: $40.35
+  2026-01: $292.26
+==================================================
+    -> 11 trades
+  Running ONDO (Ichi 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        10
+Win Rate:            50.00%
+Profit Factor:       2.32
+Avg R:R Actual:      2.32
+Sharpe Ratio:        1.09
+Sortino Ratio:       3.05
+Max Drawdown:        1.71%
+Avg Trade Duration:  2 days 10:24:00
+==================================================
+MONTHLY RETURNS:
+  2025-04: $265.63
+  2025-06: $-171.41
+  2025-09: $-4.01
+  2026-01: $200.76
+  2026-02: $99.35
+  2026-03: $13.94
+==================================================
+    -> 10 trades
+  Running H (Ichi 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        6
+Win Rate:            33.33%
+Profit Factor:       1.06
+Avg R:R Actual:      2.13
+Sharpe Ratio:        0.10
+Sortino Ratio:       0.31
+Max Drawdown:        1.64%
+Avg Trade Duration:  3 days 05:20:00
+==================================================
+MONTHLY RETURNS:
+  2025-08: $-68.26
+  2025-10: $-16.20
+  2025-11: $-146.44
+  2025-12: $50.04
+  2026-02: $195.74
+==================================================
+    -> 6 trades
+  Running AXS (Ichi 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        5
+Win Rate:            0.00%
+Profit Factor:       0.00
+Avg R:R Actual:      0.00
+Sharpe Ratio:        -6.42
+Sortino Ratio:       -6.42
+Max Drawdown:        2.44%
+Avg Trade Duration:  1 days 20:00:00
+==================================================
+MONTHLY RETURNS:
+  2025-05: $-86.44
+  2025-06: $-21.06
+  2025-08: $-220.98
+==================================================
+    -> 5 trades
+  Running ALGO (4H Trail, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        4
+Win Rate:            50.00%
+Profit Factor:       9.89
+Avg R:R Actual:      9.89
+Sharpe Ratio:        1.39
+Sortino Ratio:       205.76
+Max Drawdown:        1.61%
+Avg Trade Duration:  9 days 07:00:00
+==================================================
+MONTHLY RETURNS:
+  2025-07: $1498.43
+  2025-08: $-89.09
+  2025-10: $-96.56
+  2026-02: $338.14
+==================================================
+    -> 4 trades
+  Running TRX (4H Trail, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        4
+Win Rate:            50.00%
+Profit Factor:       4.52
+Avg R:R Actual:      4.52
+Sharpe Ratio:        1.17
+Sortino Ratio:       28.33
+Max Drawdown:        1.88%
+Avg Trade Duration:  7 days 05:00:00
+==================================================
+MONTHLY RETURNS:
+  2025-09: $147.26
+  2025-10: $-84.61
+  2025-11: $-106.52
+  2026-03: $716.19
+==================================================
+    -> 4 trades
+  Running POLYX (4H Trail, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        8
+Win Rate:            62.50%
+Profit Factor:       3.98
+Avg R:R Actual:      2.39
+Sharpe Ratio:        1.56
+Sortino Ratio:       3.68
+Max Drawdown:        1.37%
+Avg Trade Duration:  6 days 09:00:00
+==================================================
+MONTHLY RETURNS:
+  2025-04: $104.51
+  2025-06: $143.84
+  2025-07: $-14.04
+  2025-08: $-22.53
+  2025-10: $-103.54
+  2025-11: $41.68
+  2025-12: $267.37
+==================================================
+    -> 8 trades
+  Running FET (4H Trail, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        6
+Win Rate:            66.67%
+Profit Factor:       4.97
+Avg R:R Actual:      2.48
+Sharpe Ratio:        1.25
+Sortino Ratio:       14.67
+Max Drawdown:        1.01%
+Avg Trade Duration:  4 days 20:00:00
+==================================================
+MONTHLY RETURNS:
+  2025-04: $719.81
+  2025-06: $28.87
+  2025-10: $-66.70
+  2025-11: $27.73
+==================================================
+    -> 6 trades
+  Running XLM (4H Trail, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        4
+Win Rate:            25.00%
+Profit Factor:       2.79
+Avg R:R Actual:      8.38
+Sharpe Ratio:        0.74
+Sortino Ratio:       946.46
+Max Drawdown:        2.05%
+Avg Trade Duration:  6 days 05:00:00
+==================================================
+MONTHLY RETURNS:
+  2025-07: $-102.75
+  2025-09: $-101.65
+  2026-01: $-101.25
+  2026-02: $853.79
+==================================================
+    -> 4 trades
+  Running SAHARA (4H Trail, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        5
+Win Rate:            60.00%
+Profit Factor:       2.13
+Avg R:R Actual:      1.42
+Sharpe Ratio:        0.82
+Sortino Ratio:       13.18
+Max Drawdown:        0.76%
+Avg Trade Duration:  7 days 08:48:00
+==================================================
+MONTHLY RETURNS:
+  2025-09: $-65.40
+  2025-11: $-75.13
+  2026-01: $74.99
+  2026-02: $204.44
+  2026-03: $19.81
+==================================================
+    -> 5 trades
+  Running MSTR (Supertrend, 1h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        11
+Win Rate:            54.55%
+Profit Factor:       1.49
+Avg R:R Actual:      1.24
+Sharpe Ratio:        1.98
+Sortino Ratio:       7.81
+Max Drawdown:        2.27%
+Avg Trade Duration:  0 days 16:16:21.818181
+==================================================
+MONTHLY RETURNS:
+  2026-02: $-157.56
+  2026-03: $363.28
+==================================================
+    -> 11 trades
+  Running XAG (Supertrend, 1h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        23
+Win Rate:            39.13%
+Profit Factor:       0.93
+Avg R:R Actual:      1.45
+Sharpe Ratio:        -0.30
+Sortino Ratio:       -0.82
+Max Drawdown:        3.67%
+Avg Trade Duration:  0 days 14:05:13.043478
+==================================================
+MONTHLY RETURNS:
+  2026-01: $37.51
+  2026-02: $-313.30
+  2026-03: $215.62
+==================================================
+    -> 23 trades
+  Running 1000PEPE (VolExp, 1h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        10
+Win Rate:            60.00%
+Profit Factor:       5.01
+Avg R:R Actual:      3.34
+Sharpe Ratio:        2.22
+Sortino Ratio:       8.01
+Max Drawdown:        0.54%
+Avg Trade Duration:  0 days 15:00:00
+==================================================
+MONTHLY RETURNS:
+  2025-05: $-36.73
+  2025-08: $118.23
+  2025-09: $-3.75
+  2025-10: $119.95
+  2025-12: $-27.19
+  2026-01: $262.39
+  2026-03: $66.94
+==================================================
+    -> 10 trades
+  Running WLD (VolExp, 1h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        4
+Win Rate:            75.00%
+Profit Factor:       3.44
+Avg R:R Actual:      1.15
+Sharpe Ratio:        1.39
+Sortino Ratio:       1.53
+Max Drawdown:        1.01%
+Avg Trade Duration:  0 days 16:45:00
+==================================================
+MONTHLY RETURNS:
+  2025-03: $118.10
+  2025-09: $242.57
+  2025-12: $-104.94
+==================================================
+    -> 4 trades
+  Running APT (EMA+Ichi 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        5
+Win Rate:            80.00%
+Profit Factor:       53.99
+Avg R:R Actual:      13.50
+Sharpe Ratio:        1.88
+Sortino Ratio:       2.70
+Max Drawdown:        0.10%
+Avg Trade Duration:  1 days 16:48:00
+==================================================
+MONTHLY RETURNS:
+  2025-06: $8.11
+  2025-07: $263.54
+  2025-08: $2.52
+  2025-11: $267.89
+  2026-03: $-10.04
+==================================================
+    -> 5 trades
+  Running NEAR (EMA+Ichi 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        4
+Win Rate:            50.00%
+Profit Factor:       13.97
+Avg R:R Actual:      13.97
+Sharpe Ratio:        1.71
+Sortino Ratio:       13.41
+Max Drawdown:        0.24%
+Avg Trade Duration:  3 days 10:00:00
+==================================================
+MONTHLY RETURNS:
+  2025-06: $266.11
+  2025-08: $-0.11
+  2025-12: $52.11
+==================================================
+    -> 4 trades
+  Running ZETA (EMA+Ichi 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        6
+Win Rate:            50.00%
+Profit Factor:       2.04
+Avg R:R Actual:      2.04
+Sharpe Ratio:        0.70
+Sortino Ratio:       7.90
+Max Drawdown:        0.90%
+Avg Trade Duration:  2 days 15:20:00
+==================================================
+MONTHLY RETURNS:
+  2025-04: $-99.65
+  2025-08: $-69.10
+  2025-11: $259.14
+  2025-12: $257.49
+  2026-02: $17.65
+  2026-03: $-92.89
+==================================================
+    -> 6 trades
+  Running LTC (Ichi+ST 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        5
+Win Rate:            80.00%
+Profit Factor:       9.52
+Avg R:R Actual:      2.38
+Sharpe Ratio:        4.10
+Sortino Ratio:       6.42
+Max Drawdown:        1.02%
+Avg Trade Duration:  2 days 04:00:00
+==================================================
+MONTHLY RETURNS:
+  2025-06: $249.69
+  2025-07: $400.79
+  2025-11: $264.68
+==================================================
+    -> 5 trades
+  Running LIGHT (Alligator 1H, 1h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        8
+Win Rate:            62.50%
+Profit Factor:       4.69
+Avg R:R Actual:      2.81
+Sharpe Ratio:        3.53
+Sortino Ratio:       23.66
+Max Drawdown:        1.16%
+Avg Trade Duration:  1 days 00:22:30
+==================================================
+MONTHLY RETURNS:
+  2025-10: $180.50
+  2025-11: $203.09
+  2025-12: $418.28
+  2026-01: $-125.16
+==================================================
+    -> 8 trades
+  Running HBAR (Alligator 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        6
+Win Rate:            66.67%
+Profit Factor:       4.41
+Avg R:R Actual:      2.21
+Sharpe Ratio:        1.60
+Sortino Ratio:       4.85
+Max Drawdown:        1.02%
+Avg Trade Duration:  2 days 19:20:00
+==================================================
+MONTHLY RETURNS:
+  2025-04: $400.77
+  2025-05: $206.46
+  2025-08: $10.35
+  2026-03: $-107.93
+==================================================
+    -> 6 trades
+  Running QNT (Alligator 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        5
+Win Rate:            40.00%
+Profit Factor:       1.93
+Avg R:R Actual:      2.90
+Sharpe Ratio:        0.61
+Sortino Ratio:       3.64
+Max Drawdown:        1.63%
+Avg Trade Duration:  2 days 17:36:00
+==================================================
+MONTHLY RETURNS:
+  2025-04: $200.54
+  2025-05: $-165.92
+  2025-07: $197.77
+  2026-03: $-40.03
+==================================================
+    -> 5 trades
+  Running ARC_A (Alligator 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        7
+Win Rate:            57.14%
+Profit Factor:       3.14
+Avg R:R Actual:      2.36
+Sharpe Ratio:        1.39
+Sortino Ratio:       4.04
+Max Drawdown:        1.82%
+Avg Trade Duration:  2 days 09:08:34.285714
+==================================================
+MONTHLY RETURNS:
+  2025-05: $200.15
+  2025-08: $141.72
+  2025-11: $-104.07
+  2025-12: $206.47
+  2026-02: $-11.98
+==================================================
+    -> 7 trades
+  Running LINK (Alligator 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        3
+Win Rate:            33.33%
+Profit Factor:       0.96
+Avg R:R Actual:      1.93
+Sharpe Ratio:        -0.03
+Sortino Ratio:       -21.75
+Max Drawdown:        1.01%
+Avg Trade Duration:  1 days 06:40:00
+==================================================
+MONTHLY RETURNS:
+  2025-04: $-101.47
+  2025-07: $195.95
+  2025-08: $-102.08
+==================================================WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+
+    -> 3 trades
+  Running SUI (Alligator 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        2
+Win Rate:            0.00%
+Profit Factor:       0.00
+Avg R:R Actual:      0.00
+Sharpe Ratio:        -10.49
+Sortino Ratio:       -10.49
+Max Drawdown:        0.75%
+Avg Trade Duration:  2 days 18:00:00
+==================================================
+MONTHLY RETURNS:
+  2025-10: $-54.87
+  2026-03: $-74.86
+==================================================
+    -> 2 trades
+  Running LYN (Dual ST 1H, 1h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        10
+Win Rate:            50.00%
+Profit Factor:       3.06
+Avg R:R Actual:      3.06
+Sharpe Ratio:        2.18
+Sortino Ratio:       13.41
+Max Drawdown:        1.17%
+Avg Trade Duration:  0 days 16:36:00
+==================================================
+MONTHLY RETURNS:
+  2025-10: $100.44
+  2025-11: $-44.15
+  2025-12: $322.05
+  2026-01: $-121.57
+  2026-03: $204.52
+==================================================
+    -> 10 trades
+  Running HUMA (Dual ST 1H, 1h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        8
+Win Rate:            25.00%
+Profit Factor:       0.63
+Avg R:R Actual:      1.89
+Sharpe Ratio:        -0.84
+Sortino Ratio:       -1.67
+Max Drawdown:        2.72%
+Avg Trade Duration:  0 days 14:30:00
+==================================================
+MONTHLY RETURNS:
+  2025-06: $157.54
+  2025-07: $-113.66
+  2025-10: $-158.05
+==================================================
+    -> 8 trades
+  Running ENJ (Dual ST 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        6
+Win Rate:            50.00%
+Profit Factor:       1.47
+Avg R:R Actual:      1.47
+Sharpe Ratio:        0.52
+Sortino Ratio:       3.53
+Max Drawdown:        2.00%
+Avg Trade Duration:  3 days 11:20:00
+==================================================
+MONTHLY RETURNS:
+  2025-06: $159.91
+  2025-07: $163.00
+  2025-08: $-63.99
+  2025-10: $40.36
+  2025-12: $-99.81
+  2026-01: $-82.72
+==================================================
+    -> 6 trades
+  Running XPL (Dual ST 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        4
+Win Rate:            50.00%
+Profit Factor:       1.90
+Avg R:R Actual:      1.90
+Sharpe Ratio:        0.76
+Sortino Ratio:       1.59
+Max Drawdown:        1.01%
+Avg Trade Duration:  2 days 22:00:00
+==================================================
+MONTHLY RETURNS:
+  2025-10: $-23.15
+  2025-12: $57.51
+  2026-03: $77.27
+==================================================
+    -> 4 trades
+  Running XRP (Dual ST 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        5
+Win Rate:            60.00%
+Profit Factor:       1.66
+Avg R:R Actual:      1.11
+Sharpe Ratio:        0.42
+Sortino Ratio:       1.74
+Max Drawdown:        1.01%
+Avg Trade Duration:  3 days 20:00:00
+==================================================
+MONTHLY RETURNS:
+  2025-06: $159.74
+  2025-08: $-67.61
+  2025-10: $2.76
+  2026-02: $-37.32
+  2026-03: $12.01
+==================================================
+    -> 5 trades
+  Running AKT (Dual ST 4H, 4h) ...
+==================================================
+BACKTEST RESULTS
+==================================================
+Total Trades:        7
+Win Rate:            42.86%
+Profit Factor:       1.43
+Avg R:R Actual:      1.90
+Sharpe Ratio:        0.44
+Sortino Ratio:       1.39
+Max Drawdown:        0.98%
+Avg Trade Duration:  3 days 06:17:08.571428
+==================================================
+MONTHLY RETURNS:
+  2025-04: $-80.11
+  2025-05: $-17.02
+  2025-08: $59.22
+  2025-09: $162.37
+  2025-10: $87.07
+  2026-02: $-89.84
+==================================================
+    -> 7 trades
+
+Total raw trades: 528
+
+==============================================================================
+PORTFOLIO BACKTEST — 1 Year, Shared $200 Wallet
+Starting balance: $200.00
+==============================================================================
+Bot            Strategy          Trades  Wins    WR%       PnL$
+--------------------------------------------------------------------
+POL            Ichi 1H Trail         14     7  50.0%  +  189.90
+GUN            Ichi 1H               17    11  64.7%  +  144.72
+TRX            4H Trail               4     2  50.0%  +  113.91
+ATH            Ichi 1H               17     8  47.1%  +  109.83
+ALGO           4H Trail               4     2  50.0%  +  100.43
+BERA           Ichi 1H               20    11  55.0%  +   73.07
+XLM            4H Trail               4     1  25.0%  +   71.76
+BTC            EMA 15m               70    24  34.3%  +   67.09
+TRUMP          Ichi 1H               19    10  52.6%  +   55.82
+IP             Ichi 1H               16     9  56.2%  +   54.76
+LYN            Dual ST 1H            10     5  50.0%  +   52.52
+LIGHT          Alligator 1H           8     5  62.5%  +   50.58
+TAO            Ichi 4H                9     6  66.7%  +   50.58
+LTC            Ichi+ST 4H             5     4  80.0%  +   45.83
+1000PEPE       VolExp                10     6  60.0%  +   45.14
+RENDER         Ichi 4H                7     4  57.1%  +   37.61
+INJ            Ichi 1H                9     4  44.4%  +   36.49
+APT            EMA+Ichi 4H            5     4  80.0%  +   32.12
+ONDO           Ichi 4H               10     5  50.0%  +   31.21
+MSTR           Supertrend            11     6  54.5%  +   29.38
+TIA            Ichi 4H               11     6  54.5%  +   26.55
+POLYX          4H Trail               8     5  62.5%  +   26.47
+SAHARA         4H Trail               5     3  60.0%  +   26.11
+WIF            EMA 15m               49    18  36.7%  +   25.58
+1000SHIB       Ichi 4H                4     3  75.0%  +   23.77
+ZETA           EMA+Ichi 4H            6     3  50.0%  +   23.51
+ARC_A          Alligator 4H           7     4  57.1%  +   20.95
+AVAX           Ichi 1H               11     4  36.4%  +   20.74
+XPL            Dual ST 4H             4     2  50.0%  +   17.94
+FET            4H Trail               6     4  66.7%  +   16.19
+NEAR           EMA+Ichi 4H            4     2  50.0%  +   12.98
+ARB            Ichi 4H                4     2  50.0%  +   11.68
+H              Ichi 4H                6     2  33.3%  +    9.27
+WLD            VolExp                 4     3  75.0%  +    7.93
+AKT            Dual ST 4H             7     3  42.9%  +    4.08
+QNT            Alligator 4H           5     2  40.0%  +    3.01
+XAG            Supertrend            23     9  39.1%  +    0.37
+LINK           Alligator 4H           3     1  33.3%     -0.15
+HBAR           Alligator 4H           6     4  66.7%     -0.36
+XRP            Dual ST 4H             5     3  60.0%     -0.74
+ENJ            Dual ST 4H             6     3  50.0%     -2.85
+SIGN           Ichi 4H                7     2  28.6%     -3.56
+ANIME          Ichi 1H               17     8  47.1%     -7.22
+HUMA           Dual ST 1H             8     2  25.0%    -10.14
+SUI            Alligator 4H           2     0   0.0%    -14.03
+AXS            Ichi 4H                5     0   0.0%    -16.45
+ARC            EMA 15m               36    11  30.6%    -26.18
+--------------------------------------------------------------------
+TOTAL                               528   243  46.0%  + 1588.19
+
+Final balance: $1788.19  (+794.1%)
+
+
+==============================================================================
+MONTHLY REPORT
+==============================================================================
+
+--- 2025-03 ---
+  Bot             Trades       PnL$    Balance$
+  ARC                  1     -2.17
+  AVAX                 2  +    9.94
+  BERA                 1  +    1.60
+  BTC                  4  +    0.11
+  TRUMP                2     -2.99
+  WIF                  1     -2.20
+  WLD                  1  +    2.35
+  MONTH TOTAL         12  +    6.64  $   206.64
+
+--- 2025-04 ---
+  Bot             Trades       PnL$    Balance$
+  AKT                  1     -1.74
+  ANIME                1  +    5.47
+  ARC                  8     -8.18
+  AVAX                 1     -0.01
+  BERA                 4  +    4.94
+  BTC                  8     -9.25
+  FET                  1  +   16.84
+  GUN                  1  +    5.67
+  HBAR                 2  +    8.64
+  INJ                  2  +    2.16
+  IP                   1     -1.59
+  LINK                 1     -2.59
+  ONDO                 2  +    5.52
+  POL                  2     -3.39
+  POLYX                1  +    2.44
+  QNT                  1  +    4.17
+  RENDER               1  +    3.13
+  TAO                  1  +    3.60
+  TRUMP                2  +    6.04
+  WIF                  3  +   12.41
+  ZETA                 1     -2.19
+  MONTH TOTAL         45  +   52.08  $   258.72
+
+--- 2025-05 ---
+  Bot             Trades       PnL$    Balance$
+  1000PEPE             1     -1.03
+  1000SHIB             1  +    4.84
+  AKT                  1     -0.43
+  ARC                  1     -2.52
+  ARC_A                1  +    5.75
+  ATH                  2     -3.23
+  AVAX                 1     -0.47
+  AXS                  1     -2.22
+  BERA                 2  +    8.02
+  BTC                  2     -3.00
+  GUN                  1  +    0.66
+  HBAR                 1  +    5.34
+  INJ                  1  +    6.96
+  IP                   1  +    0.08
+  POL                  3  +   40.83
+  QNT                  2     -4.60
+  RENDER               1     -0.63
+  TAO                  1     -1.37
+  TRUMP                3     -7.27
+  WIF                  5  +   13.61
+  MONTH TOTAL         32  +   59.33  $   318.05
+
+--- 2025-06 ---
+  Bot             Trades       PnL$    Balance$
+  1000SHIB             1  +    3.00
+  ANIME                2  +    4.51
+  APT                  1  +    0.26
+  ARC                  4  +   14.03
+  AXS                  1     -0.67
+  BERA                 2  +    5.94
+  BTC                  6  +    2.22
+  ENJ                  1  +    5.54
+  FET                  1  +    0.92
+  GUN                  2  +    4.55
+  HUMA                 1  +    6.08
+  INJ                  1     -1.14
+  IP                   1     -3.30
+  LTC                  1  +    8.94
+  NEAR                 1  +    8.62
+  ONDO                 2     -5.65
+  POLYX                1  +    5.32
+  SIGN                 1  +    6.63
+  TAO                  2  +   10.98
+  TIA                  2     -1.95
+  TRUMP                1  +    1.92
+  WIF                  4    -14.22
+  XRP                  1  +    5.31
+  MONTH TOTAL         40  +   67.83  $   385.88
+
+--- 2025-07 ---
+  Bot             Trades       PnL$    Balance$
+  ALGO                 1  +   70.58
+  ANIME                3  +   29.00
+  APT                  1  +   14.84
+  ARC                  5     -0.35
+  ATH                  1  +   10.53
+  AVAX                 2     -8.99
+  BERA                 1     -1.49
+  BTC                  7     -1.80
+  ENJ                  1  +    9.40
+  GUN                  1     -2.29
+  HUMA                 4     -5.98
+  INJ                  2     -5.46
+  IP                   2  +    7.82
+  LINK                 1  +    8.87
+  LTC                  3  +   17.53
+  POL                  1  +   58.49
+  POLYX                1     -0.76
+  QNT                  1  +    9.23
+  SIGN                 2  +    6.85
+  TAO                  1     -2.95
+  TIA                  1     -3.04
+  TRUMP                2  +    1.07
+  WIF                  2     -6.82
+  XLM                  1     -3.88
+  MONTH TOTAL         47  +  200.39  $   586.27
+
+--- 2025-08 ---
+  Bot             Trades       PnL$    Balance$
+  1000PEPE             1  +    7.15
+  AKT                  2  +    3.33
+  ALGO                 1     -5.51
+  ANIME                3     -8.81
+  APT                  1  +    0.16
+  ARC                  6  +    3.45
+  ARC_A                3  +    8.59
+  AXS                  3    -13.56
+  BERA                 1  +    3.26
+  BTC                  2     -6.89
+  ENJ                  1     -3.90
+  GUN                  2  +   12.31
+  H                    1     -4.12
+  HBAR                 2  +    0.70
+  INJ                  2     -6.37
+  IP                   1  +    3.72
+  LINK                 1     -6.42
+  NEAR                 1     -0.01
+  POL                  1     -2.26
+  POLYX                1     -1.37
+  SIGN                 1     -1.39
+  TIA                  1  +    1.79
+  TRUMP                2  +    0.66
+  WIF                  6  +   13.78
+  XRP                  1     -4.14
+  ZETA                 1     -4.23
+  MONTH TOTAL         48    -10.07  $   576.20
+
+--- 2025-09 ---
+  Bot             Trades       PnL$    Balance$
+  1000PEPE             1     -0.23
+  1000SHIB             1     -1.30
+  AKT                  1  +    9.80
+  ANIME                1     -3.16
+  ARC                  4  +   10.93
+  ATH                  4     -8.90
+  AVAX                 1  +   14.91
+  BERA                 1     -3.80
+  BTC                  2  +    4.06
+  IP                   1     -6.18
+  ONDO                 1     -0.23
+  POL                  1  +    8.30
+  RENDER               2  +    9.02
+  SAHARA               1     -3.68
+  TIA                  1  +    1.99
+  TRUMP                2    -11.38
+  TRX                  1  +    8.41
+  WIF                  2  +    8.72
+  WLD                  2  +   14.15
+  XLM                  1     -6.19
+  MONTH TOTAL         31  +   45.24  $   621.44
+
+--- 2025-10 ---
+  Bot             Trades       PnL$    Balance$
+  1000PEPE             1  +    7.32
+  AKT                  1  +    5.78
+  ALGO                 1     -5.77
+  ARB                  1     -3.19
+  ARC                  4    -20.63
+  ATH                  1     -6.65
+  BTC                  9  +   32.88
+  ENJ                  1  +    2.65
+  FET                  3     -3.69
+  GUN                  2  +   19.91
+  H                    1     -0.97
+  HUMA                 3    -10.23
+  IP                   3  +   18.15
+  LIGHT                3  +   11.86
+  LYN                  3  +    6.62
+  POL                  1  +   23.26
+  POLYX                1     -6.29
+  RENDER               1     -6.46
+  SUI                  1     -3.59
+  TAO                  1  +    9.53
+  TIA                  2     -5.19
+  TRUMP                2  +   26.73
+  TRX                  1     -5.10
+  WIF                  4    -16.32
+  XPL                  1     -1.54
+  XRP                  1  +    0.18
+  MONTH TOTAL         53  +   69.25  $   690.69
+
+--- 2025-11 ---
+  Bot             Trades       PnL$    Balance$
+  APT                  1  +   18.50
+  ARB                  1  +    9.28
+  ARC                  1     -5.85
+  ARC_A                1     -8.33
+  ATH                  1     -0.73
+  BERA                 1  +   20.67
+  BTC                  4  +   48.48
+  FET                  1  +    2.13
+  H                    2    -11.04
+  LIGHT                1  +   15.34
+  LTC                  1  +   19.36
+  LYN                  1     -3.55
+  POLYX                2  +    3.27
+  SAHARA               1     -5.33
+  SIGN                 1     -7.87
+  TIA                  1  +    3.00
+  TRUMP                1     -5.97
+  TRX                  1     -8.00
+  WIF                  1     -0.06
+  ZETA                 1  +   18.48
+  MONTH TOTAL         25  +  101.79  $   792.48
+
+--- 2025-12 ---
+  Bot             Trades       PnL$    Balance$
+  1000PEPE             1     -2.40
+  ANIME                3    -15.09
+  ARC_A                1  +   16.55
+  ATH                  2  +   15.05
+  AVAX                 2  +   13.59
+  BERA                 1     -8.80
+  BTC                  6    -22.96
+  ENJ                  1     -8.08
+  H                    1  +    4.04
+  IP                   2  +   20.02
+  LIGHT                2  +   35.75
+  LYN                  2  +   29.50
+  NEAR                 2  +    4.37
+  POLYX                1  +   23.86
+  WIF                  4  +   37.32
+  WLD                  1     -8.57
+  XPL                  2  +    5.77
+  ZETA                 1  +   21.97
+  MONTH TOTAL         35  +  161.91  $   954.39
+
+--- 2026-01 ---
+  Bot             Trades       PnL$    Balance$
+  1000PEPE             3  +   24.76
+  1000SHIB             1  +   17.22
+  ANIME                2    -16.63
+  ARB                  1  +    7.90
+  ATH                  1  +   12.36
+  AVAX                 1     -3.39
+  BERA                 2  +   14.15
+  BTC                  5  +   16.60
+  ENJ                  1     -8.46
+  GUN                  4     -7.01
+  IP                   2    -18.25
+  LIGHT                2    -12.37
+  LYN                  2    -12.20
+  ONDO                 1  +   21.47
+  POL                  1    -13.61
+  RENDER               2  +   32.55
+  SAHARA               1  +    7.39
+  TAO                  1  +   15.69
+  TIA                  3  +   29.94
+  WIF                 12  +   34.86
+  XAG                  5  +    3.56
+  XLM                  1    -10.01
+  MONTH TOTAL         54  +  136.54  $  1090.93
+
+--- 2026-02 ---
+  Bot             Trades       PnL$    Balance$
+  AKT                  1    -12.66
+  ALGO                 1  +   41.13
+  ANIME                2     -2.51
+  ARB                  1     -2.32
+  ARC_A                1     -1.62
+  ATH                  2  +   40.49
+  AVAX                 1     -4.84
+  BERA                 3    -10.02
+  BTC                  9  +   13.67
+  GUN                  1  +   28.28
+  H                    1  +   21.35
+  INJ                  1  +   40.34
+  IP                   1  +   21.00
+  MSTR                 6    -21.27
+  ONDO                 2  +    8.02
+  POL                  3  +   99.64
+  SAHARA               1  +   24.49
+  SIGN                 1     -0.13
+  TAO                  2  +   15.10
+  WIF                  5    -55.50
+  XAG                 13    -34.81
+  XLM                  1  +   91.84
+  XRP                  1     -4.06
+  ZETA                 1  +    2.47
+  MONTH TOTAL         61  +  298.07  $  1389.00
+
+--- 2026-03 ---
+  Bot             Trades       PnL$    Balance$
+  1000PEPE             2  +    9.55
+  APT                  1     -1.64
+  ARC                  2    -14.88
+  ATH                  3  +   50.93
+  BERA                 1  +   38.59
+  BTC                  6     -7.04
+  GUN                  3  +   82.64
+  HBAR                 1    -15.05
+  IP                   1  +   13.31
+  LYN                  2  +   32.14
+  MSTR                 5  +   50.65
+  ONDO                 2  +    2.08
+  POL                  1    -21.36
+  QNT                  1     -5.78
+  SAHARA               1  +    3.23
+  SIGN                 1     -7.66
+  SUI                  1    -10.44
+  TRUMP                2  +   47.02
+  TRX                  1  +  118.59
+  XAG                  5  +   31.62
+  XPL                  1  +   13.71
+  XRP                  1  +    1.96
+  ZETA                 1    -13.00
+  MONTH TOTAL         45  +  399.19  $  1788.19
+
+
+==============================================================================
+DAILY REPORT (Last 2 months: Feb + Mar 2026)
+==============================================================================
+
+Date         Bot            Side         Entry$        Exit$      PnL$    Balance$
+--------------------------------------------------------------------------------
+2026-02-01   H              short        0.1479       0.1255 +   21.35  $  1112.28
+2026-02-02   WIF            short        0.2408       0.2446   -11.31  $  1100.97
+2026-02-02   WIF            short        0.2502       0.2541   -11.10  $  1089.87
+2026-02-02   XAG            short       77.5084      83.5885   -11.59  $  1078.28
+2026-02-03   AVAX           long        10.1352       9.9469    -4.84  $  1073.44
+2026-02-03   BTC            short    77150.7408   77488.0713   -10.99  $  1062.45
+2026-02-03   WIF            short        0.2512       0.2534   -10.89  $  1051.56
+2026-02-03   POL            long         0.1105       0.1097    -4.10  $  1047.46
+2026-02-03   XAG            long        81.7698      84.5012 +    3.28  $  1050.74
+2026-02-03   WIF            long         0.2530       0.2493   -10.35  $  1040.39
+2026-02-03   ANIME          short        0.0059       0.0058 +    3.05  $  1043.43
+2026-02-04   XAG            short       84.0612      88.6311   -10.27  $  1033.16
+2026-02-04   BTC            short    76544.1136   75688.6470 +   21.98  $  1055.14
+2026-02-04   BERA           short        0.4274       0.4417   -11.87  $  1043.28
+2026-02-04   XAG            short       85.3410      89.7157    -9.86  $  1033.42
+2026-02-05   IP             short        1.3688       1.2614 +   21.00  $  1054.42
+2026-02-05   BERA           short        0.4250       0.4294    -2.55  $  1051.86
+2026-02-05   GUN            short        0.0269       0.0240 +   28.28  $  1080.14
+2026-02-05   ATH            short        0.0064       0.0058 +   15.95  $  1096.09
+2026-02-06   TAO            short      182.7326     153.0867 +   18.66  $  1114.75
+2026-02-06   ONDO           short        0.2607       0.2130 +   22.85  $  1137.60
+2026-02-06   ANIME          short        0.0053       0.0055    -5.56  $  1132.04
+2026-02-06   SIGN           short        0.0357       0.0357    -0.13  $  1131.91
+2026-02-08   XAG            long        72.6209      78.9054 +   11.69  $  1143.60
+2026-02-09   POL            short        0.0934       0.0947   -16.05  $  1127.55
+2026-02-09   XAG            short       80.2804      82.9123    -8.50  $  1119.05
+2026-02-09   XAG            long        83.5088      81.0154    -6.17  $  1112.88
+2026-02-10   WIF            short        0.2232       0.2244   -11.85  $  1101.03
+2026-02-10   BTC            short    68598.7672   69124.8810   -10.70  $  1090.33
+2026-02-11   XAG            short       81.3778      82.6624    -3.07  $  1087.26
+2026-02-11   XRP            long         1.4558       1.3579    -4.06  $  1083.20
+2026-02-11   BTC            short    66720.9925   67368.6948    -7.58  $  1075.62
+2026-02-12   XLM            short        0.2160       0.1632 +   91.84  $  1167.46
+2026-02-12   XAG            short       83.3500      79.3168 +    8.70  $  1176.16
+2026-02-12   BTC            short    67092.8479   65557.8473 +   21.55  $  1197.70
+2026-02-13   SAHARA         short        0.0235       0.0161 +   24.49  $  1222.19
+2026-02-13   TAO            short      157.4211     160.8084    -3.56  $  1218.63
+2026-02-13   ARB            short        0.1112       0.1131    -2.32  $  1216.31
+2026-02-14   ALGO           short        0.1126       0.0970 +   41.13  $  1257.44
+2026-02-14   POL            long         0.0986       0.1100 +  119.79  $  1377.23
+2026-02-16   BTC            short    68267.8069   68340.2675    -2.41  $  1374.82
+2026-02-16   MSTR           short      132.6761     134.8952   -14.26  $  1360.56
+2026-02-17   XAG            long        77.0292      75.7531    -6.30  $  1354.26
+2026-02-18   MSTR           long       130.1337     128.6790    -4.71  $  1349.55
+2026-02-18   ARC_A          long         0.0787       0.0778    -1.62  $  1347.94
+2026-02-19   ATH            short        0.0059       0.0056 +   24.54  $  1372.47
+2026-02-20   XAG            short       77.6019      79.3276    -7.17  $  1365.30
+2026-02-20   MSTR           short      132.3541     135.2334   -13.86  $  1351.44
+2026-02-20   XAG            long        80.4096      82.6712 +   10.19  $  1361.63
+2026-02-21   INJ            long         3.2563       3.8470 +   40.34  $  1401.97
+2026-02-22   MSTR           long       133.8561     130.8112   -12.33  $  1389.64
+2026-02-23   XAG            short       86.3096      87.3981    -5.73  $  1383.91
+2026-02-23   BTC            short    65912.9895   64946.6245 +   25.21  $  1409.12
+2026-02-24   AKT            long         0.3265       0.2930   -12.66  $  1396.46
+2026-02-24   MSTR           short      124.4369     123.4243 +    3.79  $  1400.25
+2026-02-25   ZETA           short        0.0529       0.0523 +    2.47  $  1402.72
+2026-02-25   MSTR           long       123.6330     129.1338 +   20.10  $  1422.82
+2026-02-26   BTC            long     68555.6818   68225.3639   -12.79  $  1410.03
+2026-02-26   BERA           long         0.6064       0.6133 +    4.41  $  1414.43
+2026-02-26   BTC            long     68495.1184   68216.5065   -10.61  $  1403.83
+2026-02-27   ONDO           long         0.2705       0.2516   -14.83  $  1389.00
+2026-03-02   XAG            long        95.4114      92.9848    -7.59  $  1381.40
+2026-03-03   MSTR           short      131.7942     134.8290   -13.22  $  1368.19
+2026-03-03   BTC            long     68443.3858   67886.5339    -7.51  $  1360.67
+2026-03-03   GUN            short        0.0246       0.0201 +   37.54  $  1398.21
+2026-03-04   ONDO           short        0.2617       0.2662    -3.63  $  1394.58
+2026-03-04   HBAR           short        0.0956       0.1009   -15.05  $  1379.53
+2026-03-04   MSTR           long       134.7141     142.4994 +   19.86  $  1399.39
+2026-03-06   ZETA           short        0.0519       0.0547   -13.00  $  1386.39
+2026-03-06   ATH            long         0.0070       0.0067   -12.14  $  1374.25
+2026-03-06   MSTR           short      141.0552     134.0184 +   20.34  $  1394.59
+2026-03-06   SUI            long         0.9333       0.8914   -10.44  $  1384.15
+2026-03-08   GUN            short        0.0196       0.0195 +    2.45  $  1386.60
+2026-03-08   ATH            short        0.0064       0.0057 +   26.77  $  1413.38
+2026-03-09   MSTR           long       131.2997     136.3292 +   23.01  $  1436.39
+2026-03-09   ARC            short        0.0314       0.0320    -8.88  $  1427.51
+2026-03-09   XAG            long        83.0725      86.4451 +   10.97  $  1438.48
+2026-03-09   BTC            long     68952.0392   68490.7183    -7.98  $  1430.50
+2026-03-10   ONDO           short        0.2660       0.2600 +    5.71  $  1436.20
+2026-03-10   BTC            long     71322.3577   70700.8188    -7.75  $  1428.45
+2026-03-12   XAG            short       86.9969      84.4018 +   12.73  $  1441.17
+2026-03-12   POL            long         0.0980       0.0969   -21.36  $  1419.82
+2026-03-12   TRUMP          short        2.8706       2.7507 +   32.52  $  1452.34
+2026-03-12   BTC            short    69534.4549   69986.6509    -8.03  $  1444.31
+2026-03-12   QNT            short       63.3324      64.4104    -5.78  $  1438.53
+2026-03-13   SIGN           long         0.0499       0.0457    -7.66  $  1430.87
+2026-03-13   BERA           long         0.6001       0.6412 +   38.59  $  1469.46
+2026-03-16   1000PEPE       long         0.0039       0.0041 +   18.22  $  1487.68
+2026-03-16   XAG            short       80.2380      77.3935 +   16.12  $  1503.80
+2026-03-16   BTC            long     73522.2216   74341.9596 +   21.22  $  1525.02
+2026-03-16   ARC            short        0.0433       0.0438    -6.00  $  1519.02
+2026-03-17   1000PEPE       long         0.0039       0.0038    -8.67  $  1510.36
+2026-03-17   XAG            long        80.7297      80.6442    -0.61  $  1509.75
+2026-03-17   GUN            long         0.0164       0.0188 +   42.65  $  1552.40
+2026-03-17   BTC            long     74014.9807   74198.7533 +    3.02  $  1555.42
+2026-03-18   LYN            long         0.0460       0.0617 +   25.46  $  1580.89
+2026-03-18   MSTR           long       148.2578     148.4557 +    0.66  $  1581.54
+2026-03-20   TRUMP          short        3.5386       3.4377 +   14.50  $  1596.04
+2026-03-20   ATH            long         0.0066       0.0074 +   36.30  $  1632.34
+2026-03-20   APT            long         1.0051       1.0013    -1.64  $  1630.70
+2026-03-20   XRP            short        1.4483       1.4367 +    1.96  $  1632.66
+2026-03-21   SAHARA         long         0.0271       0.0278 +    3.23  $  1635.89
+2026-03-21   LYN            short        0.0831       0.0654 +    6.68  $  1642.57
+2026-03-21   IP             short        0.7689       0.7474 +   13.31  $  1655.88
+2026-03-21   TRX            long         0.2902       0.3089 +  118.59  $  1774.47
+2026-03-21   XPL            short        0.1070       0.0954 +   13.71  $  1788.19

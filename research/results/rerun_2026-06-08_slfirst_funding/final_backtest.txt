@@ -1,0 +1,2080 @@
+WARNING:bot.risk:position_size_capped
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:position_size_capped
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+WARNING:bot.risk:order_rejected
+=====================================================================================
+FINAL BACKTEST — ALL VERIFIED BOTS + 6 WEAK-COIN UPGRADES
+Shared wallet: $200  |  Max concurrent: 5  |  Min trades: 6
+=====================================================================================
+
+Built 142 unique bot definitions (6 upgrades, 136 existing).
+Upgrade coins removed from base portfolio: ['ALICE', 'AVAX', 'DASH', 'KAS', 'PENGU', 'POL']
+Upgrade bots added: ['PENGU Ichi4H Trail', 'POL Ichi4H Trail', 'AVAX EMA Ribbon 4H', 'ALICE AO 4H', 'DASH Ichi4H', 'KAS EMA Ribbon 4H']
+
+Running backtest engines...
+  Progress: 10/142 bots...
+  Progress: 20/142 bots...
+  Progress: 30/142 bots...
+  Progress: 40/142 bots...
+  Progress: 50/142 bots...
+  Progress: 60/142 bots...
+  Progress: 70/142 bots...
+  Progress: 80/142 bots...
+  Progress: 90/142 bots...
+  Progress: 100/142 bots...
+  Progress: 110/142 bots...
+  Progress: 120/142 bots...
+  Progress: 130/142 bots...
+  Progress: 140/142 bots...
+
+Completed 135 bots. Skipped 7.
+  Skipped:
+    - GUN Ichi 1H (no data)
+    - ATH Ichi 1H (no data)
+    - TON Ichi 4H (only 2 trades)
+    - XMR Ichi 4H (only 2 trades)
+    - ZEC range_bo R10 (only 4 trades)
+    - LINK dualthru R12 (only 5 trades)
+    - BCH dualthru R12 (only 5 trades)
+
+Engine metrics (per bot, independent $10K runs):
+  Bot                              Signal                 Tr    WR%     PF    AvgR    PnL$10K
+  ----------------------------------------------------------------------------------
+  WIF EMA 15m                      ema_crossover  15m      36    42%   1.71  +0.458   +4460.08
+  BERA ema_ribb R11                ema_ribbon     1h      111    46%   1.86  +0.359   +3850.55
+  1000SHIB ema_ribb R11            ema_ribbon     1h       75    45%   1.97  +0.342   +2440.70
+  DASH Ichi4H (*)                  ichimoku_cloud 4h       21    62%   3.48  +0.927   +1913.53
+  BTC EMA 15m                      ema_crossover  15m      24    42%   1.41  +0.245   +1801.79
+  ICP ema_ribb R11                 ema_ribbon     4h       32    53%   2.36  +0.412   +1297.05
+  BCH awesome_ R10                 awesome_oscill 4h       31    45%   1.85  +0.431   +1296.06
+  AVAX EMA Ribbon 4H (*)           ema_ribbon     4h       22    50%   1.71  +0.293   +1265.91
+  BERA ema_ribb R11                ema_ribbon     4h       19    58%   3.11  +0.640   +1205.75
+  SAND awesome_ R10                awesome_oscill 4h       32    62%   2.67  +0.384   +1203.06
+  ADA awesome_ R10                 awesome_oscill 4h       26    46%   2.15  +0.470   +1194.96
+  BERA Ichi 1H                     ichimoku_cloud 1h       20    55%   2.91  +0.601   +1177.24
+  DEGO dual_thr R10                dual_thrust    4h       23    61%   2.45  +0.504   +1137.64
+  FARTCOIN dual_thr R10            dual_thrust    1h       47    43%   1.55  +0.240   +1086.52
+  AAVE dualthru R12                dualthrust_adx 1h       13    62%   3.85  +0.849   +1086.32
+  AXS awesome_ R10                 awesome_oscill 1h      125    38%   1.27  +0.093   +1022.77
+  ANKR dual_thr R10                dual_thrust    1h       49    45%   1.44  +0.217    +971.00
+  POL Ichi4H Trail (*)             ichimoku_cloud 4h       17    59%   2.83  +0.574    +965.33
+  TRUMP ema_ribb R11               ema_ribbon     1h      134    42%   1.23  +0.087    +939.55
+  PHA dual_thr R10                 dual_thrust    4h        9    56%   4.79  +0.999    +894.27
+  ONDO awesome_ R10                awesome_oscill 4h       23    48%   2.04  +0.395    +888.96
+  BAN zscore_m R11                 zscore_meanrev 1h       13    69%   3.82  +0.692    +877.89
+  AXS dualthru R12                 dualthrust_adx 1h       20    50%   2.17  +0.444    +863.27
+  INJ zscore_m R11                 zscore_meanrev 1h       20    65%   2.10  +0.441    +839.88
+  DOT awesome_ R10                 awesome_oscill 4h       27    44%   1.77  +0.317    +833.06
+  XAI awesome_ R10                 awesome_oscill 4h       30    47%   1.58  +0.278    +811.93
+  TRUMP stoch_mt R11               stoch_mtf      1h       27    48%   1.92  +0.316    +802.53
+  TON awesome_ R10                 awesome_oscill 4h       38    45%   1.43  +0.218    +771.93
+  PIXEL awesome_ R10               awesome_oscill 4h       28    36%   1.63  +0.275    +749.01
+  KAS EMA Ribbon 4H (*)            ema_ribbon     4h       15    40%   2.13  +0.504    +742.13
+  W dual_thr R10                   dual_thrust    4h       13    46%   2.48  +0.571    +734.67
+  AKT zscore_m R11                 zscore_meanrev 1h       13    69%   3.16  +0.573    +720.16
+  GALA awesome_ R10                awesome_oscill 4h       29    45%   1.66  +0.255    +714.80
+  PIPPIN dual_thr R10              dual_thrust    1h       53    38%   1.32  +0.132    +666.70
+  GALA dual_thr R10                dual_thrust    4h       16    44%   2.07  +0.421    +663.42
+  ONDO range_bo R10                range_bounce   1h       44    57%   1.43  +0.171    +653.65
+  ADA stoch_mt R11                 stoch_mtf      4h        9    67%   6.46  +0.726    +645.54
+  1000PEPE VolExp                  vol_expansion  1h       10    70%   7.17  +0.648    +640.63
+  FIL awesome_ R10                 awesome_oscill 4h       35    40%   1.41  +0.191    +633.81
+  SAND ichi_adx R12                ichi_adx       1h       13    62%   3.62  +0.501    +630.32
+  PENGU Ichi4H Trail (*)           ichimoku_cloud 4h        8    25%   2.50  +0.771    +613.59
+  INJ ema_ribb R11                 ema_ribbon     1h       98    39%   1.22  +0.072    +602.87
+  FIL range_bo R10                 range_bounce   1h       47    40%   1.28  +0.148    +558.10
+  ENJ dual_thr R10                 dual_thrust    4h       11    36%   2.06  +0.507    +548.65
+  SAND dualthru R12                dualthrust_adx 1h       21    48%   1.71  +0.274    +543.44
+  ENJ dualthru R12                 dualthrust_adx 1h       23    44%   1.59  +0.247    +541.95
+  CFX awesome_ R10                 awesome_oscill 4h       28    46%   1.45  +0.194    +523.63
+  IP dual_thr R10                  dual_thrust    4h       17    47%   1.75  +0.314    +521.80
+  PIPPIN dual_thr R10              dual_thrust    4h       13    54%   2.00  +0.401    +517.08
+  IP Ichi 1H                       ichimoku_cloud 1h       16    56%   1.83  +0.333    +514.92
+  ARC EMA 15m                      ema_crossover  15m      32    50%   1.53  +0.173    +512.40
+  VVV range_bo R10                 range_bounce   4h       15    53%   1.63  +0.311    +447.36
+  VIRTUAL dual_thr R10             dual_thrust    4h       17    41%   1.55  +0.262    +434.07
+  CFX ema_ribb R11                 ema_ribbon     4h       24    42%   1.49  +0.186    +431.86
+  AXS ema_ribb R11                 ema_ribbon     4h       35    40%   1.36  +0.129    +430.66
+  TRUMP Ichi 1H                    ichimoku_cloud 1h       19    53%   1.65  +0.236    +421.91
+  AAVE zscore_m R11                zscore_meanrev 1h       18    50%   1.58  +0.245    +400.57
+  ONDO Ichi 4H                     ichimoku_cloud 4h       10    50%   2.32  +0.404    +397.74
+  FARTCOIN dual_thr R10            dual_thrust    4h       11    46%   2.25  +0.359    +390.74
+  INJ Ichi 1H                      ichimoku_cloud 1h        9    44%   2.44  +0.425    +372.49
+  DOT dual_thr R10                 dual_thrust    4h       17    35%   1.47  +0.222    +362.43
+  INJ stoch_mt R11                 stoch_mtf      1h       17    24%   1.90  +0.224    +361.49
+  WAXP dual_thr M100               dual_thrust    1h       54    39%   1.21  +0.082    +360.21
+  ANIME Ichi 1H                    ichimoku_cloud 1h       17    47%   1.53  +0.224    +359.54
+  OP dualthru R12                  dualthrust_adx 1h       19    42%   1.49  +0.198    +357.73
+  ENJ awesome_ R10                 awesome_oscill 4h       30    33%   1.35  +0.125    +356.60
+  ZRO dualthru R12                 dualthrust_adx 1h       18    44%   1.52  +0.209    +355.76
+  ANIME zscore_m R11               zscore_meanrev 1h       10    60%   1.88  +0.370    +351.99
+  ZEN awesome_ R10                 awesome_oscill 4h       27    44%   1.36  +0.135    +350.49
+  ARB stoch_mt R11                 stoch_mtf      1h       34    41%   1.40  +0.111    +332.75
+  ENA stoch_mt R11                 stoch_mtf      1h       26    38%   1.38  +0.137    +331.16
+  ADA zscore_m R11                 zscore_meanrev 1h       14    57%   1.61  +0.258    +326.97
+  APT ichi_adx R12                 ichi_adx       1h       11    46%   2.03  +0.307    +322.96
+  ENJ range_bo R10                 range_bounce   1h       46    46%   1.20  +0.097    +318.96
+  1000SHIB zscore_m R11            zscore_meanrev 1h        9    56%   2.02  +0.365    +304.13
+  PIXEL ribbon_a R12               ribbon_ao      1h      103    35%   1.10  +0.034    +261.14
+  1000BONK zscore_m M100           zscore_meanrev 1h       14    50%   1.42  +0.192    +250.28
+  PIPPIN ema_ribb R11              ema_ribbon     4h       18    33%   1.33  +0.139    +243.11
+  PIXEL dual_thr R10               dual_thrust    1h       59    32%   1.12  +0.050    +242.97
+  ATOM stoch_mt R11                stoch_mtf      4h        9    44%   1.91  +0.276    +240.74
+  BNB zscore_m R11                 zscore_meanrev 1h       10    60%   1.77  +0.278    +233.40
+  TAO zscore_m R11                 zscore_meanrev 1h       14    50%   1.38  +0.180    +229.19
+  TON range_bo R10                 range_bounce   4h        9    56%   1.57  +0.267    +224.67
+  XAI range_bo R10                 range_bounce   1h       38    55%   1.17  +0.076    +215.51
+  FIL dualthru R12                 dualthrust_adx 1h       29    41%   1.22  +0.082    +200.96
+  ICP dual_thr R10                 dual_thrust    4h       12    42%   1.32  +0.175    +199.56
+  TIA Ichi 4H                      ichimoku_cloud 4h       11    54%   1.54  +0.169    +179.56
+  POLYX zscore_m R11               zscore_meanrev 1h       10    50%   1.39  +0.186    +165.38
+  TRUMP zscore_m R11               zscore_meanrev 1h        8    50%   1.55  +0.228    +161.53
+  VIRTUAL awesome_ R10             awesome_oscill 4h       17    29%   1.20  +0.096    +153.62
+  SAND range_bo R10                range_bounce   4h       11    36%   1.26  +0.153    +150.47
+  AXS dual_thr R10                 dual_thrust    4h       14    36%   1.27  +0.109    +144.85
+  AXS stoch_mt R11                 stoch_mtf      4h        9    22%   1.62  +0.167    +142.87
+  PIXEL zscore_m R11               zscore_meanrev 1h       12    50%   1.25  +0.128    +136.87
+  ONDO zscore_m R11                zscore_meanrev 1h        9    56%   1.42  +0.174    +136.10
+  ZEC dual_thr R10                 dual_thrust    1h       36    39%   1.10  +0.051    +135.01
+  W range_bo R10                   range_bounce   1h       39    46%   1.10  +0.050    +125.27
+  CFX stoch_mt R11                 stoch_mtf      4h       10    40%   1.27  +0.128    +122.64
+  XMR ichi_adx R12                 ichi_adx       1h        8    38%   1.24  +0.146    +103.43
+  VVV dual_thr R10                 dual_thrust    4h       16    44%   1.18  +0.069    +102.85
+  TIA range_bo R10                 range_bounce   4h       11    46%   1.18  +0.105     +98.65
+  ETHFI zscore_m R11               zscore_meanrev 1h        8    38%   1.33  +0.122     +84.17
+  AAVE range_bo R10                range_bounce   4h        8    38%   1.14  +0.090     +58.21
+  ATOM dualthru R12                dualthrust_adx 1h       15    33%   1.05  +0.025     +13.59
+  WAXP dualthru R12                dualthrust_adx 1h       26    42%   1.03  +0.011     -12.62
+  ENJ dual_thr R10                 dual_thrust    1h       23    39%   1.02  +0.009     -13.11
+  LTC ichi_adx R12                 ichi_adx       1h        9    33%   0.90  -0.057     -66.81
+  DOT dual_thr R10                 dual_thrust    1h       61    31%   1.01  +0.004     -70.90
+  ANKR dualthru R12                dualthrust_adx 1h       16    44%   0.90  -0.047     -95.52
+  ALICE AO 4H (*)                  awesome_oscill 4h       18    33%   0.85  -0.055    -110.32
+  XRP dual_thr R10                 dual_thrust    4h       18    28%   0.90  -0.051    -111.63
+  DEGO dual_thr R10                dual_thrust    1h       46    33%   0.95  -0.018    -126.33
+  XAUUSD zscore_s R12              zscore_stoch   1h       11    46%   0.92  -0.047    -151.75
+  1000BONK dual_thr R10            dual_thrust    4h       16    25%   0.82  -0.093    -159.15
+  SUI range_bo R10                 range_bounce   4h        8    25%   0.69  -0.221    -190.37
+  AXS range_bo R10                 range_bounce   1h       53    45%   0.95  -0.022    -205.65
+  SUI dual_thr R10                 dual_thrust    4h       15    20%   0.65  -0.141    -219.68
+  ENJ ichi_adx R12                 ichi_adx       1h       14    21%   0.67  -0.149    -222.69
+  DOT range_bo R10                 range_bounce   1h       49    35%   0.94  -0.024    -227.71
+  APT dualthru R12                 dualthrust_adx 1h       18    22%   0.71  -0.122    -237.03
+  GALA dual_thr R10                dual_thrust    1h       58    36%   0.94  -0.031    -255.73
+  ONDO range_bo R10                range_bounce   4h       12    33%   0.66  -0.215    -275.55
+  FIL dual_thr R10                 dual_thrust    1h       58    38%   0.88  -0.040    -282.66
+  APT range_bo R10                 range_bounce   1h       51    41%   0.89  -0.058    -428.63
+  CRV range_bo R10                 range_bounce   1h       41    44%   0.79  -0.091    -431.03
+  VVV range_bo R10                 range_bounce   1h       42    33%   0.81  -0.095    -464.85
+  ICP dual_thr R10                 dual_thrust    1h       50    30%   0.75  -0.086    -479.33
+  TIA dual_thr R10                 dual_thrust    1h       60    37%   0.84  -0.070    -485.11
+  QNT dual_thr R10                 dual_thrust    1h       44    27%   0.64  -0.126    -596.34
+  UNI dual_thr R10                 dual_thrust    1h       72    31%   0.76  -0.080    -626.66
+  ATOM dual_thr R10                dual_thrust    1h       28    39%   0.57  -0.209    -639.90
+  CFX range_bo R10                 range_bounce   1h       41    37%   0.68  -0.144    -647.25
+  DOT ribbon_a R12                 ribbon_ao      1h       99    27%   0.69  -0.089    -970.95
+  SUI ribbon_a R12                 ribbon_ao      1h       90    26%   0.64  -0.108   -1048.91
+  ICP range_bo R10                 range_bounce   1h       46    33%   0.40  -0.303   -1465.71
+
+=====================================================================================
+PORTFOLIO SUMMARY
+=====================================================================================
+  Initial balance:  $200.00
+  Final balance:    $1694.65
+  Total return:     +747.3%  ($+1494.65)
+  Total trades:     1421
+  Unique bots:      125
+  Max drawdown:     14.7%  ($251.33)
+
+===============================================================================================
+REPORT 1: PER-BOT SUMMARY (sorted by shared wallet PnL$)
+===============================================================================================
+Bot                              Strategy             Trades    WR%   Avg R       PnL$
+----------------------------------------------------------------------------------
+  BERA ema_ribb R11              ema_ribbon 1h            56    54%  +0.602    +243.08
+  PIPPIN dual_thr R10            dual_thrust 1h           24    54%  +0.466    +107.11
+  1000SHIB ema_ribb R11          ema_ribbon 1h            21    52%  +0.521     +98.57
+  WIF EMA 15m                    ema_crossover 15m        16    50%  +0.859     +97.56
+  BTC EMA 15m                    ema_crossover 15m         7    57%  +1.078     +96.90
+  DEGO dual_thr R10              dual_thrust 1h           39    51%  +0.334     +86.45
+  DASH Ichi4H                    ichimoku_cloud 4h        10    60%  +0.837     +80.14
+  BCH awesome_ R10               awesome_oscill 4h        16    56%  +0.773     +61.30
+  1000BONK zscore_m M100         zscore_meanrev 1h         5   100%  +1.389     +53.85
+  FARTCOIN dual_thr R10          dual_thrust 4h           18    50%  +0.445     +52.13
+  BAN zscore_m R11               zscore_meanrev 1h         6   100%  +1.354     +51.91
+  PHA dual_thr R10               dual_thrust 4h            4    75%  +1.357     +50.05
+  AAVE dualthru R12              dualthrust_adx 1h         5    60%  +0.831     +48.07
+  INJ Ichi 1H                    ichimoku_cloud 1h         3    67%  +1.634     +43.85
+  IP Ichi 1H                     ichimoku_cloud 1h         6    67%  +0.565     +43.28
+  1000PEPE VolExp                vol_expansion 1h          5    80%  +0.969     +41.58
+  ICP ema_ribb R11               ema_ribbon 4h             9    67%  +0.558     +40.78
+  TRUMP stoch_mt R11             stoch_mtf 1h             11    55%  +0.523     +40.52
+  PIXEL awesome_ R10             awesome_oscill 4h         8    62%  +1.001     +37.55
+  ADA stoch_mt R11               stoch_mtf 4h              6    67%  +0.717     +37.45
+  ADA awesome_ R10               awesome_oscill 4h        12    42%  +0.406     +37.06
+  ONDO Ichi 4H                   ichimoku_cloud 4h         4    50%  +0.740     +36.58
+  FIL awesome_ R10               awesome_oscill 4h        15    40%  +0.356     +35.24
+  1000BONK dual_thr R10          dual_thrust 4h            3   100%  +1.832     +32.05
+  CRV range_bo R10               range_bounce 1h          20    60%  +0.097     +31.47
+  PENGU Ichi4H Trail             ichimoku_cloud 4h         3    33%  +2.157     +31.22
+  AXS awesome_ R10               awesome_oscill 1h        59    37%  +0.096     +30.55
+  ANKR dual_thr R10              dual_thrust 1h           15    60%  +0.699     +29.99
+  ENJ dualthru R12               dualthrust_adx 1h         6    67%  +0.658     +28.53
+  TRUMP ema_ribb R11             ema_ribbon 1h            54    33%  -0.046     +28.21
+  ARB stoch_mt R11               stoch_mtf 1h             16    44%  +0.139     +26.89
+  TAO zscore_m R11               zscore_meanrev 1h        10    60%  +0.419     +25.71
+  1000SHIB zscore_m R11          zscore_meanrev 1h         5    80%  +0.825     +25.67
+  ONDO awesome_ R10              awesome_oscill 4h         9    44%  +0.218     +24.92
+  AVAX EMA Ribbon 4H             ema_ribbon 4h             5    80%  +0.714     +24.81
+  VVV range_bo R10               range_bounce 1h          28    43%  +0.084     +23.80
+  ARC EMA 15m                    ema_crossover 15m        10    40%  +0.083     +22.54
+  VIRTUAL dual_thr R10           dual_thrust 4h            5    60%  +0.503     +20.37
+  CFX ema_ribb R11               ema_ribbon 4h            10    60%  +0.388     +20.14
+  ENJ dual_thr R10               dual_thrust 1h           10    30%  -0.074     +18.47
+  TON awesome_ R10               awesome_oscill 4h        16    38%  +0.078     +17.77
+  POL Ichi4H Trail               ichimoku_cloud 4h         4    75%  +1.135     +16.81
+  TRUMP zscore_m R11             zscore_meanrev 1h         6    50%  +0.269     +16.77
+  ZRO dualthru R12               dualthrust_adx 1h         6    50%  +0.364     +16.59
+  FIL dual_thr R10               dual_thrust 1h           15    53%  +0.122     +16.58
+  XAI awesome_ R10               awesome_oscill 4h         8    50%  +0.380     +16.03
+  FIL range_bo R10               range_bounce 1h          15    53%  +0.462     +16.02
+  ANIME zscore_m R11             zscore_meanrev 1h         6    67%  +0.529     +15.68
+  PIXEL zscore_m R11             zscore_meanrev 1h         6    50%  +0.111     +15.51
+  SAND dualthru R12              dualthrust_adx 1h         4    75%  +0.960     +15.20
+  ENJ range_bo R10               range_bounce 1h          17    47%  +0.143     +14.45
+  W dual_thr R10                 dual_thrust 4h            3    67%  +1.010     +13.77
+  SAND awesome_ R10              awesome_oscill 4h         8    50%  +0.039     +13.41
+  KAS EMA Ribbon 4H              ema_ribbon 4h             5    40%  +0.794     +13.04
+  XRP dual_thr R10               dual_thrust 4h            5    40%  +0.419     +12.12
+  ETHFI zscore_m R11             zscore_meanrev 1h         4    75%  +0.727     +12.08
+  BERA Ichi 1H                   ichimoku_cloud 1h         4    75%  +0.677     +11.29
+  BNB zscore_m R11               zscore_meanrev 1h         3    67%  +0.498     +11.22
+  WAXP dual_thr M100             dual_thrust 1h           18    44%  +0.191      +9.37
+  TON range_bo R10               range_bounce 4h           5    60%  +0.374      +9.32
+  ANIME Ichi 1H                  ichimoku_cloud 1h         4    75%  +0.543      +7.57
+  CFX stoch_mt R11               stoch_mtf 4h              5    40%  +0.196      +7.20
+  TIA dual_thr R10               dual_thrust 1h           21    29%  -0.066      +6.69
+  AKT zscore_m R11               zscore_meanrev 1h         7    57%  +0.429      +6.58
+  SUI range_bo R10               range_bounce 4h           4    25%  -0.163      +6.07
+  GALA awesome_ R10              awesome_oscill 4h        10    40%  -0.086      +6.00
+  SAND ichi_adx R12              ichi_adx 1h               3    33%  +0.318      +4.77
+  PIPPIN ema_ribb R11            ema_ribbon 4h             9    33%  +0.248      +4.64
+  ENJ awesome_ R10               awesome_oscill 4h         6    33%  +0.013      +4.40
+  AXS dual_thr R10               dual_thrust 4h            2    50%  +0.596      +3.19
+  TRUMP Ichi 1H                  ichimoku_cloud 1h        11    27%  -0.261      +2.67
+  TIA range_bo R10               range_bounce 4h           6    50%  +0.224      +1.44
+  INJ stoch_mt R11               stoch_mtf 1h              7    14%  +0.059      +1.30
+  AAVE range_bo R10              range_bounce 4h           4    50%  +0.472      +1.09
+  PIXEL dual_thr R10             dual_thrust 1h           14    21%  -0.166      +0.81
+  FIL dualthru R12               dualthrust_adx 1h         8    25%  +0.003      -0.47
+  W range_bo R10                 range_bounce 1h          13    46%  +0.009      -0.51
+  IP dual_thr R10                dual_thrust 4h            6    33%  -0.069      -0.79
+  DOT awesome_ R10               awesome_oscill 4h         5    20%  -0.171      -1.41
+  AXS dualthru R12               dualthrust_adx 1h         4    25%  +0.023      -1.49
+  PIXEL ribbon_a R12             ribbon_ao 1h             35    34%  +0.052      -1.53
+  ONDO zscore_m R11              zscore_meanrev 1h         4    50%  +0.131      -2.19
+  SAND range_bo R10              range_bounce 4h           5    40%  +0.361      -2.36
+  ATOM stoch_mt R11              stoch_mtf 4h              4    25%  -0.113      -2.57
+  VIRTUAL awesome_ R10           awesome_oscill 4h         5    40%  -0.182      -4.14
+  AXS stoch_mt R11               stoch_mtf 4h              2     0%  -0.379      -4.70
+  XAUUSD zscore_s R12            zscore_stoch 1h           7    43%  -0.131      -5.01
+  ALICE AO 4H                    awesome_oscill 4h         7    43%  -0.075      -5.54
+  APT ichi_adx R12               ichi_adx 1h               2     0%  -0.309      -5.69
+  APT dualthru R12               dualthrust_adx 1h         6    33%  +0.053      -6.20
+  ZEN awesome_ R10               awesome_oscill 4h        12    25%  -0.133      -7.43
+  AAVE zscore_m R11              zscore_meanrev 1h         5    20%  -0.162      -7.62
+  ANKR dualthru R12              dualthrust_adx 1h         4    25%  -0.522      -8.09
+  XMR ichi_adx R12               ichi_adx 1h               3    33%  +0.094      -8.11
+  CFX awesome_ R10               awesome_oscill 4h        13    38%  +0.079      -8.98
+  ATOM dual_thr R10              dual_thrust 1h            7    29%  -0.352      -9.84
+  AXS ema_ribb R11               ema_ribbon 4h            19    26%  -0.102     -10.83
+  AXS range_bo R10               range_bounce 1h          17    41%  -0.151     -11.03
+  OP dualthru R12                dualthrust_adx 1h         5    40%  -0.183     -12.05
+  SUI dual_thr R10               dual_thrust 4h            3     0%  -0.702     -13.50
+  TIA Ichi 4H                    ichimoku_cloud 4h         3    33%  -0.498     -13.53
+  DOT range_bo R10               range_bounce 1h          15    33%  -0.112     -14.53
+  ENA stoch_mt R11               stoch_mtf 1h             15    27%  -0.182     -15.21
+  INJ ema_ribb R11               ema_ribbon 1h            35    34%  -0.001     -15.45
+  ENJ ichi_adx R12               ichi_adx 1h               4     0%  -0.551     -15.56
+  ICP range_bo R10               range_bounce 1h          15    40%  -0.173     -16.21
+  ATOM dualthru R12              dualthrust_adx 1h         3     0%  -0.618     -16.79
+  SUI ribbon_a R12               ribbon_ao 1h             25    28%  -0.074     -17.16
+  ADA zscore_m R11               zscore_meanrev 1h         7    29%  -0.299     -17.48
+  INJ zscore_m R11               zscore_meanrev 1h        11    55%  +0.132     -18.74
+  LTC ichi_adx R12               ichi_adx 1h               4     0%  -0.779     -21.25
+  POLYX zscore_m R11             zscore_meanrev 1h         4    25%  -0.318     -21.29
+  VVV dual_thr R10               dual_thrust 4h            6    17%  -0.525     -22.98
+  ZEC dual_thr R10               dual_thrust 1h           15    27%  -0.156     -25.35
+  QNT dual_thr R10               dual_thrust 1h           19    32%  -0.080     -27.98
+  CFX range_bo R10               range_bounce 1h          15    27%  -0.243     -28.58
+  XAI range_bo R10               range_bounce 1h          10    40%  -0.181     -32.18
+  ONDO range_bo R10              range_bounce 4h          18    33%  -0.243     -32.97
+  APT range_bo R10               range_bounce 1h          19    42%  -0.022     -33.18
+  DOT dual_thr R10               dual_thrust 1h           20    15%  -0.327     -33.85
+  WAXP dualthru R12              dualthrust_adx 1h         9    22%  -0.533     -37.17
+  GALA dual_thr R10              dual_thrust 4h           20    30%  -0.154     -38.60
+  DOT ribbon_a R12               ribbon_ao 1h             30    17%  -0.224     -50.84
+  UNI dual_thr R10               dual_thrust 1h           33    21%  -0.268     -52.12
+  ICP dual_thr R10               dual_thrust 4h           20    15%  -0.241     -58.03
+----------------------------------------------------------------------------------
+  TOTAL                                                 1421                  +1494.65
+===============================================================================================
+
+=================================================================
+REPORT 2: MONTHLY RETURNS WITH PER-BOT BREAKDOWN
+=================================================================
+
+2025-03  trades=  43  PnL=   +40.34  Balance=$   240.34
+    BERA ema_ribb R11                   3 trades     +10.63
+    ANKR dual_thr R10                   1 trades      +6.13
+    KAS EMA Ribbon 4H                   2 trades      +5.76
+    XMR ichi_adx R12                    1 trades      +4.71
+    PIXEL ribbon_a R12                  1 trades      +4.35
+    PIXEL awesome_ R10                  1 trades      +4.28
+    ENJ dualthru R12                    1 trades      +4.16
+    QNT dual_thr R10                    1 trades      +4.06
+    1000SHIB ema_ribb R11               1 trades      +3.85
+    ALICE AO 4H                         1 trades      +3.27
+    UNI dual_thr R10                    4 trades      +2.95
+    ICP dual_thr R10                    1 trades      +2.93
+    FIL dual_thr R10                    1 trades      +2.92
+    APT range_bo R10                    1 trades      +2.84
+    BERA Ichi 1H                        1 trades      +1.73
+    INJ ema_ribb R11                    1 trades      +1.20
+    ENA stoch_mt R11                    1 trades      +0.22
+    TRUMP zscore_m R11                  1 trades      -0.21
+    APT ichi_adx R12                    1 trades      -0.36
+    AXS ema_ribb R11                    1 trades      -0.42
+    AAVE zscore_m R11                   1 trades      -0.52
+    CRV range_bo R10                    1 trades      -0.62
+    DEGO dual_thr R10                   3 trades      -1.10
+    DOT ribbon_a R12                    1 trades      -1.29
+    WIF EMA 15m                         1 trades      -1.72
+    TIA dual_thr R10                    1 trades      -1.81
+    ZEC dual_thr R10                    1 trades      -1.86
+    TRUMP Ichi 1H                       1 trades      -2.06
+    CFX ema_ribb R11                    1 trades      -2.06
+    BTC EMA 15m                         1 trades      -2.13
+    DOT dual_thr R10                    1 trades      -2.14
+    AXS range_bo R10                    1 trades      -2.29
+    TRUMP ema_ribb R11                  3 trades      -5.06
+  MONTH TOTAL                        43 trades     +40.34
+
+2025-04  trades= 108  PnL=   +59.16  Balance=$   299.50
+    ANKR dual_thr R10                   3 trades     +11.39
+    POL Ichi4H Trail                    1 trades      +9.94
+    AXS awesome_ R10                    5 trades      +8.57
+    INJ zscore_m R11                    2 trades      +7.38
+    PHA dual_thr R10                    1 trades      +7.32
+    WIF EMA 15m                         1 trades      +7.15
+    FARTCOIN dual_thr R10               4 trades      +7.04
+    DEGO dual_thr R10                   5 trades      +6.97
+    BAN zscore_m R11                    2 trades      +6.58
+    FIL range_bo R10                    1 trades      +5.91
+    WAXP dual_thr M100                  1 trades      +5.50
+    CFX awesome_ R10                    1 trades      +5.21
+    CFX ema_ribb R11                    1 trades      +5.02
+    ENA stoch_mt R11                    1 trades      +4.98
+    DASH Ichi4H                         1 trades      +4.80
+    AKT zscore_m R11                    1 trades      +3.95
+    TAO zscore_m R11                    1 trades      +3.89
+    ENJ range_bo R10                    1 trades      +3.69
+    TON awesome_ R10                    2 trades      +3.67
+    ETHFI zscore_m R11                  1 trades      +3.48
+    BCH awesome_ R10                    2 trades      +3.44
+    1000SHIB ema_ribb R11               2 trades      +3.27
+    PIPPIN ema_ribb R11                 2 trades      +3.26
+    XAI range_bo R10                    1 trades      +2.82
+    TRUMP ema_ribb R11                  6 trades      +1.99
+    BERA ema_ribb R11                   2 trades      +1.95
+    AXS ema_ribb R11                    2 trades      +1.56
+    ADA awesome_ R10                    3 trades      +0.36
+    PIPPIN dual_thr R10                 3 trades      +0.24
+    ARC EMA 15m                         1 trades      +0.17
+    SAND awesome_ R10                   2 trades      +0.02
+    ENJ awesome_ R10                    1 trades      -0.22
+    ICP dual_thr R10                    1 trades      -0.49
+    PIXEL ribbon_a R12                  4 trades      -0.53
+    APT range_bo R10                    5 trades      -0.80
+    TRUMP stoch_mt R11                  1 trades      -0.95
+    INJ stoch_mt R11                    1 trades      -1.12
+    DOT ribbon_a R12                    2 trades      -1.47
+    IP Ichi 1H                          1 trades      -1.84
+    BERA Ichi 1H                        1 trades      -2.40
+    ANKR dualthru R12                   1 trades      -2.41
+    ZEC dual_thr R10                    1 trades      -2.52
+    FIL dual_thr R10                    1 trades      -2.52
+    INJ ema_ribb R11                    1 trades      -2.55
+    WAXP dualthru R12                   1 trades      -2.66
+    SUI ribbon_a R12                    1 trades      -2.69
+    CFX range_bo R10                    1 trades      -2.73
+    DOT awesome_ R10                    1 trades      -2.80
+    ONDO awesome_ R10                   1 trades      -2.81
+    TIA dual_thr R10                    2 trades      -3.01
+    QNT dual_thr R10                    1 trades      -3.06
+    GALA awesome_ R10                   1 trades      -3.10
+    ICP range_bo R10                    2 trades      -4.00
+    GALA dual_thr R10                   2 trades      -4.92
+    ATOM dual_thr R10                   3 trades      -5.15
+    ENJ dual_thr R10                    2 trades      -5.83
+    VVV range_bo R10                    3 trades      -9.44
+    UNI dual_thr R10                    4 trades     -10.35
+  MONTH TOTAL                       108 trades     +59.16
+
+2025-05  trades= 115  PnL=  +135.11  Balance=$   434.61
+    BERA ema_ribb R11                   9 trades     +30.44
+    PIXEL awesome_ R10                  2 trades     +15.89
+    BCH awesome_ R10                    3 trades     +14.70
+    FARTCOIN dual_thr R10               2 trades     +13.04
+    DEGO dual_thr R10                   4 trades     +10.03
+    PIPPIN ema_ribb R11                 4 trades      +8.33
+    1000BONK dual_thr R10               1 trades      +8.15
+    INJ Ichi 1H                         1 trades      +8.01
+    AAVE range_bo R10                   1 trades      +7.95
+    TRUMP stoch_mt R11                  1 trades      +7.86
+    FIL dualthru R12                    1 trades      +7.45
+    BERA Ichi 1H                        1 trades      +7.33
+    FIL range_bo R10                    1 trades      +7.27
+    APT dualthru R12                    1 trades      +6.59
+    QNT dual_thr R10                    1 trades      +6.33
+    CFX ema_ribb R11                    1 trades      +6.31
+    GALA dual_thr R10                   1 trades      +5.95
+    FIL awesome_ R10                    2 trades      +5.29
+    W range_bo R10                      1 trades      +4.36
+    XAUUSD zscore_s R12                 1 trades      +4.21
+    1000PEPE VolExp                     1 trades      +4.11
+    BAN zscore_m R11                    1 trades      +3.94
+    INJ ema_ribb R11                    1 trades      +3.80
+    POLYX zscore_m R11                  1 trades      +3.76
+    ONDO zscore_m R11                   1 trades      +3.75
+    ANIME zscore_m R11                  1 trades      +3.72
+    TRUMP zscore_m R11                  1 trades      +3.72
+    BNB zscore_m R11                    1 trades      +3.69
+    AXS dual_thr R10                    2 trades      +3.19
+    WIF EMA 15m                         1 trades      +2.98
+    AXS awesome_ R10                    6 trades      +2.98
+    OP dualthru R12                     1 trades      +2.82
+    FIL dual_thr R10                    2 trades      +1.27
+    ZRO dualthru R12                    2 trades      +0.81
+    VVV range_bo R10                    3 trades      +0.62
+    ONDO range_bo R10                   2 trades      -0.06
+    DOT range_bo R10                    3 trades      -0.07
+    ARB stoch_mt R11                    1 trades      -0.42
+    CFX awesome_ R10                    1 trades      -0.55
+    UNI dual_thr R10                    1 trades      -0.82
+    ONDO awesome_ R10                   1 trades      -0.89
+    SAND ichi_adx R12                   1 trades      -1.02
+    PIXEL ribbon_a R12                  2 trades      -1.77
+    AXS ema_ribb R11                    1 trades      -2.02
+    ARC EMA 15m                         1 trades      -2.07
+    XRP dual_thr R10                    1 trades      -2.09
+    TAO zscore_m R11                    1 trades      -2.20
+    ENJ ichi_adx R12                    1 trades      -2.42
+    DOT ribbon_a R12                    1 trades      -2.45
+    WAXP dualthru R12                   1 trades      -2.48
+    AAVE zscore_m R11                   1 trades      -2.61
+    ALICE AO 4H                         1 trades      -2.66
+    SUI dual_thr R10                    1 trades      -2.83
+    ANKR dualthru R12                   1 trades      -2.92
+    ENA stoch_mt R11                    1 trades      -3.03
+    AXS range_bo R10                    1 trades      -3.27
+    DOT dual_thr R10                    1 trades      -3.28
+    DOT awesome_ R10                    1 trades      -3.42
+    ICP range_bo R10                    1 trades      -3.47
+    DASH Ichi4H                         1 trades      -3.60
+    CRV range_bo R10                    7 trades      -3.60
+    WAXP dual_thr M100                  2 trades      -3.81
+    VIRTUAL awesome_ R10                1 trades      -3.97
+    1000SHIB ema_ribb R11               2 trades      -6.05
+    TON awesome_ R10                    2 trades      -8.11
+    TRUMP ema_ribb R11                  5 trades      -8.55
+    TRUMP Ichi 1H                       3 trades      -9.04
+  MONTH TOTAL                       115 trades    +135.11
+
+2025-06  trades=  97  PnL=   +38.52  Balance=$   473.12
+    BERA ema_ribb R11                   4 trades     +25.76
+    ADA stoch_mt R11                    2 trades     +11.09
+    ANIME Ichi 1H                       1 trades     +10.95
+    VVV range_bo R10                    3 trades     +10.81
+    DASH Ichi4H                         1 trades     +10.67
+    XAI awesome_ R10                    1 trades     +10.65
+    PIPPIN dual_thr R10                 1 trades     +10.44
+    FIL range_bo R10                    1 trades      +9.59
+    ONDO awesome_ R10                   1 trades      +8.89
+    SAND dualthru R12                   1 trades      +8.76
+    KAS EMA Ribbon 4H                   2 trades      +8.37
+    AKT zscore_m R11                    3 trades      +8.33
+    1000SHIB ema_ribb R11               2 trades      +8.00
+    ANIME zscore_m R11                  1 trades      +7.13
+    ENJ range_bo R10                    1 trades      +6.84
+    WAXP dual_thr M100                  1 trades      +6.13
+    ICP ema_ribb R11                    2 trades      +5.66
+    CRV range_bo R10                    1 trades      +4.62
+    CFX stoch_mt R11                    2 trades      +4.49
+    APT range_bo R10                    1 trades      +3.53
+    AVAX EMA Ribbon 4H                  1 trades      +3.44
+    FIL awesome_ R10                    2 trades      +3.39
+    AXS awesome_ R10                    3 trades      +3.27
+    SUI ribbon_a R12                    2 trades      +2.97
+    CFX awesome_ R10                    1 trades      +2.09
+    ICP range_bo R10                    1 trades      +2.07
+    TIA Ichi 4H                         1 trades      +1.49
+    ALICE AO 4H                         1 trades      +1.48
+    GALA awesome_ R10                   1 trades      +0.68
+    INJ stoch_mt R11                    1 trades      -0.27
+    DOT ribbon_a R12                    1 trades      -0.65
+    FARTCOIN dual_thr R10               1 trades      -1.20
+    OP dualthru R12                     1 trades      -1.34
+    ZEN awesome_ R10                    1 trades      -1.51
+    QNT dual_thr R10                    1 trades      -2.13
+    VVV dual_thr R10                    1 trades      -3.19
+    UNI dual_thr R10                    3 trades      -3.71
+    SAND awesome_ R10                   1 trades      -3.89
+    ARB stoch_mt R11                    1 trades      -4.05
+    ENJ awesome_ R10                    1 trades      -4.07
+    DOT range_bo R10                    1 trades      -4.11
+    ANKR dual_thr R10                   1 trades      -4.22
+    AXS ema_ribb R11                    1 trades      -4.23
+    TON awesome_ R10                    1 trades      -4.73
+    FIL dualthru R12                    1 trades      -4.78
+    IP Ichi 1H                          1 trades      -4.83
+    TIA dual_thr R10                    2 trades      -4.87
+    ARC EMA 15m                         1 trades      -4.95
+    BNB zscore_m R11                    1 trades      -5.09
+    ADA zscore_m R11                    1 trades      -5.09
+    CFX range_bo R10                    1 trades      -5.24
+    ENA stoch_mt R11                    1 trades      -5.39
+    XAUUSD zscore_s R12                 1 trades      -5.59
+    DOT dual_thr R10                    1 trades      -5.71
+    DEGO dual_thr R10                   7 trades      -7.64
+    INJ ema_ribb R11                    3 trades      -7.98
+    VIRTUAL awesome_ R10                3 trades      -8.84
+    PIXEL dual_thr R10                  2 trades      -8.87
+    APT dualthru R12                    2 trades      -9.61
+    TRUMP ema_ribb R11                  5 trades     -10.93
+    WIF EMA 15m                         2 trades     -14.36
+  MONTH TOTAL                        97 trades     +38.52
+
+2025-07  trades= 118  PnL=  +174.50  Balance=$   647.62
+    PENGU Ichi4H Trail                  1 trades     +45.42
+    DEGO dual_thr R10                   3 trades     +22.07
+    AXS awesome_ R10                    3 trades     +17.06
+    1000BONK zscore_m M100              1 trades     +12.41
+    IP Ichi 1H                          1 trades     +11.98
+    FIL awesome_ R10                    1 trades     +11.77
+    WIF EMA 15m                         1 trades     +11.36
+    XRP dual_thr R10                    1 trades     +11.22
+    INJ stoch_mt R11                    1 trades     +10.63
+    SAND range_bo R10                   1 trades     +10.59
+    SAND dualthru R12                   1 trades     +10.18
+    ANKR dual_thr R10                   1 trades     +10.13
+    WAXP dualthru R12                   1 trades     +10.05
+    ENJ awesome_ R10                    1 trades      +9.91
+    FIL range_bo R10                    1 trades      +9.86
+    ADA awesome_ R10                    2 trades      +9.77
+    VIRTUAL awesome_ R10                1 trades      +8.67
+    APT range_bo R10                    3 trades      +7.62
+    PIXEL awesome_ R10                  2 trades      +7.46
+    CFX awesome_ R10                    2 trades      +7.39
+    DOT dual_thr R10                    1 trades      +6.97
+    1000SHIB zscore_m R11               1 trades      +6.65
+    TIA range_bo R10                    1 trades      +6.52
+    ENJ range_bo R10                    1 trades      +6.46
+    AAVE zscore_m R11                   1 trades      +5.80
+    SAND ichi_adx R12                   2 trades      +5.78
+    DASH Ichi4H                         2 trades      +5.47
+    XAI range_bo R10                    1 trades      +5.01
+    INJ ema_ribb R11                    3 trades      +3.91
+    DOT range_bo R10                    2 trades      +2.78
+    APT dualthru R12                    2 trades      +2.49
+    ONDO range_bo R10                   2 trades      +2.19
+    GALA awesome_ R10                   3 trades      +2.08
+    TRUMP Ichi 1H                       2 trades      +1.15
+    TON awesome_ R10                    1 trades      +1.14
+    WAXP dual_thr M100                  4 trades      +0.81
+    TIA dual_thr R10                    1 trades      +0.74
+    ANIME Ichi 1H                       1 trades      +0.33
+    PIXEL ribbon_a R12                  1 trades      +0.28
+    TON range_bo R10                    2 trades      -0.32
+    ARB stoch_mt R11                    1 trades      -0.73
+    KAS EMA Ribbon 4H                   1 trades      -1.10
+    GALA dual_thr R10                   1 trades      -1.12
+    1000SHIB ema_ribb R11               1 trades      -1.27
+    VVV range_bo R10                    3 trades      -1.41
+    ATOM dualthru R12                   1 trades      -1.79
+    AXS dualthru R12                    1 trades      -1.93
+    TRUMP ema_ribb R11                  1 trades      -2.51
+    DOT ribbon_a R12                    2 trades      -3.12
+    ICP range_bo R10                    1 trades      -3.16
+    SUI dual_thr R10                    1 trades      -3.27
+    ICP dual_thr R10                    1 trades      -3.40
+    ENJ dualthru R12                    1 trades      -3.48
+    BCH awesome_ R10                    4 trades      -3.70
+    AXS ema_ribb R11                    1 trades      -3.70
+    TIA Ichi 4H                         1 trades      -3.72
+    ALICE AO 4H                         3 trades      -3.80
+    W range_bo R10                      1 trades      -4.73
+    ONDO awesome_ R10                   1 trades      -4.79
+    FARTCOIN dual_thr R10               2 trades      -4.82
+    TRUMP zscore_m R11                  1 trades      -5.08
+    QNT dual_thr R10                    3 trades      -5.09
+    AXS range_bo R10                    1 trades      -5.35
+    ENA stoch_mt R11                    2 trades      -5.64
+    LTC ichi_adx R12                    1 trades      -5.73
+    TRUMP stoch_mt R11                  1 trades      -5.75
+    SUI ribbon_a R12                    3 trades      -5.79
+    UNI dual_thr R10                    5 trades      -9.57
+    BERA ema_ribb R11                   2 trades      -9.72
+    ZEN awesome_ R10                    2 trades      -9.96
+    PIPPIN dual_thr R10                 3 trades     -10.27
+    XAUUSD zscore_s R12                 2 trades     -11.74
+  MONTH TOTAL                       118 trades    +174.50
+
+2025-08  trades= 118  PnL=   -14.50  Balance=$   633.13
+    ZEC dual_thr R10                    3 trades     +17.59
+    BCH awesome_ R10                    1 trades     +17.27
+    WIF EMA 15m                         1 trades     +15.60
+    W dual_thr R10                      1 trades     +13.46
+    WAXP dual_thr M100                  5 trades     +13.39
+    AXS dualthru R12                    1 trades     +12.60
+    PIXEL ribbon_a R12                  4 trades     +11.52
+    TIA dual_thr R10                    1 trades      +9.82
+    VVV range_bo R10                    3 trades      +9.60
+    INJ zscore_m R11                    1 trades      +8.41
+    FIL dual_thr R10                    1 trades      +8.38
+    BAN zscore_m R11                    1 trades      +8.31
+    ETHFI zscore_m R11                  1 trades      +8.09
+    1000PEPE VolExp                     1 trades      +7.74
+    ATOM dual_thr R10                   1 trades      +7.53
+    XAI range_bo R10                    1 trades      +6.82
+    XAUUSD zscore_s R12                 1 trades      +6.72
+    ENJ dualthru R12                    1 trades      +6.03
+    TRUMP ema_ribb R11                  1 trades      +5.96
+    AAVE dualthru R12                   2 trades      +5.88
+    ARC EMA 15m                         2 trades      +5.70
+    DOT range_bo R10                    1 trades      +5.44
+    INJ ema_ribb R11                    2 trades      +4.22
+    ANKR dual_thr R10                   1 trades      +3.83
+    ICP range_bo R10                    3 trades      +3.74
+    ANKR dualthru R12                   1 trades      +3.69
+    AXS range_bo R10                    2 trades      +2.95
+    SAND dualthru R12                   1 trades      +2.91
+    SUI ribbon_a R12                    2 trades      +2.55
+    1000BONK dual_thr R10               1 trades      +1.59
+    ADA zscore_m R11                    2 trades      +1.05
+    WAXP dualthru R12                   1 trades      +0.85
+    CFX range_bo R10                    2 trades      +0.45
+    ADA stoch_mt R11                    1 trades      -0.72
+    QNT dual_thr R10                    1 trades      -0.77
+    IP dual_thr R10                     1 trades      -0.77
+    INJ stoch_mt R11                    1 trades      -0.94
+    FARTCOIN dual_thr R10               4 trades      -1.06
+    PIPPIN ema_ribb R11                 1 trades      -1.28
+    FIL awesome_ R10                    1 trades      -1.49
+    SAND awesome_ R10                   1 trades      -1.72
+    ENA stoch_mt R11                    1 trades      -1.95
+    DOT dual_thr R10                    1 trades      -2.03
+    ARB stoch_mt R11                    1 trades      -2.07
+    TON awesome_ R10                    1 trades      -2.41
+    ATOM stoch_mt R11                   1 trades      -2.51
+    UNI dual_thr R10                    1 trades      -2.73
+    PIXEL awesome_ R10                  1 trades      -3.73
+    INJ Ichi 1H                         1 trades      -3.73
+    ALICE AO 4H                         1 trades      -3.83
+    XMR ichi_adx R12                    1 trades      -4.07
+    AXS stoch_mt R11                    2 trades      -4.70
+    AXS ema_ribb R11                    2 trades      -5.22
+    PIXEL dual_thr R10                  1 trades      -5.92
+    CFX stoch_mt R11                    1 trades      -6.15
+    AAVE range_bo R10                   1 trades      -6.23
+    TAO zscore_m R11                    1 trades      -6.27
+    FIL dualthru R12                    1 trades      -6.33
+    PENGU Ichi4H Trail                  1 trades      -6.34
+    GALA awesome_ R10                   1 trades      -6.46
+    W range_bo R10                      1 trades      -6.47
+    CRV range_bo R10                    3 trades      -6.49
+    CFX awesome_ R10                    1 trades      -6.73
+    ONDO zscore_m R11                   1 trades      -6.92
+    SUI range_bo R10                    1 trades      -6.93
+    FIL range_bo R10                    4 trades      -9.66
+    DOT ribbon_a R12                    3 trades     -10.12
+    ENJ awesome_ R10                    2 trades     -10.45
+    DASH Ichi4H                         2 trades     -15.34
+    BERA ema_ribb R11                   3 trades     -18.12
+    ENJ range_bo R10                    3 trades     -18.40
+    ONDO range_bo R10                   3 trades     -18.66
+    AXS awesome_ R10                    6 trades     -28.44
+  MONTH TOTAL                       118 trades     -14.50
+
+2025-09  trades= 108  PnL=  +106.68  Balance=$   739.80
+    TON awesome_ R10                    2 trades     +25.30
+    WIF EMA 15m                         2 trades     +22.33
+    ANKR dual_thr R10                   2 trades     +18.81
+    TAO zscore_m R11                    2 trades     +18.31
+    1000SHIB zscore_m R11               2 trades     +17.89
+    BCH awesome_ R10                    1 trades     +17.53
+    DEGO dual_thr R10                   3 trades     +14.77
+    TRUMP stoch_mt R11                  2 trades     +13.93
+    VIRTUAL dual_thr R10                1 trades     +13.29
+    W dual_thr R10                      1 trades     +12.58
+    SAND range_bo R10                   1 trades     +12.15
+    SUI ribbon_a R12                    2 trades     +11.48
+    PIXEL ribbon_a R12                  3 trades     +10.68
+    ZEN awesome_ R10                    1 trades      +9.80
+    BAN zscore_m R11                    1 trades      +9.61
+    AXS awesome_ R10                    4 trades      +9.44
+    APT range_bo R10                    1 trades      +9.02
+    DOT ribbon_a R12                    3 trades      +8.68
+    1000BONK zscore_m M100              2 trades      +7.33
+    POL Ichi4H Trail                    1 trades      +7.26
+    GALA dual_thr R10                   2 trades      +6.15
+    ENJ range_bo R10                    2 trades      +5.76
+    FIL range_bo R10                    2 trades      +3.14
+    CRV range_bo R10                    1 trades      +2.98
+    INJ ema_ribb R11                    4 trades      +2.98
+    INJ zscore_m R11                    1 trades      +2.10
+    ICP dual_thr R10                    2 trades      +1.31
+    AXS ema_ribb R11                    1 trades      +1.07
+    W range_bo R10                      2 trades      +0.92
+    AXS range_bo R10                    2 trades      +0.25
+    ONDO Ichi 4H                        1 trades      -0.25
+    1000PEPE VolExp                     1 trades      -0.27
+    TRUMP ema_ribb R11                  6 trades      -0.47
+    CFX ema_ribb R11                    1 trades      -0.58
+    CFX awesome_ R10                    1 trades      -0.90
+    ATOM stoch_mt R11                   1 trades      -1.30
+    ICP ema_ribb R11                    2 trades      -1.53
+    CFX range_bo R10                    1 trades      -3.01
+    DOT range_bo R10                    1 trades      -3.13
+    QNT dual_thr R10                    3 trades      -4.07
+    PIXEL dual_thr R10                  1 trades      -4.12
+    FIL dualthru R12                    2 trades      -4.61
+    FIL awesome_ R10                    2 trades      -5.07
+    PIPPIN ema_ribb R11                 2 trades      -5.67
+    GALA awesome_ R10                   1 trades      -5.90
+    VVV range_bo R10                    1 trades      -6.23
+    VVV dual_thr R10                    1 trades      -6.36
+    PIXEL zscore_m R11                  1 trades      -6.85
+    INJ stoch_mt R11                    2 trades      -6.93
+    WAXP dualthru R12                   1 trades      -7.16
+    SUI range_bo R10                    1 trades      -7.18
+    ONDO range_bo R10                   1 trades      -7.29
+    ANIME zscore_m R11                  1 trades      -7.53
+    AXS dualthru R12                    1 trades      -7.83
+    ZEC dual_thr R10                    2 trades      -8.14
+    DOT dual_thr R10                    2 trades      -9.61
+    PIPPIN dual_thr R10                 2 trades     -10.27
+    TIA dual_thr R10                    2 trades     -10.30
+    LTC ichi_adx R12                    2 trades     -10.33
+    BERA ema_ribb R11                   2 trades     -11.73
+    TRUMP Ichi 1H                       2 trades     -12.66
+    IP dual_thr R10                     2 trades     -12.85
+  MONTH TOTAL                       108 trades    +106.68
+
+2025-10  trades= 119  PnL=   +70.65  Balance=$   810.45
+    ANKR dual_thr R10                   2 trades     +28.31
+    PIPPIN dual_thr R10                 2 trades     +22.49
+    INJ zscore_m R11                    2 trades     +22.24
+    INJ ema_ribb R11                    6 trades     +18.51
+    TRUMP Ichi 1H                       1 trades     +18.01
+    1000SHIB ema_ribb R11               3 trades     +17.96
+    AAVE range_bo R10                   1 trades     +15.35
+    BERA ema_ribb R11                   6 trades     +14.69
+    ZRO dualthru R12                    1 trades     +14.57
+    1000BONK zscore_m M100              1 trades     +14.17
+    TAO zscore_m R11                    1 trades     +10.09
+    TON range_bo R10                    1 trades      +9.93
+    ADA awesome_ R10                    2 trades      +9.86
+    W range_bo R10                      3 trades      +9.79
+    ANIME zscore_m R11                  1 trades      +9.22
+    CFX awesome_ R10                    3 trades      +8.72
+    ICP ema_ribb R11                    1 trades      +8.35
+    CRV range_bo R10                    2 trades      +8.22
+    AXS range_bo R10                    5 trades      +5.26
+    ICP range_bo R10                    1 trades      +4.96
+    AVAX EMA Ribbon 4H                  1 trades      +3.73
+    CFX ema_ribb R11                    3 trades      +2.23
+    SAND awesome_ R10                   1 trades      +1.58
+    IP dual_thr R10                     1 trades      +1.52
+    ATOM stoch_mt R11                   2 trades      +1.23
+    DEGO dual_thr R10                   3 trades      +0.95
+    ADA stoch_mt R11                    2 trades      +0.75
+    TON awesome_ R10                    1 trades      -0.18
+    SUI ribbon_a R12                    4 trades      -2.05
+    PIXEL ribbon_a R12                  5 trades      -2.54
+    BTC EMA 15m                         1 trades      -2.93
+    GALA dual_thr R10                   2 trades      -3.83
+    UNI dual_thr R10                    5 trades      -3.85
+    ENJ range_bo R10                    3 trades      -3.98
+    ARB stoch_mt R11                    2 trades      -4.91
+    DOT range_bo R10                    1 trades      -5.00
+    TRUMP ema_ribb R11                  1 trades      -5.36
+    CFX range_bo R10                    2 trades      -5.61
+    FIL dualthru R12                    1 trades      -6.15
+    WIF EMA 15m                         1 trades      -6.55
+    DOT ribbon_a R12                    3 trades      -7.12
+    WAXP dual_thr M100                  1 trades      -7.38
+    PENGU Ichi4H Trail                  1 trades      -7.87
+    XAI awesome_ R10                    1 trades      -7.95
+    XAI range_bo R10                    1 trades      -8.08
+    APT range_bo R10                    1 trades      -8.12
+    ZEN awesome_ R10                    2 trades      -8.36
+    XMR ichi_adx R12                    1 trades      -8.74
+    ARC EMA 15m                         3 trades      -9.18
+    ENA stoch_mt R11                    2 trades      -9.23
+    AXS awesome_ R10                    2 trades     -10.08
+    AXS ema_ribb R11                    3 trades     -10.56
+    DOT dual_thr R10                    2 trades     -12.62
+    ATOM dual_thr R10                   2 trades     -13.15
+    ICP dual_thr R10                    5 trades     -14.06
+    WAXP dualthru R12                   2 trades     -16.59
+  MONTH TOTAL                       119 trades     +70.65
+
+2025-11  trades= 117  PnL=  +279.82  Balance=$  1090.28
+    BERA ema_ribb R11                   4 trades     +55.54
+    PIPPIN dual_thr R10                 5 trades     +52.53
+    WIF EMA 15m                         2 trades     +47.38
+    TRUMP ema_ribb R11                  7 trades     +34.91
+    TIA dual_thr R10                    4 trades     +31.39
+    DEGO dual_thr R10                   3 trades     +25.53
+    1000BONK dual_thr R10               1 trades     +22.32
+    DOT awesome_ R10                    1 trades     +19.64
+    ARB stoch_mt R11                    4 trades     +19.17
+    FARTCOIN dual_thr R10               1 trades     +17.57
+    TRUMP stoch_mt R11                  1 trades     +17.30
+    ICP ema_ribb R11                    1 trades     +16.26
+    PIXEL awesome_ R10                  1 trades     +16.01
+    FIL dualthru R12                    1 trades     +15.41
+    WAXP dual_thr M100                  1 trades     +15.38
+    FIL awesome_ R10                    1 trades     +14.53
+    ADA zscore_m R11                    1 trades     +12.96
+    AVAX EMA Ribbon 4H                  1 trades     +12.67
+    ETHFI zscore_m R11                  1 trades     +12.53
+    TRUMP zscore_m R11                  1 trades     +12.29
+    AKT zscore_m R11                    1 trades     +11.99
+    XAUUSD zscore_s R12                 1 trades     +11.25
+    AXS ema_ribb R11                    1 trades     +10.93
+    FIL range_bo R10                    1 trades      +9.60
+    CRV range_bo R10                    1 trades      +8.87
+    CFX stoch_mt R11                    2 trades      +8.86
+    VIRTUAL dual_thr R10                1 trades      +7.34
+    ICP range_bo R10                    1 trades      +6.56
+    TIA range_bo R10                    2 trades      +6.07
+    VVV range_bo R10                    2 trades      +4.03
+    CFX ema_ribb R11                    1 trades      +3.61
+    DOT range_bo R10                    1 trades      +2.14
+    OP dualthru R12                     1 trades      +1.08
+    ONDO range_bo R10                   2 trades      +0.19
+    SUI ribbon_a R12                    1 trades      -2.30
+    ICP dual_thr R10                    2 trades      -4.20
+    PIXEL dual_thr R10                  1 trades      -4.94
+    PHA dual_thr R10                    1 trades      -4.96
+    ENJ ichi_adx R12                    1 trades      -5.31
+    GALA dual_thr R10                   5 trades      -5.55
+    CFX awesome_ R10                    1 trades      -7.33
+    TRUMP Ichi 1H                       1 trades      -7.60
+    W range_bo R10                      1 trades      -8.38
+    CFX range_bo R10                    2 trades      -9.03
+    POLYX zscore_m R11                  1 trades      -9.31
+    ATOM dualthru R12                   1 trades      -9.90
+    BCH awesome_ R10                    1 trades     -10.09
+    XAI range_bo R10                    1 trades     -10.35
+    TON awesome_ R10                    1 trades     -10.69
+    DOT ribbon_a R12                    2 trades     -12.24
+    ENJ range_bo R10                    2 trades     -13.38
+    DOT dual_thr R10                    4 trades     -16.25
+    AXS awesome_ R10                   10 trades     -17.08
+    PIXEL ribbon_a R12                  5 trades     -17.38
+    FIL dual_thr R10                    4 trades     -17.44
+    UNI dual_thr R10                    3 trades     -20.03
+    INJ ema_ribb R11                    3 trades     -24.95
+    ANKR dual_thr R10                   3 trades     -35.31
+  MONTH TOTAL                       117 trades    +279.82
+
+2025-12  trades= 142  PnL=  -164.59  Balance=$   925.69
+    BERA ema_ribb R11                   5 trades     +52.67
+    VVV range_bo R10                    4 trades     +51.77
+    FIL awesome_ R10                    4 trades     +24.73
+    IP Ichi 1H                          2 trades     +24.23
+    INJ ema_ribb R11                    3 trades     +22.57
+    1000BONK zscore_m M100              1 trades     +19.95
+    TRUMP stoch_mt R11                  1 trades     +18.30
+    BNB zscore_m R11                    1 trades     +12.62
+    TRUMP ema_ribb R11                  6 trades     +11.97
+    ARC EMA 15m                         1 trades     +11.59
+    ENJ awesome_ R10                    1 trades      +9.24
+    ENJ dualthru R12                    1 trades      +8.12
+    ZEC dual_thr R10                    2 trades      +6.72
+    CRV range_bo R10                    1 trades      +6.39
+    AXS ema_ribb R11                    3 trades      +5.34
+    ARB stoch_mt R11                    2 trades      +5.15
+    DOT range_bo R10                    2 trades      +4.47
+    TIA range_bo R10                    2 trades      +4.40
+    CFX range_bo R10                    2 trades      +2.28
+    ICP ema_ribb R11                    1 trades      +2.09
+    PIXEL zscore_m R11                  2 trades      +2.04
+    ANIME Ichi 1H                       1 trades      +1.83
+    1000SHIB zscore_m R11               2 trades      +1.13
+    ONDO zscore_m R11                   2 trades      +0.98
+    BCH awesome_ R10                    1 trades      +0.16
+    ONDO awesome_ R10                   1 trades      +0.02
+    PIXEL ribbon_a R12                  4 trades      -0.32
+    AXS awesome_ R10                    4 trades      -0.67
+    PIXEL awesome_ R10                  1 trades      -2.36
+    AXS range_bo R10                    3 trades      -2.39
+    SAND range_bo R10                   1 trades      -3.16
+    AXS dualthru R12                    1 trades      -4.32
+    QNT dual_thr R10                    1 trades      -4.39
+    DOT awesome_ R10                    1 trades      -4.63
+    ENJ ichi_adx R12                    1 trades      -4.81
+    XRP dual_thr R10                    1 trades      -4.91
+    ATOM dualthru R12                   1 trades      -5.10
+    LTC ichi_adx R12                    1 trades      -5.20
+    ZRO dualthru R12                    1 trades      -5.26
+    APT ichi_adx R12                    1 trades      -5.33
+    GALA awesome_ R10                   1 trades      -5.47
+    DOT ribbon_a R12                    2 trades      -5.55
+    APT dualthru R12                    1 trades      -5.68
+    FARTCOIN dual_thr R10               1 trades      -5.95
+    ENA stoch_mt R11                    1 trades      -6.36
+    ANKR dualthru R12                   1 trades      -6.45
+    SAND dualthru R12                   1 trades      -6.64
+    DEGO dual_thr R10                   1 trades      -7.05
+    1000SHIB ema_ribb R11               1 trades      -7.72
+    ICP range_bo R10                    3 trades      -8.47
+    AAVE zscore_m R11                   1 trades      -8.98
+    ANKR dual_thr R10                   1 trades      -9.08
+    ADA awesome_ R10                    1 trades      -9.10
+    PIPPIN dual_thr R10                 1 trades      -9.57
+    XAI awesome_ R10                    1 trades      -9.66
+    TRUMP zscore_m R11                  1 trades      -9.72
+    XAUUSD zscore_s R12                 1 trades      -9.86
+    XAI range_bo R10                    1 trades      -9.92
+    TON awesome_ R10                    1 trades      -9.96
+    ICP dual_thr R10                    2 trades     -10.00
+    UNI dual_thr R10                    4 trades     -10.28
+    ENJ dual_thr R10                    1 trades     -10.63
+    SUI ribbon_a R12                    3 trades     -11.99
+    W dual_thr R10                      1 trades     -12.27
+    VVV dual_thr R10                    4 trades     -13.43
+    TIA dual_thr R10                    4 trades     -14.06
+    WAXP dual_thr M100                  2 trades     -14.16
+    OP dualthru R12                     2 trades     -14.61
+    POLYX zscore_m R11                  2 trades     -15.74
+    ADA zscore_m R11                    2 trades     -16.17
+    CFX awesome_ R10                    2 trades     -16.88
+    DOT dual_thr R10                    3 trades     -17.22
+    WAXP dualthru R12                   2 trades     -19.18
+    APT range_bo R10                    2 trades     -19.54
+    INJ zscore_m R11                    2 trades     -23.50
+    GALA dual_thr R10                   6 trades     -31.66
+  MONTH TOTAL                       142 trades    -164.59
+
+2026-01  trades= 128  PnL=  +394.36  Balance=$  1320.05
+    WIF EMA 15m                         1 trades     +59.08
+    PIPPIN dual_thr R10                 4 trades     +53.44
+    BTC EMA 15m                         3 trades     +49.88
+    DASH Ichi4H                         2 trades     +48.01
+    XAI awesome_ R10                    3 trades     +45.80
+    ADA awesome_ R10                    3 trades     +38.67
+    BERA ema_ribb R11                   5 trades     +31.31
+    AXS awesome_ R10                    5 trades     +28.67
+    1000SHIB ema_ribb R11               3 trades     +28.61
+    ONDO Ichi 4H                        1 trades     +25.64
+    ICP ema_ribb R11                    1 trades     +25.56
+    DEGO dual_thr R10                   1 trades     +24.70
+    GALA awesome_ R10                   1 trades     +24.13
+    AVAX EMA Ribbon 4H                  1 trades     +21.58
+    CFX range_bo R10                    2 trades     +21.38
+    ARB stoch_mt R11                    2 trades     +21.26
+    IP dual_thr R10                     1 trades     +20.87
+    ANIME zscore_m R11                  1 trades     +17.51
+    XRP dual_thr R10                    1 trades     +16.24
+    TON range_bo R10                    1 trades     +14.19
+    ONDO awesome_ R10                   2 trades     +14.12
+    TAO zscore_m R11                    1 trades     +13.59
+    AAVE dualthru R12                   2 trades     +13.26
+    1000PEPE VolExp                     1 trades     +11.22
+    AXS ema_ribb R11                    2 trades     +10.68
+    W range_bo R10                      1 trades     +10.33
+    ZEN awesome_ R10                    4 trades      +9.53
+    ENJ range_bo R10                    1 trades      +7.91
+    FIL dual_thr R10                    1 trades      +7.87
+    ZRO dualthru R12                    2 trades      +6.47
+    PIXEL zscore_m R11                  2 trades      +3.13
+    UNI dual_thr R10                    1 trades      +1.96
+    SAND awesome_ R10                   1 trades      +0.00
+    SUI ribbon_a R12                    1 trades      -0.96
+    CRV range_bo R10                    2 trades      -1.85
+    ENJ ichi_adx R12                    1 trades      -3.03
+    BCH awesome_ R10                    2 trades      -3.60
+    TRUMP stoch_mt R11                  1 trades      -4.22
+    ANIME Ichi 1H                       1 trades      -5.54
+    PIXEL dual_thr R10                  1 trades      -5.69
+    DOT ribbon_a R12                    6 trades      -6.43
+    ICP range_bo R10                    1 trades      -7.11
+    APT range_bo R10                    3 trades      -8.09
+    ZEC dual_thr R10                    2 trades      -8.25
+    FIL awesome_ R10                    1 trades      -9.12
+    DOT range_bo R10                    2 trades      -9.14
+    AXS range_bo R10                    1 trades      -9.58
+    QNT dual_thr R10                    2 trades      -9.89
+    ADA zscore_m R11                    1 trades     -10.23
+    VIRTUAL dual_thr R10                1 trades     -10.73
+    PIXEL ribbon_a R12                  4 trades     -11.27
+    TIA Ichi 4H                         1 trades     -11.29
+    ICP dual_thr R10                    1 trades     -11.53
+    SAND range_bo R10                   1 trades     -11.85
+    ETHFI zscore_m R11                  1 trades     -12.03
+    TRUMP ema_ribb R11                  3 trades     -12.11
+    AKT zscore_m R11                    1 trades     -12.78
+    XAI range_bo R10                    3 trades     -12.91
+    TIA dual_thr R10                    2 trades     -13.72
+    ENA stoch_mt R11                    2 trades     -13.76
+    ONDO range_bo R10                   4 trades     -16.75
+    INJ zscore_m R11                    2 trades     -21.10
+    INJ ema_ribb R11                    5 trades     -21.73
+    VVV range_bo R10                    6 trades     -35.95
+  MONTH TOTAL                       128 trades    +394.36
+
+2026-02  trades= 121  PnL=  +140.99  Balance=$  1461.04
+    BERA ema_ribb R11                   6 trades     +87.26
+    BTC EMA 15m                         2 trades     +52.08
+    1000SHIB ema_ribb R11               2 trades     +43.83
+    INJ Ichi 1H                         1 trades     +39.57
+    AXS awesome_ R10                    6 trades     +34.63
+    DASH Ichi4H                         1 trades     +30.13
+    ONDO range_bo R10                   2 trades     +29.23
+    AAVE dualthru R12                   1 trades     +28.93
+    ADA stoch_mt R11                    1 trades     +26.33
+    BCH awesome_ R10                    1 trades     +25.59
+    TON awesome_ R10                    1 trades     +24.66
+    DOT dual_thr R10                    2 trades     +21.39
+    ARC EMA 15m                         1 trades     +21.28
+    FARTCOIN dual_thr R10               1 trades     +20.52
+    TRUMP zscore_m R11                  1 trades     +15.77
+    CRV range_bo R10                    1 trades     +12.95
+    ONDO Ichi 4H                        2 trades     +11.20
+    VIRTUAL dual_thr R10                2 trades     +10.48
+    ONDO awesome_ R10                   2 trades     +10.38
+    PIXEL ribbon_a R12                  2 trades      +5.45
+    PIXEL dual_thr R10                  4 trades      +5.29
+    BERA Ichi 1H                        1 trades      +4.62
+    UNI dual_thr R10                    2 trades      +4.31
+    ENJ range_bo R10                    2 trades      +4.13
+    CFX ema_ribb R11                    1 trades      +4.10
+    AXS range_bo R10                    1 trades      +3.40
+    ATOM dual_thr R10                   1 trades      +0.92
+    POL Ichi4H Trail                    2 trades      -0.39
+    AAVE zscore_m R11                   1 trades      -1.30
+    FIL dualthru R12                    1 trades      -1.45
+    GALA dual_thr R10                   1 trades      -3.62
+    AKT zscore_m R11                    1 trades      -4.91
+    ENJ dual_thr R10                    3 trades      -5.00
+    SUI ribbon_a R12                    5 trades      -5.13
+    DOT ribbon_a R12                    3 trades      -5.14
+    XAI range_bo R10                    1 trades      -5.58
+    TRUMP stoch_mt R11                  3 trades      -5.95
+    FIL range_bo R10                    3 trades      -6.02
+    ENA stoch_mt R11                    1 trades      -6.32
+    WAXP dual_thr M100                  1 trades      -6.49
+    ZEN awesome_ R10                    1 trades      -6.69
+    SUI dual_thr R10                    1 trades      -7.40
+    DOT range_bo R10                    1 trades      -7.93
+    XRP dual_thr R10                    1 trades      -8.35
+    FIL awesome_ R10                    1 trades      -8.78
+    IP dual_thr R10                     1 trades      -9.55
+    SAND range_bo R10                   1 trades     -10.09
+    TAO zscore_m R11                    3 trades     -11.69
+    DEGO dual_thr R10                   2 trades     -11.82
+    QNT dual_thr R10                    4 trades     -12.49
+    INJ zscore_m R11                    1 trades     -14.28
+    ICP dual_thr R10                    1 trades     -14.32
+    ANIME zscore_m R11                  1 trades     -14.36
+    TON range_bo R10                    1 trades     -14.48
+    CFX range_bo R10                    1 trades     -14.48
+    ARB stoch_mt R11                    1 trades     -14.65
+    INJ ema_ribb R11                    3 trades     -15.43
+    AVAX EMA Ribbon 4H                  1 trades     -16.61
+    APT range_bo R10                    2 trades     -19.63
+    TRUMP ema_ribb R11                  6 trades     -20.89
+    W range_bo R10                      2 trades     -24.94
+    PIPPIN dual_thr R10                 2 trades     -26.72
+    ZEC dual_thr R10                    4 trades     -28.89
+    WIF EMA 15m                         3 trades     -45.69
+  MONTH TOTAL                       121 trades    +140.99
+
+2026-03  trades=  87  PnL=  +233.61  Balance=$  1694.65
+    PHA dual_thr R10                    2 trades     +47.69
+    ENJ dual_thr R10                    4 trades     +39.93
+    TRUMP ema_ribb R11                  4 trades     +39.25
+    ENA stoch_mt R11                    2 trades     +31.28
+    PIXEL dual_thr R10                  4 trades     +25.04
+    PIPPIN dual_thr R10                 1 trades     +24.79
+    BAN zscore_m R11                    1 trades     +23.46
+    SUI range_bo R10                    2 trades     +20.18
+    1000PEPE VolExp                     1 trades     +18.79
+    W range_bo R10                      1 trades     +18.61
+    SAND awesome_ R10                   2 trades     +17.42
+    PIXEL zscore_m R11                  1 trades     +17.19
+    FIL dual_thr R10                    5 trades     +16.10
+    ENJ range_bo R10                    1 trades     +15.45
+    TRUMP Ichi 1H                       1 trades     +14.86
+    IP Ichi 1H                          1 trades     +13.73
+    ENJ dualthru R12                    2 trades     +13.71
+    TIA dual_thr R10                    2 trades     +12.51
+    DEGO dual_thr R10                   4 trades      +9.05
+    ARB stoch_mt R11                    1 trades      +8.14
+    1000SHIB ema_ribb R11               4 trades      +8.09
+    FARTCOIN dual_thr R10               2 trades      +6.99
+    DOT dual_thr R10                    2 trades      +6.65
+    QNT dual_thr R10                    1 trades      +3.51
+    CFX ema_ribb R11                    1 trades      +1.52
+    GALA awesome_ R10                   1 trades      +0.04
+    INJ stoch_mt R11                    1 trades      -0.07
+    ZEN awesome_ R10                    1 trades      -0.23
+    TON awesome_ R10                    3 trades      -0.91
+    SUI ribbon_a R12                    1 trades      -3.25
+    DOT ribbon_a R12                    1 trades      -3.93
+    ICP dual_thr R10                    4 trades      -4.26
+    ICP range_bo R10                    1 trades      -7.34
+    DOT awesome_ R10                    1 trades     -10.21
+    ADA awesome_ R10                    1 trades     -12.50
+    CFX range_bo R10                    1 trades     -12.58
+    FIL range_bo R10                    1 trades     -13.67
+    AXS ema_ribb R11                    1 trades     -14.27
+    TIA range_bo R10                    1 trades     -15.55
+    ICP ema_ribb R11                    1 trades     -15.60
+    AAVE range_bo R10                   1 trades     -15.98
+    AXS awesome_ R10                    5 trades     -17.80
+    ONDO range_bo R10                   2 trades     -21.82
+    XAI awesome_ R10                    2 trades     -22.80
+    BERA ema_ribb R11                   5 trades     -27.61
+  MONTH TOTAL                        87 trades    +233.61
+
+=================================================================
+
+====================================================================================================
+REPORT 3: DAILY LOG (last 2 months)
+====================================================================================================
+Date          Bot                               Side          R       PnL$    Balance$
+-------------------------------------------------------------------------------------
+2026-01-21    PIXEL ribbon_a R12                short    -0.145      -1.61  $  1110.55
+2026-01-21    ARB stoch_mt R11                  short    +0.265      +2.94  $  1113.49
+2026-01-21    TRUMP stoch_mt R11                short    -0.379      -4.22  $  1109.27
+2026-01-21    XAI range_bo R10                  long     -1.061     -11.77  $  1097.50
+2026-01-21    CRV range_bo R10                  long     -1.027     -11.27  $  1086.23
+2026-01-21    AAVE dualthru R12                 short    -1.096     -11.90  $  1074.33
+2026-01-22    TRUMP ema_ribb R11                short    -0.136      -1.46  $  1072.87
+2026-01-23    ZRO dualthru R12                  long     +1.529     +16.41  $  1089.28
+2026-01-23    DOT ribbon_a R12                  short    +0.003      +0.03  $  1089.30
+2026-01-25    PIPPIN dual_thr R10               long     -0.673      -7.33  $  1081.97
+2026-01-23    BTC EMA 15m                       long     +2.511     +27.16  $  1109.14
+2026-01-26    XAI awesome_ R10                  short    +0.833      +9.24  $  1118.38
+2026-01-26    ENA stoch_mt R11                  short    -0.544      -6.08  $  1112.30
+2026-01-26    VVV range_bo R10                  short    -1.085     -12.07  $  1100.23
+2026-01-26    ENJ range_bo R10                  long     +0.719      +7.91  $  1108.14
+2026-01-27    APT range_bo R10                  short    -0.818      -9.07  $  1099.07
+2026-01-27    BERA ema_ribb R11                 short    -0.249      -2.74  $  1096.33
+2026-01-27    PIPPIN dual_thr R10               long     +2.044     +22.41  $  1118.74
+2026-01-28    ZRO dualthru R12                  long     -0.889      -9.94  $  1108.80
+2026-01-29    AXS awesome_ R10                  short    +0.928     +10.29  $  1119.09
+2026-01-29    SAND range_bo R10                 long     -1.059     -11.85  $  1107.24
+2026-01-29    VVV range_bo R10                  long     -0.750      -8.31  $  1098.94
+2026-01-29    DEGO dual_thr R10                 short    +2.248     +24.70  $  1123.64
+2026-01-29    FIL dual_thr R10                  short    +0.700      +7.87  $  1131.50
+2026-01-29    1000SHIB ema_ribb R11             short    +1.439     +16.28  $  1147.78
+2026-01-30    GALA awesome_ R10                 short    +2.102     +24.13  $  1171.91
+2026-01-30    ICP ema_ribb R11                  short    +2.181     +25.56  $  1197.46
+2026-01-30    AAVE dualthru R12                 short    +2.101     +25.16  $  1222.63
+2026-01-31    ADA awesome_ R10                  short    +1.828     +22.34  $  1244.97
+2026-01-31    XRP dual_thr R10                  short    +1.305     +16.24  $  1261.21
+2026-01-31    AXS awesome_ R10                  short    +1.244     +15.69  $  1276.90
+2026-01-31    ONDO Ichi 4H                      short    +2.008     +25.64  $  1302.54
+2026-01-31    ANIME zscore_m R11                short    +1.344     +17.51  $  1320.05
+2026-02-02    WIF EMA 15m                       short    -1.476     -19.48  $  1300.57
+2026-02-02    WIF EMA 15m                       short    -0.936     -12.17  $  1288.39
+2026-02-02    INJ ema_ribb R11                  short    -0.542      -6.98  $  1281.41
+2026-02-02    INJ zscore_m R11                  short    -1.114     -14.28  $  1267.13
+2026-02-03    AKT zscore_m R11                  short    -0.387      -4.91  $  1262.22
+2026-02-03    QNT dual_thr R10                  long     -0.277      -3.50  $  1258.72
+2026-02-03    AAVE zscore_m R11                 short    -0.103      -1.30  $  1257.43
+2026-02-03    TRUMP zscore_m R11                short    +1.254     +15.77  $  1273.20
+2026-02-03    PIXEL ribbon_a R12                short    +1.022     +13.02  $  1286.21
+2026-02-03    WAXP dual_thr M100                long     -0.504      -6.49  $  1279.72
+2026-02-03    TRUMP stoch_mt R11                short    -0.025      -0.32  $  1279.40
+2026-02-03    SUI ribbon_a R12                  short    -0.461      -5.90  $  1273.50
+2026-02-03    TRUMP ema_ribb R11                short    -0.552      -7.03  $  1266.47
+2026-02-03    QNT dual_thr R10                  short    -0.484      -6.14  $  1260.33
+2026-02-03    INJ ema_ribb R11                  short    -0.543      -6.85  $  1253.49
+2026-02-04    BTC EMA 15m                       short    +1.705     +21.37  $  1274.86
+2026-02-04    BERA ema_ribb R11                 short    -0.103      -1.31  $  1273.54
+2026-02-04    SUI ribbon_a R12                  short    +0.896     +11.41  $  1284.95
+2026-02-05    AXS awesome_ R10                  short    -0.004      -0.05  $  1284.91
+2026-02-05    DOT range_bo R10                  long     -0.617      -7.93  $  1276.98
+2026-02-05    APT range_bo R10                  long     -0.747      -9.54  $  1267.45
+2026-02-05    ADA stoch_mt R11                  short    +2.077     +26.33  $  1293.77
+2026-02-05    SAND range_bo R10                 long     -0.780     -10.09  $  1283.68
+2026-02-05    1000SHIB ema_ribb R11             short    +1.464     +18.79  $  1302.48
+2026-02-05    FIL range_bo R10                  long     -0.983     -12.81  $  1289.67
+2026-02-06    ONDO Ichi 4H                      short    +2.050     +26.44  $  1316.10
+2026-02-06    AXS awesome_ R10                  short    +1.623     +21.35  $  1337.46
+2026-02-05    AAVE dualthru R12                 short    +2.163     +28.93  $  1366.39
+2026-02-06    UNI dual_thr R10                  short    +0.945     +12.91  $  1379.30
+2026-02-06    ARB stoch_mt R11                  short    -1.062     -14.65  $  1364.64
+2026-02-06    TAO zscore_m R11                  short    -1.054     -14.38  $  1350.26
+2026-02-06    ANIME zscore_m R11                short    -1.064     -14.36  $  1335.90
+2026-02-06    ENA stoch_mt R11                  short    -0.473      -6.32  $  1329.58
+2026-02-07    TAO zscore_m R11                  short    +1.327     +17.64  $  1347.22
+2026-02-07    TRUMP stoch_mt R11                short    +0.573      +7.73  $  1354.95
+2026-02-07    AXS awesome_ R10                  long     -0.505      -6.85  $  1348.10
+2026-02-09    APT range_bo R10                  long     -0.749     -10.10  $  1338.00
+2026-02-09    AXS awesome_ R10                  long     -0.694      -9.29  $  1328.71
+2026-02-09    INJ ema_ribb R11                  short    -0.120      -1.60  $  1327.12
+2026-02-09    TRUMP ema_ribb R11                short    -0.552      -7.33  $  1319.79
+2026-02-10    QNT dual_thr R10                  long     +0.097      +1.28  $  1321.07
+2026-02-11    DOT ribbon_a R12                  short    +0.902     +11.91  $  1332.98
+2026-02-11    DASH Ichi4H                       short    +2.261     +30.13  $  1363.11
+2026-02-11    CRV range_bo R10                  long     +0.950     +12.95  $  1376.06
+2026-02-11    BERA ema_ribb R11                 long     +2.399     +33.02  $  1409.08
+2026-02-11    ZEC dual_thr R10                  short    -0.474      -6.68  $  1402.39
+2026-02-11    UNI dual_thr R10                  long     -0.613      -8.60  $  1393.79
+2026-02-12    PIXEL dual_thr R10                long     +1.324     +18.45  $  1412.24
+2026-02-12    TAO zscore_m R11                  short    -1.058     -14.95  $  1397.30
+2026-02-12    POL Ichi4H Trail                  short    +0.129      +1.80  $  1399.10
+2026-02-13    QNT dual_thr R10                  short    -0.295      -4.13  $  1394.97
+2026-02-12    BTC EMA 15m                       short    +2.201     +30.71  $  1425.67
+2026-02-13    ENJ dual_thr R10                  short    -0.878     -12.52  $  1413.16
+2026-02-13    DOT ribbon_a R12                  short    -0.476      -6.72  $  1406.43
+2026-02-13    SUI ribbon_a R12                  short    -0.474      -6.66  $  1399.77
+2026-02-13    ONDO awesome_ R10                 short    -1.018     -14.24  $  1385.52
+2026-02-13    W range_bo R10                    short    -1.061     -14.70  $  1370.83
+2026-02-14    AVAX EMA Ribbon 4H                short    -1.212     -16.61  $  1354.21
+2026-02-15    DEGO dual_thr R10                 long     -0.270      -3.65  $  1350.56
+2026-02-14    TON range_bo R10                  short    -1.072     -14.48  $  1336.09
+2026-02-14    ONDO awesome_ R10                 long     +1.843     +24.63  $  1360.71
+2026-02-14    XAI range_bo R10                  short    -0.410      -5.58  $  1355.14
+2026-02-16    TRUMP ema_ribb R11                long     -0.551      -7.46  $  1347.67
+2026-02-16    WIF EMA 15m                       short    -1.042     -14.04  $  1333.63
+2026-02-17    AXS range_bo R10                  long     +0.255      +3.40  $  1337.03
+2026-02-17    GALA dual_thr R10                 long     -0.271      -3.62  $  1333.41
+2026-02-17    PIXEL dual_thr R10                long     -0.245      -3.27  $  1330.14
+2026-02-17    FIL dualthru R12                  long     -0.109      -1.45  $  1328.68
+2026-02-17    DOT dual_thr R10                  long     -0.127      -1.68  $  1327.00
+2026-02-17    ZEC dual_thr R10                  long     -0.633      -8.39  $  1318.61
+2026-02-17    TRUMP ema_ribb R11                short    -0.560      -7.39  $  1311.22
+2026-02-18    BERA ema_ribb R11                 long     -0.957     -12.54  $  1298.68
+2026-02-17    ZEC dual_thr R10                  short    -0.647      -8.40  $  1290.27
+2026-02-18    PIXEL dual_thr R10                short    -0.180      -2.32  $  1287.96
+2026-02-18    DEGO dual_thr R10                 long     -0.635      -8.17  $  1279.78
+2026-02-19    AXS awesome_ R10                  short    +0.788     +10.08  $  1289.87
+2026-02-19    BERA ema_ribb R11                 short    +1.823     +23.52  $  1313.38
+2026-02-19    ENJ dual_thr R10                  short    +1.500     +19.70  $  1333.08
+2026-02-19    TON awesome_ R10                  short    +1.850     +24.66  $  1357.74
+2026-02-19    FIL range_bo R10                  long     -0.838     -11.37  $  1346.36
+2026-02-20    TRUMP ema_ribb R11                short    -0.426      -5.74  $  1340.63
+2026-02-20    ENJ range_bo R10                  long     -0.764     -10.24  $  1330.39
+2026-02-20    FIL awesome_ R10                  short    -0.660      -8.78  $  1321.60
+2026-02-20    ENJ range_bo R10                  long     +1.087     +14.37  $  1335.97
+2026-02-20    TRUMP ema_ribb R11                long     +1.053     +14.06  $  1350.04
+2026-02-20    ENJ dual_thr R10                  short    -0.903     -12.18  $  1337.85
+2026-02-22    POL Ichi4H Trail                  long     -0.164      -2.20  $  1335.66
+2026-02-21    INJ Ichi 1H                       long     +2.963     +39.57  $  1375.23
+2026-02-22    BERA ema_ribb R11                 short    +0.832     +11.44  $  1386.67
+2026-02-21    ATOM dual_thr R10                 long     +0.067      +0.92  $  1387.59
+2026-02-21    PIXEL ribbon_a R12                short    -0.545      -7.57  $  1380.02
+2026-02-23    XRP dual_thr R10                  short    -0.605      -8.35  $  1371.68
+2026-02-23    VIRTUAL dual_thr R10              short    -0.876     -12.01  $  1359.67
+2026-02-24    FARTCOIN dual_thr R10             short    +1.509     +20.52  $  1380.19
+2026-02-23    BCH awesome_ R10                  short    +1.854     +25.59  $  1405.78
+2026-02-24    ARC EMA 15m                       long     +1.514     +21.28  $  1427.06
+2026-02-24    PIPPIN dual_thr R10               long     -1.057     -15.08  $  1411.98
+2026-02-24    ONDO range_bo R10                 long     +1.022     +14.43  $  1426.41
+2026-02-24    SUI ribbon_a R12                  short    +0.199      +2.83  $  1429.24
+2026-02-24    ONDO range_bo R10                 long     +1.036     +14.80  $  1444.05
+2026-02-25    ICP dual_thr R10                  short    -0.992     -14.32  $  1429.72
+2026-02-25    FIL range_bo R10                  long     +1.270     +18.16  $  1447.89
+2026-02-25    W range_bo R10                    short    -0.707     -10.24  $  1437.65
+2026-02-25    ZEC dual_thr R10                  long     -0.376      -5.41  $  1432.24
+2026-02-25    IP dual_thr R10                   short    -0.667      -9.55  $  1422.68
+2026-02-26    BERA ema_ribb R11                 long     +2.330     +33.14  $  1455.83
+2026-02-25    DOT dual_thr R10                  long     +1.585     +23.07  $  1478.90
+2026-02-26    BERA Ichi 1H                      long     +0.313      +4.62  $  1483.52
+2026-02-26    SUI dual_thr R10                  long     -0.499      -7.40  $  1476.12
+2026-02-26    TRUMP stoch_mt R11                long     -0.904     -13.35  $  1462.77
+2026-02-26    PIXEL dual_thr R10                short    -0.517      -7.57  $  1455.21
+2026-02-27    PIPPIN dual_thr R10               long     -0.800     -11.64  $  1443.57
+2026-02-27    VIRTUAL dual_thr R10              long     +1.558     +22.49  $  1466.06
+2026-02-27    DOT ribbon_a R12                  long     -0.704     -10.33  $  1455.73
+2026-02-27    SUI ribbon_a R12                  long     -0.468      -6.81  $  1448.92
+2026-02-27    ZEN awesome_ R10                  long     -0.462      -6.69  $  1442.24
+2026-02-27    ONDO Ichi 4H                      long     -1.056     -15.24  $  1427.00
+2026-02-28    1000SHIB ema_ribb R11             short    +1.755     +25.04  $  1452.04
+2026-02-28    CFX ema_ribb R11                  short    +0.283      +4.10  $  1456.14
+2026-02-28    AXS awesome_ R10                  short    +1.331     +19.38  $  1475.52
+2026-02-27    CFX range_bo R10                  long     -0.982     -14.48  $  1461.04
+2026-03-02    ADA awesome_ R10                  short    -0.856     -12.50  $  1448.53
+2026-03-02    1000SHIB ema_ribb R11             short    -0.506      -7.33  $  1441.20
+2026-03-02    BERA ema_ribb R11                 short    -1.202     -17.33  $  1423.87
+2026-03-02    SUI ribbon_a R12                  short    -0.228      -3.25  $  1420.62
+2026-03-02    ENJ range_bo R10                  long     +1.087     +15.45  $  1436.07
+2026-03-02    FIL dual_thr R10                  long     -0.494      -7.10  $  1428.97
+2026-03-02    ICP dual_thr R10                  long     -0.483      -6.91  $  1422.07
+2026-03-03    FARTCOIN dual_thr R10             long     -0.718     -10.21  $  1411.86
+2026-03-02    TIA dual_thr R10                  long     -0.483      -6.82  $  1405.04
+2026-03-02    PIXEL dual_thr R10                long     -0.518      -7.28  $  1397.76
+2026-03-03    AXS awesome_ R10                  long     -0.840     -11.74  $  1386.02
+2026-03-03    PIPPIN dual_thr R10               short    +1.789     +24.79  $  1410.81
+2026-03-03    DOT ribbon_a R12                  short    -0.279      -3.93  $  1406.88
+2026-03-04    BERA ema_ribb R11                 short    +2.326     +32.73  $  1439.61
+2026-03-04    ENA stoch_mt R11                  long     +1.004     +14.46  $  1454.07
+2026-03-04    PHA dual_thr R10                  long     +2.984     +43.39  $  1497.46
+2026-03-04    XAI awesome_ R10                  short    -0.832     -12.47  $  1485.00
+2026-03-05    QNT dual_thr R10                  long     +0.237      +3.51  $  1488.51
+2026-03-05    XAI awesome_ R10                  long     -0.694     -10.33  $  1478.18
+2026-03-05    TON awesome_ R10                  long     +2.153     +31.83  $  1510.00
+2026-03-05    DOT dual_thr R10                  short    -0.506      -7.65  $  1502.36
+2026-03-06    BERA ema_ribb R11                 short    -1.227     -18.43  $  1483.93
+2026-03-06    ZEN awesome_ R10                  long     -0.015      -0.23  $  1483.70
+2026-03-06    1000SHIB ema_ribb R11             short    +1.789     +26.54  $  1510.24
+2026-03-08    SAND awesome_ R10                 short    +1.563     +23.61  $  1533.85
+2026-03-07    FIL dual_thr R10                  short    +0.393      +6.02  $  1539.87
+2026-03-07    DEGO dual_thr R10                 short    -1.082     -16.67  $  1523.21
+2026-03-07    ONDO range_bo R10                 long     -0.779     -11.86  $  1511.35
+2026-03-10    BERA ema_ribb R11                 short    -0.323      -4.87  $  1506.47
+2026-03-10    AXS awesome_ R10                  short    -0.525      -7.92  $  1498.56
+2026-03-10    GALA awesome_ R10                 short    +0.003      +0.04  $  1498.60
+2026-03-10    FIL dual_thr R10                  long     -0.492      -7.37  $  1491.23
+2026-03-10    TRUMP ema_ribb R11                short    +0.125      +1.86  $  1493.09
+2026-03-10    ICP dual_thr R10                  long     -0.479      -7.15  $  1485.94
+2026-03-10    ICP ema_ribb R11                  long     -1.050     -15.60  $  1470.34
+2026-03-10    ENJ dual_thr R10                  long     -0.556      -8.18  $  1462.17
+2026-03-11    PIXEL dual_thr R10                long     +1.371     +20.04  $  1482.21
+2026-03-11    TRUMP ema_ribb R11                short    -0.492      -7.29  $  1474.92
+2026-03-12    ICP dual_thr R10                  long     -0.080      -1.17  $  1473.75
+2026-03-12    TON awesome_ R10                  short    -1.140     -16.80  $  1456.95
+2026-03-12    1000SHIB ema_ribb R11             long     +0.488      +7.12  $  1464.06
+2026-03-13    CFX range_bo R10                  short    -0.859     -12.58  $  1451.48
+2026-03-13    PIXEL zscore_m R11                long     +1.184     +17.19  $  1468.67
+2026-03-13    PIXEL dual_thr R10                long     +1.357     +19.93  $  1488.60
+2026-03-13    AXS ema_ribb R11                  short    -0.958     -14.27  $  1474.33
+2026-03-13    TRUMP ema_ribb R11                long     +1.326     +19.55  $  1493.88
+2026-03-13    DOT awesome_ R10                  long     -0.683     -10.21  $  1483.67
+2026-03-13    DEGO dual_thr R10                 long     +1.203     +17.85  $  1501.52
+2026-03-14    SAND awesome_ R10                 long     -0.413      -6.19  $  1495.33
+2026-03-13    PIXEL dual_thr R10                long     -0.512      -7.66  $  1487.67
+2026-03-15    SUI range_bo R10                  short    -0.523      -7.78  $  1479.89
+2026-03-13    DEGO dual_thr R10                 long     -0.738     -10.92  $  1468.97
+2026-03-16    FIL dual_thr R10                  long     +0.704     +10.34  $  1479.32
+2026-03-16    DOT dual_thr R10                  long     +0.966     +14.29  $  1493.61
+2026-03-16    1000PEPE VolExp                   long     +1.258     +18.79  $  1512.40
+2026-03-16    AAVE range_bo R10                 short    -1.056     -15.98  $  1496.42
+2026-03-16    ONDO range_bo R10                 short    -0.666      -9.96  $  1486.46
+2026-03-16    TIA range_bo R10                  short    -1.046     -15.55  $  1470.92
+2026-03-17    SUI range_bo R10                  short    +1.901     +27.96  $  1498.87
+2026-03-16    FARTCOIN dual_thr R10             long     +1.148     +17.20  $  1516.08
+2026-03-17    DEGO dual_thr R10                 long     +1.238     +18.77  $  1534.85
+2026-03-16    AXS awesome_ R10                  short    -0.708     -10.87  $  1523.98
+2026-03-17    AXS awesome_ R10                  short    -0.583      -8.88  $  1515.10
+2026-03-18    ENJ dual_thr R10                  long     +1.229     +18.62  $  1533.72
+2026-03-18    ENJ dual_thr R10                  long     +2.748     +42.15  $  1575.87
+2026-03-18    ENJ dualthru R12                  long     +1.816     +28.62  $  1604.49
+2026-03-18    TON awesome_ R10                  long     -0.993     -15.94  $  1588.56
+2026-03-18    AXS awesome_ R10                  long     +1.360     +21.61  $  1610.16
+2026-03-18    1000SHIB ema_ribb R11             long     -1.132     -18.23  $  1591.93
+2026-03-18    ENJ dualthru R12                  long     -0.937     -14.92  $  1577.02
+2026-03-18    ENJ dual_thr R10                  long     -0.803     -12.66  $  1564.36
+2026-03-19    TIA dual_thr R10                  short    +1.236     +19.33  $  1583.69
+2026-03-19    ICP dual_thr R10                  short    +0.692     +10.96  $  1594.65
+2026-03-19    FIL dual_thr R10                  short    +0.891     +14.21  $  1608.86
+2026-03-19    FIL range_bo R10                  long     -0.850     -13.67  $  1595.19
+2026-03-19    TRUMP ema_ribb R11                short    +1.576     +25.13  $  1620.32
+2026-03-20    TRUMP Ichi 1H                     short    +0.917     +14.86  $  1635.18
+2026-03-19    ICP range_bo R10                  long     -0.449      -7.34  $  1627.84
+2026-03-20    W range_bo R10                    long     +1.143     +18.61  $  1646.45
+2026-03-20    BAN zscore_m R11                  short    +1.425     +23.46  $  1669.91
+2026-03-20    ENA stoch_mt R11                  short    +1.007     +16.82  $  1686.73
+2026-03-20    ARB stoch_mt R11                  short    +0.483      +8.14  $  1694.88
+2026-03-21    IP Ichi 1H                        short    +0.810     +13.73  $  1708.61
+2026-03-21    PHA dual_thr R10                  long     +0.251      +4.30  $  1712.91
+2026-03-21    CFX ema_ribb R11                  long     +0.088      +1.52  $  1714.42
+2026-03-21    BERA ema_ribb R11                 short    -1.149     -19.71  $  1694.72
+2026-03-21    INJ stoch_mt R11                  long     -0.004      -0.07  $  1694.65
+====================================================================================================
+
+Results saved to /Users/iceai/Work/ccbt/data/final_backtest_fixed.json
+
+============================================================
+COMPARISON (R-multiple bug fix)
+============================================================
+  Buggy:  $200 -> $3,422 (+1,611%) DD 12.4%
+  Fixed:  $200 -> $1695 (+747.3%) DD 14.7%
+============================================================
