@@ -136,7 +136,10 @@ export CCBT_DASH_HOST
 export CCBT_DASH_PORT
 export CCBT_DASH_POLL_S
 export CCBT_DASH_TOKEN
-export BOT_DATA_DIR="${BOT_DATA_DIR:-$PROJECT_DIR/data}"
+# trades.db lives at the PROJECT ROOT (the bot's start.sh does not set BOT_DATA_DIR,
+# so it defaults to '.' = project root). Point the dashboard at the same root, NOT
+# $PROJECT_DIR/data (which holds a stale 28KB trades.db and made /api/* read empty).
+export BOT_DATA_DIR="${BOT_DATA_DIR:-$PROJECT_DIR}"
 export PYTHONPATH="$PROJECT_DIR:${PYTHONPATH:-}"
 
 # ---------------------------------------------------------------------------
