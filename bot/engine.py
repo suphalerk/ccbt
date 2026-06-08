@@ -751,16 +751,20 @@ class TradingEngine:
         # _norm_symbol: same normalisation as check_closed_positions (engine.py ~:231-234)
         #   symbol.replace('/','').replace(':USDT','').replace('-','').upper()
         # _wake_event: private asyncio.Event owned exclusively by this engine.
-        #   asyncio.Event() is safe to construct outside a running event loop in
-        #   Python 3.10+ (it no longer binds to a loop at construction time).
-        #   TradingEngine.__init__ is called inside run_bot(), which is an async
-        #   coroutine already running inside async_main's event loop — so the Event
-        #   is created within the running loop and is immediately valid.
-        #   If ever called from a sync context (e.g. a test that constructs an engine
-        #   outside asyncio.run()), the Event still works because Python 3.10+
-        #   deferred-loop binding means wait() binds to whatever loop is current at
-        #   await time.  Flag-OFF path: wake_events is None → _wake_event is private
-        #   and never .set() externally → _interruptible_sleep races timeout only.
+        #   SAFETY INVARIANT: This is safe ONLY because __init__ always runs inside
+        #   the running event loop in production (run_bot() coroutine, main.py
+        #   trading_loop — both are async, so asyncio.Event() is created on the
+        #   correct loop and later awaited on that same loop).
+        #   On the live Python 3.9 fleet (deploy/macos/start.sh resolves to the
+        #   system python3 = 3.9.x; there is no bot .venv), asyncio.Event() eagerly
+        #   resolves get_event_loop() at construction time.  Constructing a
+        #   TradingEngine OUTSIDE a running loop on Python 3.9 raises
+        #   "RuntimeError: There is no current event loop".  Do NOT construct
+        #   TradingEngine in a purely sync context (e.g. before asyncio.run()).
+        #   The '3.10+ deferred-loop binding makes sync construction safe' claim
+        #   does NOT hold on the deployed interpreter — it has been removed.
+        #   Flag-OFF path: wake_events is None → _wake_event is private and never
+        #   .set() externally → _interruptible_sleep races timeout only.
         # ---------------------------------------------------------------------------
         self._norm_symbol: str = (
             config["symbol"]
@@ -2205,11 +2209,18 @@ class TradingEngine:
             t.cancel()
         if self._shutdown_event.is_set():
             return True  # Shutdown requested
-        # Capture woke_via_ws from race result — NOT from a post-hoc is_set() read
-        # (a sibling engine may have already cleared a shared event by then, but here
-        # each engine has its OWN private event, so this distinction is belt-and-
-        # suspenders correctness).
-        self._woke_via_ws = wake_fut in done
+        # LATCH: set _woke_via_ws if the wake event won the race; NEVER clear it
+        # here.  Multiple consecutive _interruptible_sleep calls can occur in a
+        # single run-loop iteration (e.g. the cooldown sleep at :1497 followed by
+        # _sleep_until_next_candle at :1033).  If we used an unconditional
+        # assignment (`self._woke_via_ws = wake_fut in done`) the candle-boundary
+        # sleep that TIMES OUT would overwrite the True set by the earlier cooldown
+        # wake, silently dropping the trigger and preventing _verify_close_after_ws
+        # from running on the next iteration.  The flag is consumed (reset to False)
+        # exclusively inside _verify_close_after_ws on entry (:1224), which is the
+        # only place that is semantically correct to clear it.
+        if wake_fut in done:
+            self._woke_via_ws = True
         self._wake_event.clear()  # clear OUR event only; siblings have their own
         return False
 

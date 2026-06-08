@@ -654,6 +654,78 @@ class TestWokedViaWsAtCooldownSleep:
                 f"expected={expected!r}"
             )
 
+    @pytest.mark.asyncio
+    async def test_woke_via_ws_survives_subsequent_timeout_sleep(self):
+        """BLOCKER fix: cooldown sleep wakes via WS, candle sleep times out —
+        _woke_via_ws must still be True after the candle sleep.
+
+        This is the exact run-loop sequence the BLOCKER described:
+          1. _interruptible_sleep(cooldown) — WS event fires → _woke_via_ws = True
+          2. _interruptible_sleep(candle)   — no event, times out (False)
+          3. assert _woke_via_ws is still True (flag was latched, not clobbered)
+
+        Before the fix, step 2 would overwrite _woke_via_ws=False because the
+        assignment was unconditional: `self._woke_via_ws = wake_fut in done`.
+        After the fix, only `if wake_fut in done: self._woke_via_ws = True` is
+        used, so a timeout never clears the flag.
+        """
+        registry: dict = {}
+        engine = _make_engine(wake_events=registry)
+
+        # Step 1: fire the WS event during the cooldown sleep
+        async def _fire_once():
+            await asyncio.sleep(0.02)
+            engine._wake_event.set()
+
+        fire_task = asyncio.create_task(_fire_once())
+        result1 = await engine._interruptible_sleep(5.0)  # simulated cooldown sleep
+        await fire_task
+
+        assert result1 is False
+        assert engine._woke_via_ws is True, "wake must be latched after cooldown sleep"
+
+        # Step 2: simulate the candle-boundary sleep timing out (event already cleared,
+        # no new event fires) — this is _sleep_until_next_candle() in the real loop
+        result2 = await engine._interruptible_sleep(0.03)  # times out quickly
+        assert result2 is False
+
+        # Step 3: _woke_via_ws must still be True — the latch survived the timeout
+        assert engine._woke_via_ws is True, (
+            "_woke_via_ws must survive a subsequent timed-out sleep; "
+            "verify needs to run at the next loop iteration"
+        )
+
+    @pytest.mark.asyncio
+    async def test_woke_via_ws_cleared_only_by_verify(self):
+        """_woke_via_ws is reset to False only inside _verify_close_after_ws, not
+        by a subsequent _interruptible_sleep timeout.
+
+        Complement to test_woke_via_ws_survives_subsequent_timeout_sleep: after
+        _verify_close_after_ws runs, the flag is False (consumed exactly once).
+        """
+        registry: dict = {}
+        engine = _make_engine(
+            wake_events=registry,
+            tracked_trades={42: _make_trade_info(side="buy")},
+        )
+        engine._recently_closed = {}
+        engine._client.get_positions = MagicMock(return_value=[])  # absent immediately
+
+        # Set the flag as if the cooldown sleep just woke us
+        engine._woke_via_ws = True
+
+        # Run a subsequent timeout sleep — must NOT clear the flag
+        await engine._interruptible_sleep(0.02)
+        assert engine._woke_via_ws is True, "timeout sleep must not clear the latch"
+
+        # Now run verify — this is the ONLY place that should clear the flag
+        with patch("asyncio.sleep", new=AsyncMock()):
+            await engine._verify_close_after_ws()
+
+        assert engine._woke_via_ws is False, (
+            "_verify_close_after_ws must reset _woke_via_ws to False on entry"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Wake events registry wiring tests
