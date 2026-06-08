@@ -449,7 +449,8 @@ class TestNoModeFilesOnTier1:
         """Confirm there is no write_bot_mode call in portfolio_killswitch.py."""
         import ast
 
-        ks_path = Path("/Users/iceai/Work/ccbt-ks/bot/portfolio_killswitch.py")
+        import bot.portfolio_killswitch as _ks_mod
+        ks_path = Path(_ks_mod.__file__)
         source = ks_path.read_text()
         tree = ast.parse(source)
 
