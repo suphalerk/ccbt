@@ -150,12 +150,14 @@ def check_closed_positions(
         symbol: Trading symbol.
         client: BybitClient instance for fetching actual trade data.
         last_trade_close: Optional dict tracking last close per side.
-        recently_closed: Optional shared dict keyed by normalised symbol used
-            to deduplicate close events when several config-bots share one
-            netted exchange position.  Pass the SAME dict object to all bots
-            running the same symbol.  When a symbol is already recorded here
-            the second (and further) bots skip journaling and alerting but
-            still remove the trade_id from their local open_trade_ids.
+        recently_closed: Optional shared dict keyed by ``(normalised_symbol,
+            trade_side)`` used to deduplicate close events when several
+            config-bots share one netted exchange position.  Pass the SAME dict
+            object to all bots running the same symbol.  Same-side bots collapse
+            to ONE journal+alert; opposite-side bots on the same coin (hedge)
+            dedup INDEPENDENTLY (distinct keys).  When a (symbol, side) is already
+            recorded here the second (and further) same-side bots skip journaling
+            and alerting but still remove the trade_id from their open_trade_ids.
         config: Optional bot config dict.  When present, ``config["leverage"]``
             is used to derive a per-trade PnL-magnitude cap (leverage * 100 %).
             Fills that pass the _MAX_EXIT_RATIO price-ratio guard but still yield
