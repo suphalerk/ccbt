@@ -98,6 +98,10 @@ export interface WSUpnlData {
   positions: PositionMark[]
   total_upnl: number
   feed_status: FeedStatus
+  /** Server-computed: today's realized PnL in Bangkok time (GMT+7). Always present. */
+  today_realized: number
+  /** Server-computed: today_realized + total_upnl. Display this — do NOT recompute in TS. */
+  net_today: number
 }
 
 export interface WSUpnlPayload {

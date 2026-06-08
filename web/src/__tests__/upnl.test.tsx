@@ -21,9 +21,7 @@ describe('UpnlPanel', () => {
 
   it('renders panel when upnl data is provided', () => {
     const upnl: WSUpnlData = {
-      positions: [],
-      total_upnl: 0,
-      feed_status: 'live',
+      positions: [], total_upnl: 0, feed_status: 'live', today_realized: 0, net_today: 0,
     }
     render(<UpnlPanel upnl={upnl} />)
     expect(screen.getByTestId('upnl-panel')).toBeTruthy()
@@ -32,9 +30,7 @@ describe('UpnlPanel', () => {
 
   it('displays total_upnl with correct sign prefix', () => {
     const upnl: WSUpnlData = {
-      positions: [],
-      total_upnl: 123.45,
-      feed_status: 'live',
+      positions: [], total_upnl: 123.45, feed_status: 'live', today_realized: 0, net_today: 123.45,
     }
     render(<UpnlPanel upnl={upnl} />)
     const el = screen.getByTestId('upnl-total')
@@ -43,9 +39,7 @@ describe('UpnlPanel', () => {
 
   it('displays negative total_upnl without extra plus sign', () => {
     const upnl: WSUpnlData = {
-      positions: [],
-      total_upnl: -55.0,
-      feed_status: 'live',
+      positions: [], total_upnl: -55.0, feed_status: 'live', today_realized: 0, net_today: -55.0,
     }
     render(<UpnlPanel upnl={upnl} />)
     const el = screen.getByTestId('upnl-total')
@@ -59,9 +53,7 @@ describe('UpnlPanel', () => {
       { symbol: 'ETHUSDT', side: 'short', entry_price: 2000, size: 1.0, stop_loss: null, take_profit: null, mark_price: 1800, upnl: 200, ts: null, dist_to_stop_pct: null, rr_remaining: null },
     ]
     const upnl: WSUpnlData = {
-      positions,
-      total_upnl: 700,
-      feed_status: 'live',
+      positions, total_upnl: 700, feed_status: 'live', today_realized: 0, net_today: 700,
     }
     render(<UpnlPanel upnl={upnl} />)
     expect(screen.getByTestId('upnl-row-BTCUSDT')).toBeTruthy()
@@ -70,40 +62,38 @@ describe('UpnlPanel', () => {
 
   it('shows "No open positions" when positions array is empty', () => {
     const upnl: WSUpnlData = {
-      positions: [],
-      total_upnl: 0,
-      feed_status: 'live',
+      positions: [], total_upnl: 0, feed_status: 'live', today_realized: 0, net_today: 0,
     }
     render(<UpnlPanel upnl={upnl} />)
     expect(screen.getByText(/No open positions/i)).toBeTruthy()
   })
 
   it('shows "Mark live" indicator when feed_status=live', () => {
-    const upnl: WSUpnlData = { positions: [], total_upnl: 0, feed_status: 'live' }
+    const upnl: WSUpnlData = { positions: [], total_upnl: 0, feed_status: 'live', today_realized: 0, net_today: 0 }
     render(<UpnlPanel upnl={upnl} />)
     expect(screen.getByText(/Mark live/i)).toBeTruthy()
   })
 
   it('shows "Mark stale" indicator when feed_status=stale', () => {
-    const upnl: WSUpnlData = { positions: [], total_upnl: 0, feed_status: 'stale' }
+    const upnl: WSUpnlData = { positions: [], total_upnl: 0, feed_status: 'stale', today_realized: 0, net_today: 0 }
     render(<UpnlPanel upnl={upnl} />)
     expect(screen.getByText(/Mark stale/i)).toBeTruthy()
   })
 
   it('shows "Mark offline" indicator when feed_status=offline', () => {
-    const upnl: WSUpnlData = { positions: [], total_upnl: 0, feed_status: 'offline' }
+    const upnl: WSUpnlData = { positions: [], total_upnl: 0, feed_status: 'offline', today_realized: 0, net_today: 0 }
     render(<UpnlPanel upnl={upnl} />)
     expect(screen.getByText(/Mark offline/i)).toBeTruthy()
   })
 
   it('shows "last known" note when feed is not live', () => {
-    const upnl: WSUpnlData = { positions: [], total_upnl: 0, feed_status: 'offline' }
+    const upnl: WSUpnlData = { positions: [], total_upnl: 0, feed_status: 'offline', today_realized: 0, net_today: 0 }
     render(<UpnlPanel upnl={upnl} />)
     expect(screen.getByText(/last known/i)).toBeTruthy()
   })
 
   it('does NOT show "last known" note when feed is live', () => {
-    const upnl: WSUpnlData = { positions: [], total_upnl: 0, feed_status: 'live' }
+    const upnl: WSUpnlData = { positions: [], total_upnl: 0, feed_status: 'live', today_realized: 0, net_today: 0 }
     render(<UpnlPanel upnl={upnl} />)
     expect(screen.queryByText(/last known/i)).toBeNull()
   })

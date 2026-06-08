@@ -7,7 +7,9 @@
  *         - displays server-computed values from PositionMark
  *         - shows '—' for null dist_to_stop_pct and rr_remaining
  *   #5  PortfolioPage header cards:
- *         - "Today's PnL" card colored by sign (+green, -red)
+ *         - "Today Net PnL" card (testId header-today-pnl):
+ *             LIVE: shows net_today from WS (NOT recomputed), realized, unrealized + ● dot
+ *             OFFLINE fallback: shows summary.today_pnl as realized, '—' unrealized
  *         - "Open / Notional" card shows active_bots + notional
  */
 import { describe, it, expect, vi, afterEach } from 'vitest'
@@ -72,6 +74,17 @@ function makePositionMark(overrides: Partial<PositionMark> = {}): PositionMark {
   }
 }
 
+function makeUpnlData(overrides: Partial<WSUpnlData> = {}): WSUpnlData {
+  return {
+    positions: [makePositionMark()],
+    total_upnl: 3.38,
+    feed_status: 'live',
+    today_realized: 27.86,
+    net_today: 31.24,   // server-computed: 27.86 + 3.38; TS must NOT recompute
+    ...overrides,
+  }
+}
+
 function makeWrapper() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -93,12 +106,7 @@ function makeWrapper() {
 
 describe('UpnlPanel — SL/TP/R:R/dist-to-stop columns', () => {
   it('renders SL, TP, Dist%, R:R column headers', () => {
-    const upnl: WSUpnlData = {
-      positions: [makePositionMark()],
-      total_upnl: 500,
-      feed_status: 'live',
-    }
-    render(<UpnlPanel upnl={upnl} />)
+    render(<UpnlPanel upnl={makeUpnlData({ positions: [makePositionMark()] })} />)
 
     // Column headers (case-insensitive partial match)
     expect(screen.getByText(/SL/i)).toBeTruthy()
@@ -108,96 +116,56 @@ describe('UpnlPanel — SL/TP/R:R/dist-to-stop columns', () => {
   })
 
   it('displays server-computed dist_to_stop_pct value', () => {
-    const upnl: WSUpnlData = {
-      positions: [makePositionMark({ dist_to_stop_pct: 4.8387 })],
-      total_upnl: 500,
-      feed_status: 'live',
-    }
-    render(<UpnlPanel upnl={upnl} />)
+    render(<UpnlPanel upnl={makeUpnlData({ positions: [makePositionMark({ dist_to_stop_pct: 4.8387 })] })} />)
 
     const distCell = screen.getByTestId('upnl-dist-BTCUSDT')
     expect(distCell.textContent).toContain('4.84')
   })
 
   it('displays server-computed rr_remaining value', () => {
-    const upnl: WSUpnlData = {
-      positions: [makePositionMark({ rr_remaining: 1.3333 })],
-      total_upnl: 500,
-      feed_status: 'live',
-    }
-    render(<UpnlPanel upnl={upnl} />)
+    render(<UpnlPanel upnl={makeUpnlData({ positions: [makePositionMark({ rr_remaining: 1.3333 })] })} />)
 
     const rrCell = screen.getByTestId('upnl-rr-BTCUSDT')
     expect(rrCell.textContent).toContain('1.33')
   })
 
   it('shows "—" for null dist_to_stop_pct', () => {
-    const upnl: WSUpnlData = {
-      positions: [makePositionMark({ stop_loss: null, dist_to_stop_pct: null, rr_remaining: null })],
-      total_upnl: 500,
-      feed_status: 'live',
-    }
-    render(<UpnlPanel upnl={upnl} />)
+    render(<UpnlPanel upnl={makeUpnlData({ positions: [makePositionMark({ stop_loss: null, dist_to_stop_pct: null, rr_remaining: null })] })} />)
 
     const distCell = screen.getByTestId('upnl-dist-BTCUSDT')
     expect(distCell.textContent).toBe('—')
   })
 
   it('shows "—" for null rr_remaining', () => {
-    const upnl: WSUpnlData = {
-      positions: [makePositionMark({ stop_loss: null, dist_to_stop_pct: null, rr_remaining: null })],
-      total_upnl: 500,
-      feed_status: 'live',
-    }
-    render(<UpnlPanel upnl={upnl} />)
+    render(<UpnlPanel upnl={makeUpnlData({ positions: [makePositionMark({ stop_loss: null, dist_to_stop_pct: null, rr_remaining: null })] })} />)
 
     const rrCell = screen.getByTestId('upnl-rr-BTCUSDT')
     expect(rrCell.textContent).toBe('—')
   })
 
   it('displays SL value when present', () => {
-    const upnl: WSUpnlData = {
-      positions: [makePositionMark({ stop_loss: 29500, take_profit: 33000 })],
-      total_upnl: 500,
-      feed_status: 'live',
-    }
-    render(<UpnlPanel upnl={upnl} />)
+    render(<UpnlPanel upnl={makeUpnlData({ positions: [makePositionMark({ stop_loss: 29500, take_profit: 33000 })] })} />)
 
     const slCell = screen.getByTestId('upnl-sl-BTCUSDT')
     expect(slCell.textContent).toContain('29,500')
   })
 
   it('displays TP value when present', () => {
-    const upnl: WSUpnlData = {
-      positions: [makePositionMark({ stop_loss: 29500, take_profit: 33000 })],
-      total_upnl: 500,
-      feed_status: 'live',
-    }
-    render(<UpnlPanel upnl={upnl} />)
+    render(<UpnlPanel upnl={makeUpnlData({ positions: [makePositionMark({ stop_loss: 29500, take_profit: 33000 })] })} />)
 
     const tpCell = screen.getByTestId('upnl-tp-BTCUSDT')
     expect(tpCell.textContent).toContain('33,000')
   })
 
   it('shows "—" for null SL', () => {
-    const upnl: WSUpnlData = {
-      positions: [makePositionMark({ stop_loss: null, dist_to_stop_pct: null, rr_remaining: null })],
-      total_upnl: 500,
-      feed_status: 'live',
-    }
-    render(<UpnlPanel upnl={upnl} />)
+    render(<UpnlPanel upnl={makeUpnlData({ positions: [makePositionMark({ stop_loss: null, dist_to_stop_pct: null, rr_remaining: null })] })} />)
 
     const slCell = screen.getByTestId('upnl-sl-BTCUSDT')
     expect(slCell.textContent).toBe('—')
   })
 
   it('shows "—" for null TP', () => {
-    const upnl: WSUpnlData = {
-      positions: [makePositionMark({ take_profit: null, rr_remaining: null })],
-      total_upnl: 500,
-      feed_status: 'live',
-    }
-    render(<UpnlPanel upnl={upnl} />)
+    render(<UpnlPanel upnl={makeUpnlData({ positions: [makePositionMark({ take_profit: null, rr_remaining: null })] })} />)
 
     const tpCell = screen.getByTestId('upnl-tp-BTCUSDT')
     expect(tpCell.textContent).toBe('—')
@@ -205,87 +173,155 @@ describe('UpnlPanel — SL/TP/R:R/dist-to-stop columns', () => {
 })
 
 // ============================================================================
-// #5 — PortfolioPage header: Today's PnL + Open/Notional cards
+// #5 — PortfolioPage header: Today Net PnL card (replaces plain Today's PnL)
 // ============================================================================
 
 import { PortfolioPage } from '../pages/PortfolioPage'
 
-describe('PortfolioPage — Today\'s PnL card', () => {
-  afterEach(() => {
-    vi.clearAllMocks()
-  })
+// Helper: mock all API calls with default empty responses
+function mockAllApis(summaryOverrides: Partial<PortfolioSummaryResponse> = {}) {
+  vi.mocked(api.portfolioSummary).mockResolvedValue(makeSummary(summaryOverrides))
+  vi.mocked(api.listBots).mockResolvedValue({ bots: [] })
+  vi.mocked(api.listTrades).mockResolvedValue({ trades: [], total: 0 })
+  vi.mocked(api.equityCurve).mockResolvedValue({ symbol: null, points: [] })
+  vi.mocked(api.dailyPnl).mockResolvedValue({ symbol: null, days: [] })
+}
 
-  it('renders Today\'s PnL card from summary.today_pnl (Bangkok-day, server-computed)', async () => {
-    vi.mocked(api.portfolioSummary).mockResolvedValue(makeSummary({ today_pnl: 75.5 }))
-    vi.mocked(api.listBots).mockResolvedValue({ bots: [] })
-    vi.mocked(api.listTrades).mockResolvedValue({ trades: [], total: 0 })
-    vi.mocked(api.equityCurve).mockResolvedValue({ symbol: null, points: [] })
-    // daily-pnl is the bar chart's source; the card no longer reads it.
-    vi.mocked(api.dailyPnl).mockResolvedValue({
-      symbol: null,
-      days: [{ date: '2026-06-08', pnl: -10.0, trade_count: 2 }],
-    })
+describe('PortfolioPage — Today Net PnL card (LIVE feed)', () => {
+  afterEach(() => { vi.clearAllMocks() })
 
-    const Wrapper = makeWrapper()
-    render(<PortfolioPage />, { wrapper: Wrapper })
-
-    await act(async () => {})
-
-    const todayEl = await screen.findByTestId('header-today-pnl')
-    // Shows summary.today_pnl ($75.50), NOT the daily-pnl bar value (-10)
-    expect(todayEl.textContent).toContain('75.50')
-    expect(todayEl.textContent).not.toContain('10')
-  })
-
-  it('colors Today\'s PnL green for a positive value', async () => {
-    vi.mocked(api.portfolioSummary).mockResolvedValue(makeSummary({ today_pnl: 75.5 }))
-    vi.mocked(api.listBots).mockResolvedValue({ bots: [] })
-    vi.mocked(api.listTrades).mockResolvedValue({ trades: [], total: 0 })
-    vi.mocked(api.equityCurve).mockResolvedValue({ symbol: null, points: [] })
-    vi.mocked(api.dailyPnl).mockResolvedValue({ symbol: null, days: [] })
+  it('shows net_today from the WS feed (server-provided) — NOT recomputed in TS', async () => {
+    // net_today=31.24 is the server field; TS must display it verbatim.
+    mockAllApis({ today_pnl: 27.86 })
+    const upnl = makeUpnlData({ today_realized: 27.86, total_upnl: 3.38, net_today: 31.24 })
 
     const Wrapper = makeWrapper()
-    render(<PortfolioPage />, { wrapper: Wrapper })
-
+    render(<PortfolioPage upnl={upnl} />, { wrapper: Wrapper })
     await act(async () => {})
 
-    const todayEl = await screen.findByTestId('header-today-pnl')
-    expect(todayEl.className).toContain('emerald')
+    const card = await screen.findByTestId('header-today-pnl')
+    // Net value must be the server net_today (31.24), not a TS sum
+    expect(card.textContent).toContain('31.24')
   })
 
-  it('colors Today\'s PnL red for a negative value', async () => {
-    vi.mocked(api.portfolioSummary).mockResolvedValue(makeSummary({ today_pnl: -25.0 }))
-    vi.mocked(api.listBots).mockResolvedValue({ bots: [] })
-    vi.mocked(api.listTrades).mockResolvedValue({ trades: [], total: 0 })
-    vi.mocked(api.equityCurve).mockResolvedValue({ symbol: null, points: [] })
-    vi.mocked(api.dailyPnl).mockResolvedValue({ symbol: null, days: [] })
+  it('shows realized and unrealized breakdown lines', async () => {
+    mockAllApis({ today_pnl: 27.86 })
+    const upnl = makeUpnlData({ today_realized: 27.86, total_upnl: 3.38, net_today: 31.24 })
 
     const Wrapper = makeWrapper()
-    render(<PortfolioPage />, { wrapper: Wrapper })
-
+    render(<PortfolioPage upnl={upnl} />, { wrapper: Wrapper })
     await act(async () => {})
 
-    const todayEl = await screen.findByTestId('header-today-pnl')
-    expect(todayEl.textContent).toContain('25.00')
-    expect(todayEl.className).toContain('red')
+    const card = await screen.findByTestId('header-today-pnl')
+    expect(card.textContent).toContain('27.86')   // realized line
+    expect(card.textContent).toContain('3.38')    // unrealized line
   })
 
-  it('shows a truthful $0.00 for Today\'s PnL when no closed trades today', async () => {
-    // today_pnl=0 (no fills today) must render a real 0, NOT a stale prior day or "—"
-    vi.mocked(api.portfolioSummary).mockResolvedValue(makeSummary({ today_pnl: 0 }))
-    vi.mocked(api.listBots).mockResolvedValue({ bots: [] })
-    vi.mocked(api.listTrades).mockResolvedValue({ trades: [], total: 0 })
-    vi.mocked(api.equityCurve).mockResolvedValue({ symbol: null, points: [] })
-    vi.mocked(api.dailyPnl).mockResolvedValue({ symbol: null, days: [] })
+  it('shows live dot (●) when feed_status is live', async () => {
+    mockAllApis({ today_pnl: 10.0 })
+    const upnl = makeUpnlData({ feed_status: 'live' })
 
     const Wrapper = makeWrapper()
-    render(<PortfolioPage />, { wrapper: Wrapper })
-
+    render(<PortfolioPage upnl={upnl} />, { wrapper: Wrapper })
     await act(async () => {})
 
-    const todayEl = await screen.findByTestId('header-today-pnl')
-    expect(todayEl.textContent).toContain('0.00')
-    expect(todayEl.textContent).not.toBe('—')
+    const dot = await screen.findByTestId('today-net-live-dot')
+    expect(dot).toBeTruthy()
+  })
+
+  it('colors net_today green when positive', async () => {
+    mockAllApis({ today_pnl: 27.86 })
+    const upnl = makeUpnlData({ net_today: 31.24 })
+
+    const Wrapper = makeWrapper()
+    render(<PortfolioPage upnl={upnl} />, { wrapper: Wrapper })
+    await act(async () => {})
+
+    const card = await screen.findByTestId('header-today-pnl')
+    // The large NET span is the first <span> with tabular-nums and large text
+    const netSpan = card.querySelector('.text-xl')
+    expect(netSpan?.className).toContain('emerald')
+  })
+
+  it('colors net_today red when negative', async () => {
+    mockAllApis({ today_pnl: -5.0 })
+    const upnl = makeUpnlData({ today_realized: -8.0, total_upnl: 3.0, net_today: -5.0 })
+
+    const Wrapper = makeWrapper()
+    render(<PortfolioPage upnl={upnl} />, { wrapper: Wrapper })
+    await act(async () => {})
+
+    const card = await screen.findByTestId('header-today-pnl')
+    const netSpan = card.querySelector('.text-xl')
+    expect(netSpan?.className).toContain('red')
+  })
+})
+
+describe('PortfolioPage — Today Net PnL card (OFFLINE fallback)', () => {
+  afterEach(() => { vi.clearAllMocks() })
+
+  it('OFFLINE: shows summary.today_pnl as net and realized when upnl is null', async () => {
+    mockAllApis({ today_pnl: 75.5 })
+
+    const Wrapper = makeWrapper()
+    render(<PortfolioPage upnl={null} />, { wrapper: Wrapper })
+    await act(async () => {})
+
+    const card = await screen.findByTestId('header-today-pnl')
+    // The realized fallback is summary.today_pnl
+    expect(card.textContent).toContain('75.50')
+    // Unrealized shows '—' and 'feed offline' hint
+    expect(card.textContent).toContain('—')
+    expect(card.textContent).toContain('feed offline')
+  })
+
+  it('OFFLINE: no live dot shown when upnl is null', async () => {
+    mockAllApis({ today_pnl: 20.0 })
+
+    const Wrapper = makeWrapper()
+    render(<PortfolioPage upnl={null} />, { wrapper: Wrapper })
+    await act(async () => {})
+
+    expect(screen.queryByTestId('today-net-live-dot')).toBeNull()
+  })
+
+  it('OFFLINE (stale feed): shows summary.today_pnl, no live dot', async () => {
+    mockAllApis({ today_pnl: 50.0 })
+    const upnl = makeUpnlData({ feed_status: 'stale' })
+
+    const Wrapper = makeWrapper()
+    render(<PortfolioPage upnl={upnl} />, { wrapper: Wrapper })
+    await act(async () => {})
+
+    const card = await screen.findByTestId('header-today-pnl')
+    // Stale feed → falls back to offline branch (summary.today_pnl)
+    expect(card.textContent).toContain('50.00')
+    expect(screen.queryByTestId('today-net-live-dot')).toBeNull()
+  })
+
+  it('OFFLINE: colors net red for negative summary.today_pnl', async () => {
+    mockAllApis({ today_pnl: -25.0 })
+
+    const Wrapper = makeWrapper()
+    render(<PortfolioPage upnl={null} />, { wrapper: Wrapper })
+    await act(async () => {})
+
+    const card = await screen.findByTestId('header-today-pnl')
+    expect(card.textContent).toContain('25.00')
+    const netSpan = card.querySelector('.text-xl')
+    expect(netSpan?.className).toContain('red')
+  })
+
+  it('OFFLINE: shows $0.00 when no closed trades today', async () => {
+    mockAllApis({ today_pnl: 0 })
+
+    const Wrapper = makeWrapper()
+    render(<PortfolioPage upnl={null} />, { wrapper: Wrapper })
+    await act(async () => {})
+
+    const card = await screen.findByTestId('header-today-pnl')
+    expect(card.textContent).toContain('0.00')
+    expect(card.textContent).not.toBe('—')
   })
 })
 

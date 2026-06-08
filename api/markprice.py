@@ -62,6 +62,7 @@ BROADCAST_MIN_INTERVAL_S: float = 1.0           # throttle: at most 1 broadcast/
 BACKOFF_BASE_S: float = 1.0
 BACKOFF_MAX_S: float = 60.0
 STALE_AFTER_S: float = float(os.getenv("CCBT_MARKPRICE_STALE_S", "15"))
+TODAY_REALIZED_TTL_S: float = 5.0               # max age of the today_realized SQL cache
 
 
 def _is_testnet() -> bool:
@@ -279,15 +280,55 @@ class MarkPriceClient:
         self._retry_count: int = 0
         self._last_mark_ts: float = 0.0                    # wall clock of last tick
         self._needs_reconnect: bool = False                 # set by _symbol_poll_loop
+        # today_realized cache (TTL-gated SQL query, refreshed at most once per
+        # TODAY_REALIZED_TTL_S seconds so the <=1/sec broadcast isn't a fresh SQL
+        # on every tick).
+        self._today_realized: float = 0.0
+        self._today_realized_ts: float = float("-inf")     # monotonic; -inf = never fetched
 
     # ------------------------------------------------------------------
     # Public read — snapshot used by broadcaster and tests
     # ------------------------------------------------------------------
 
+    def _get_today_realized(self) -> float:
+        """Return today's realized PnL (Bangkok GMT+7) with a short TTL cache.
+
+        Refreshes at most once every TODAY_REALIZED_TTL_S seconds so the <=1/sec
+        broadcast doesn't issue a fresh SQL on every tick.  Falls back to 0.0 on
+        any error so the payload is never broken.
+
+        Import is done lazily inside this method (sys.path insert REPO, same
+        pattern as api/ws.py) to avoid import-time coupling between markprice.py
+        and dashboard/queries.py.
+        """
+        now = time.monotonic()
+        if now - self._today_realized_ts < TODAY_REALIZED_TTL_S:
+            return self._today_realized
+        try:
+            import sys as _sys
+            _repo = str(Path(__file__).resolve().parent.parent)
+            if _repo not in _sys.path:
+                _sys.path.insert(0, _repo)
+            from dashboard.queries import get_today_pnl  # type: ignore[import]
+            val = get_today_pnl(self._db_path)
+            self._today_realized = float(val) if val == val else 0.0
+        except Exception as exc:
+            logger.debug("markprice: get_today_pnl failed: %s", exc)
+            self._today_realized = 0.0
+        self._today_realized_ts = now
+        return self._today_realized
+
     def get_upnl_payload(self) -> Dict[str, Any]:
-        """Build the upnl broadcast payload dict."""
+        """Build the upnl broadcast payload dict.
+
+        Adds two server-computed fields to ``data``:
+          today_realized  — today's realized PnL (Bangkok day, from trades.db)
+          net_today       — today_realized + total_upnl (the single net number)
+        Both are computed here in Python; the React card MUST NOT re-add them.
+        """
         ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
         total = sum(p.upnl for p in self._positions.values())
+        total_upnl = round(total, 6)
         # Determine effective feed status:
         # if last mark is older than STALE_AFTER_S, degrade to 'stale'
         if self._feed_status == "live" and self._last_mark_ts > 0:
@@ -295,13 +336,22 @@ class MarkPriceClient:
             effective = "stale" if age > STALE_AFTER_S else "live"
         else:
             effective = self._feed_status
+        # Today's realized PnL (TTL-cached; guard so any error never breaks the payload)
+        try:
+            today_realized = self._get_today_realized()
+        except Exception as exc:
+            logger.debug("markprice: _get_today_realized failed in payload: %s", exc)
+            today_realized = 0.0
+        net_today = round(today_realized + total_upnl, 6)
         return {
             "type": "upnl",
             "ts": ts,
             "data": {
                 "positions": [p.to_dict() for p in self._positions.values()],
-                "total_upnl": round(total, 6),
+                "total_upnl": total_upnl,
                 "feed_status": effective,
+                "today_realized": round(today_realized, 6),
+                "net_today": net_today,
             },
         }
 

@@ -58,25 +58,104 @@ function MetricCard({ label, value, testId, valueClass = 'text-slate-100' }: Met
 }
 
 // ============================================================================
+// Today Net PnL card — supersedes the plain "Today's PnL" card.
+//
+// LIVE path  (upnl !== null && upnl.feed_status === 'live'):
+//   net_today = upnl.net_today            ← server field; NOT recomputed in TS
+//   realized  = upnl.today_realized
+//   unrealized = upnl.total_upnl  (with ● live dot)
+//
+// OFFLINE fallback (upnl null or feed_status !== 'live'):
+//   net_today  = summary.today_pnl (realized only)
+//   realized   = summary.today_pnl
+//   unrealized = '—'   (feed offline hint)
+//
+// Sign-coloring is applied to the NET value only.
+// testId 'header-today-pnl' preserved so existing tests stay green.
+// ============================================================================
+
+interface TodayNetCardProps {
+  summary: PortfolioSummaryResponse | undefined
+  upnl: WSUpnlData | null | undefined
+}
+
+function TodayNetCard({ summary, upnl }: TodayNetCardProps) {
+  const feedLive = upnl != null && upnl.feed_status === 'live'
+
+  // NET value: use server net_today when live, else fall back to realized-only
+  const net = feedLive
+    ? upnl!.net_today
+    : (summary?.today_pnl ?? null)
+  const netClass =
+    net === null ? 'text-slate-100' : net >= 0 ? 'text-emerald-400' : 'text-red-400'
+
+  // Realized: from WS when live, else from summary
+  const realized = feedLive
+    ? upnl!.today_realized
+    : (summary?.today_pnl ?? null)
+
+  // Unrealized: from WS when live, else '—'
+  const unrealized: number | null = feedLive ? upnl!.total_upnl : null
+
+  return (
+    <div
+      data-testid="header-today-pnl"
+      className="bg-[#1A1F2E] rounded-lg border border-[#2A3245] px-4 py-3 flex flex-col gap-1"
+    >
+      <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
+        Today Net PnL
+      </span>
+      {/* NET — big, sign-colored, server-provided */}
+      <span className={`text-xl font-semibold tabular-nums ${netClass}`}>
+        {formatMoney(net)}
+      </span>
+      {/* 2-line breakdown */}
+      <div className="flex flex-col gap-0.5 mt-0.5">
+        <span className="text-xs tabular-nums text-slate-400">
+          realized{' '}
+          <span className={realized !== null && realized >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+            {formatMoney(realized)}
+          </span>
+        </span>
+        <span className="text-xs tabular-nums text-slate-400 flex items-center gap-1">
+          unrealized{' '}
+          {unrealized !== null ? (
+            <>
+              <span className={unrealized >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                {formatMoney(unrealized)}
+              </span>
+              {/* ● live dot */}
+              <span
+                data-testid="today-net-live-dot"
+                className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse"
+                aria-label="live"
+              />
+              <span className="text-slate-500 text-[10px]">live</span>
+            </>
+          ) : (
+            <span className="text-slate-600">
+              — <span className="text-[10px] text-slate-600">feed offline</span>
+            </span>
+          )}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
 // Header section
 // ============================================================================
 
 interface PortfolioHeaderProps {
   summary: PortfolioSummaryResponse | undefined
+  upnl?: WSUpnlData | null
 }
 
-function PortfolioHeader({ summary }: PortfolioHeaderProps) {
+function PortfolioHeader({ summary, upnl = null }: PortfolioHeaderProps) {
   const totalPnl = summary?.total_pnl ?? null
   const pnlClass =
     totalPnl === null ? 'text-slate-100' : totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'
-
-  // Today's PnL: Bangkok-day (GMT+7) realized PnL, computed server-side in
-  // portfolio/summary (no math in TS). 0 when no closed trades today — never a
-  // stale prior day (the old "last daily-pnl point" was UTC-grouped + could show
-  // yesterday when today had no trades).
-  const todayPnl = summary?.today_pnl ?? null
-  const todayPnlClass =
-    todayPnl === null ? 'text-slate-100' : todayPnl >= 0 ? 'text-emerald-400' : 'text-red-400'
 
   // Open / Notional: active_bots count + notional USDT (Python-computed in portfolio/summary)
   const activeBots = summary?.active_bots ?? null
@@ -112,14 +191,9 @@ function PortfolioHeader({ summary }: PortfolioHeaderProps) {
           value={activeBots !== null ? String(activeBots) : '—'}
           testId="header-active-bots"
         />
-        {/* #5 — Today's PnL */}
-        <MetricCard
-          label="Today's PnL"
-          value={formatMoney(todayPnl)}
-          testId="header-today-pnl"
-          valueClass={todayPnlClass}
-        />
-        {/* #5 — Open / Notional */}
+        {/* #5 — Today Net PnL (replaces plain Today's PnL; testId kept) */}
+        <TodayNetCard summary={summary} upnl={upnl} />
+        {/* #6 — Open / Notional */}
         <MetricCard
           label="Open / Notional"
           value={notionalLabel}
@@ -992,7 +1066,7 @@ export function PortfolioPage({ upnl = null }: PortfolioPageProps) {
       <PortfolioAlertBanner bots={bots} />
 
       {/* Header metrics + bulk controls */}
-      <PortfolioHeader summary={summary} />
+      <PortfolioHeader summary={summary} upnl={upnl} />
 
       {/* Realtime unrealized PnL (from public markPrice WS — no API key) */}
       <div className="mb-4">
