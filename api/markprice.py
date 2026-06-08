@@ -213,7 +213,10 @@ class MarkPriceClient:
         self._ro_conn: Optional[sqlite3.Connection] = None
         self._positions: Dict[str, PositionMark] = {}      # keyed by upper symbol
         self._open_symbols: Set[str] = set()               # last known set
-        self._last_broadcast_ts: float = 0.0
+        # -inf (not 0.0) so the FIRST broadcast always passes the throttle: 0.0 vs
+        # time.monotonic() (process-relative) suppresses all broadcasts for the first
+        # ~1s of process life, making the first-tick test flaky on a cold start.
+        self._last_broadcast_ts: float = float("-inf")
         self._feed_status: str = "offline"
         self._retry_count: int = 0
         self._last_mark_ts: float = 0.0                    # wall clock of last tick

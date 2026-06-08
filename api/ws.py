@@ -41,6 +41,9 @@ _DEFAULT_POLL_S: float = float(os.getenv("CCBT_DASH_POLL_S", "3"))
 _HB_GLOB = "heartbeat_*"
 _MODE_GLOB = "mode_*.json"
 _LOG_FILENAME = "trading_bot.log"
+# Per-client send timeout — a slow/half-dead /ws client must not stall the shared
+# broadcast (snapshot + log tail + markPrice uPnL all use one registry on one loop).
+_SEND_TIMEOUT_S = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +82,9 @@ class ConnectionRegistry:
         dead: List[Any] = []
         for ws in list(self._clients):
             try:
-                await ws.send_json(msg)
+                # Bound each send so one slow/half-dead client can't stall the shared
+                # broadcast (snapshot + log tail + markPrice uPnL run on one loop).
+                await asyncio.wait_for(ws.send_json(msg), timeout=_SEND_TIMEOUT_S)
             except Exception:
                 dead.append(ws)
         for ws in dead:

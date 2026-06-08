@@ -347,6 +347,127 @@ class TestSymbolSetChange:
             f"Session 2 URL must still contain btcusdt@markPrice; got {second_url}"
         )
 
+    def test_poll_loop_flags_reconnect_when_db_symbol_set_diverges(
+        self, tmp_path: Any
+    ) -> None:
+        """DETECTION half (deterministic, no WS): _symbol_poll_loop must set
+        _needs_reconnect=True when the DB open-symbol set diverges from the set the
+        session subscribed to — WITHOUT mutating _open_symbols (the old bug clobbered
+        _open_symbols via _reload_positions so both sides matched and the break never
+        fired). Teeth: revert to calling _reload_positions in the poll body and this
+        FAILS (flag stays False).
+        """
+        db_path = _seed_db(tmp_path, [
+            {"symbol": "BTCUSDT", "side": "long", "entry_price": 30000.0, "size": 1.0},
+        ])
+        from api.markprice import MarkPriceClient
+
+        async def _noop_broadcast(_msg: Dict[str, Any]) -> None:
+            return None
+
+        client = MarkPriceClient(
+            db_path=db_path, broadcast_fn=_noop_broadcast, ws_base_url="wss://testhost"
+        )
+        # Simulate a live session that connected on BTC-only.
+        client._open_symbols = {"BTCUSDT"}
+        client._needs_reconnect = False
+
+        original_sleep = asyncio.sleep
+        sleep_calls = [0]
+
+        async def patched_sleep(_n: float) -> None:
+            sleep_calls[0] += 1
+            if sleep_calls[0] == 1:
+                # Before the poll body queries the DB, insert a NEW open symbol.
+                conn2 = sqlite3.connect(db_path, isolation_level=None)
+                conn2.execute(
+                    "INSERT INTO trades (symbol, side, entry_price, size, status)"
+                    " VALUES ('ETHUSDT','long',2000.0,5.0,'open')"
+                )
+                conn2.close()
+                await original_sleep(0)
+                return
+            # Second sleep = top of the next loop iteration → stop the infinite loop.
+            raise asyncio.CancelledError
+
+        async def run_poll() -> None:
+            with patch("asyncio.sleep", patched_sleep):
+                try:
+                    await client._symbol_poll_loop()
+                except asyncio.CancelledError:
+                    pass
+
+        asyncio.get_event_loop().run_until_complete(run_poll())
+
+        assert client._needs_reconnect is True, (
+            "poll loop must set _needs_reconnect when the DB symbol set diverges"
+        )
+        assert client._open_symbols == {"BTCUSDT"}, (
+            "poll loop must NOT mutate _open_symbols (that's the old clobber bug "
+            "that made both sides of the reconnect check identical)"
+        )
+
+    def test_run_once_breaks_out_of_ws_loop_when_needs_reconnect_set(
+        self, tmp_path: Any
+    ) -> None:
+        """BREAK half (deterministic): the async-for in _run_once must exit once
+        _needs_reconnect flips True — it must NOT keep consuming ticks forever. A
+        FakeWS yields ticks endlessly; the (patched) message handler flips the flag
+        on the first tick. Teeth: remove the `if self._needs_reconnect: break` check
+        and this hangs → wait_for raises TimeoutError → FAIL.
+        """
+        db_path = _seed_db(tmp_path, [
+            {"symbol": "BTCUSDT", "side": "long", "entry_price": 30000.0, "size": 1.0},
+        ])
+        from api.markprice import MarkPriceClient
+
+        async def _noop_broadcast(_msg: Dict[str, Any]) -> None:
+            return None
+
+        client = MarkPriceClient(
+            db_path=db_path, broadcast_fn=_noop_broadcast, ws_base_url="wss://testhost"
+        )
+
+        class EndlessWS:
+            """Yields BTC ticks forever (never raises StopAsyncIteration)."""
+            async def __aenter__(self) -> "EndlessWS":
+                return self
+
+            async def __aexit__(self, *_: Any) -> None:
+                pass
+
+            def __aiter__(self) -> "EndlessWS":
+                return self
+
+            async def __anext__(self) -> str:
+                await asyncio.sleep(0)  # cooperative yield so the loop can be cancelled
+                return _make_mark_message("BTCUSDT", 31000.0)
+
+        handled = [0]
+
+        async def counting_handle(_raw: str) -> None:
+            handled[0] += 1
+            client._needs_reconnect = True  # flip after the first handled tick
+
+        # Keep the poll task out of the way — the flag is driven by the handler here.
+        async def idle_poll() -> None:
+            await asyncio.sleep(3600)
+
+        client._handle_message = counting_handle  # type: ignore[assignment]
+        client._symbol_poll_loop = idle_poll       # type: ignore[assignment]
+
+        async def run() -> None:
+            with patch("websockets.connect", side_effect=lambda url, **kw: EndlessWS()):
+                # wait_for guards against a hang if the break check is missing.
+                await asyncio.wait_for(client._run_once(), timeout=2.0)
+
+        asyncio.get_event_loop().run_until_complete(run())
+
+        assert handled[0] == 1, (
+            "_run_once must break after the first tick once _needs_reconnect is set; "
+            f"handled {handled[0]} ticks (the break check is missing or ineffective)"
+        )
+
 
 # ---------------------------------------------------------------------------
 # 4. No API key/secret referenced in api/markprice module
