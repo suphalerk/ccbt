@@ -216,9 +216,12 @@ describe('PortfolioPage — Bot grid', () => {
 
     await act(async () => {})
 
-    // Both strategy group headings should appear
-    await screen.findByText(/ema_crossover/i)
-    expect(screen.getByText(/ichimoku/i)).toBeTruthy()
+    // Both strategy group headings should appear (use getAllByText since the
+    // filter strategy dropdown now also contains strategy option text)
+    const emaEls = await screen.findAllByText(/ema_crossover/i)
+    expect(emaEls.length).toBeGreaterThanOrEqual(1)
+    const ichiEls = screen.getAllByText(/ichimoku/i)
+    expect(ichiEls.length).toBeGreaterThanOrEqual(1)
   })
 
   it('shows mode badge for GRACEFUL_STOP', async () => {

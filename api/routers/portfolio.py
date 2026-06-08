@@ -321,10 +321,13 @@ async def equity_curve(
     if not df.empty and "timestamp" in df.columns and "cumulative_pnl" in df.columns:
         for _, row in df.iterrows():
             cum_pnl = _safe_float_required(row.get("cumulative_pnl"), 0.0)
+            # underwater is always <= 0; default 0.0 for backward compat with old DFs
+            underwater = _safe_float_required(row.get("underwater", 0.0), 0.0)
             points.append(EquityPoint(
                 timestamp=str(row.get("timestamp") or ""),
                 equity=round(cum_pnl, 2),
                 cumulative_pnl=round(cum_pnl, 2),
+                underwater=round(underwater, 2),
             ))
 
     return EquityResponse(symbol=symbol, points=points)

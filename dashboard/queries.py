@@ -239,14 +239,30 @@ def get_equity_curve(
     db_path: Optional[str] = None,
     symbol: Optional[str] = None,
 ) -> pd.DataFrame:
-    """Get cumulative PnL over time for equity curve plotting."""
+    """Get cumulative PnL over time for equity curve plotting.
+
+    Returns a DataFrame with columns:
+      timestamp, pnl, cumulative_pnl, underwater
+
+    ``underwater`` is the running-max drawdown series:
+      underwater[i] = running_max(cumulative_pnl[0..i]) − cumulative_pnl[i]
+
+    It is always <= 0 (0 at new equity highs, negative while in a drawdown).
+    Computed server-side so TypeScript never re-derives financial math.
+    """
+    import numpy as np  # already available in the venv
+
     closed = get_closed_trades(db_path, symbol=symbol)
     if closed.empty or "pnl" not in closed.columns:
-        return pd.DataFrame(columns=["timestamp", "pnl", "cumulative_pnl"])
+        return pd.DataFrame(columns=["timestamp", "pnl", "cumulative_pnl", "underwater"])
 
     df = closed[["timestamp", "pnl"]].copy()
     df["pnl"] = df["pnl"].fillna(0.0)
     df["cumulative_pnl"] = df["pnl"].cumsum()
+
+    # Underwater = running_max − current_value  (always <= 0)
+    running_max = np.maximum.accumulate(df["cumulative_pnl"].values)
+    df["underwater"] = df["cumulative_pnl"].values - running_max  # always <= 0
     return df
 
 

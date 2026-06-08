@@ -406,6 +406,12 @@ export interface components {
       equity: number;
       /** Cumulative Pnl */
       cumulative_pnl: number;
+      /**
+       * Underwater
+       * @description running_max(cumulative_pnl) − cumulative_pnl; always <= 0; 0 at new highs
+       * @default 0
+       */
+      underwater: number;
     };
     /**
      * EquityResponse

@@ -46,6 +46,8 @@ export interface EquityPoint {
   timestamp: string
   equity: number
   cumulative_pnl: number
+  /** running_max(cumulative_pnl) − cumulative_pnl; always <= 0; 0 at new equity highs */
+  underwater?: number
 }
 
 export interface DailyPnlPoint {
@@ -272,6 +274,99 @@ export function PerBotPnl({ bots, height }: PerBotPnlProps) {
               />
             ))}
           </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+// ============================================================================
+// UnderwaterChart
+// ============================================================================
+
+interface UnderwaterChartProps {
+  points: EquityPoint[]
+  height?: number
+}
+
+/**
+ * Histogram-style sub-chart showing the underwater drawdown series.
+ * underwater[i] = running_max(cumulative_pnl[0..i]) − cumulative_pnl[i], always <= 0.
+ * Zero-baseline is at the top; bars grow downward (red/amber fill).
+ * Renders the server-supplied `underwater` field — no TS re-derivation.
+ */
+export function UnderwaterChart({ points, height = 100 }: UnderwaterChartProps) {
+  if (points.length === 0) {
+    return (
+      <EmptyState
+        testId="underwater-chart-empty"
+        message="No drawdown data yet."
+      />
+    )
+  }
+
+  const chartData = points.map(p => ({
+    ts: p.timestamp,
+    underwater: p.underwater ?? 0,
+    label: (() => {
+      try {
+        const d = new Date(p.timestamp)
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+      } catch {
+        return p.timestamp.slice(0, 10)
+      }
+    })(),
+  }))
+
+  const maxDepth = Math.min(...chartData.map(d => d.underwater))
+  const hasDrawdown = maxDepth < 0
+
+  return (
+    <div
+      data-testid="underwater-chart"
+      data-has-drawdown={hasDrawdown ? 'true' : 'false'}
+      data-point-count={String(points.length)}
+      style={{ height }}
+    >
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={chartData} margin={{ top: 0, right: 16, left: 0, bottom: 0 }} barSize={2}>
+          <defs>
+            <linearGradient id="underwaterGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#FF1744" stopOpacity={0.6} />
+              <stop offset="95%" stopColor="#FF6D00" stopOpacity={0.3} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke={COLOR_GRID} vertical={false} />
+          <XAxis
+            dataKey="label"
+            tick={{ fontSize: 9, fill: COLOR_NEUTRAL }}
+            axisLine={false}
+            tickLine={false}
+            interval="preserveStartEnd"
+          />
+          <YAxis
+            tick={{ fontSize: 9, fill: COLOR_NEUTRAL }}
+            axisLine={false}
+            tickLine={false}
+            tickFormatter={(v: number) => `$${v.toFixed(0)}`}
+            width={52}
+          />
+          <Tooltip
+            contentStyle={tooltipStyle}
+            labelStyle={tooltipLabelStyle}
+            formatter={(value) => {
+              const v = typeof value === 'number' ? value : 0
+              return [`$${v.toFixed(2)}`, 'Drawdown']
+            }}
+          />
+          {/* Zero baseline at top */}
+          <ReferenceLine y={0} stroke={COLOR_NEUTRAL} strokeDasharray="4 2" strokeWidth={1} />
+          <Bar
+            dataKey="underwater"
+            fill="url(#underwaterGradient)"
+            isAnimationActive={false}
+            radius={[0, 0, 0, 0]}
+          />
         </BarChart>
       </ResponsiveContainer>
     </div>

@@ -120,6 +120,7 @@ class EquityPoint(BaseModel):
     timestamp: str
     equity: float
     cumulative_pnl: float
+    underwater: float = 0.0  # running_max(cumulative_pnl) − cumulative_pnl; always <= 0
 
 
 class EquityResponse(BaseModel):
