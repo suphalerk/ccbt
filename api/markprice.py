@@ -217,6 +217,7 @@ class MarkPriceClient:
         self._feed_status: str = "offline"
         self._retry_count: int = 0
         self._last_mark_ts: float = 0.0                    # wall clock of last tick
+        self._needs_reconnect: bool = False                 # set by _symbol_poll_loop
 
     # ------------------------------------------------------------------
     # Public read — snapshot used by broadcaster and tests
@@ -327,7 +328,11 @@ class MarkPriceClient:
 
         # Reload open positions before connecting
         symbols = self._reload_positions()
-        self._open_symbols = symbols
+        # Record exactly which symbols this session was subscribed to.
+        # _symbol_poll_loop must NOT change _open_symbols during the session;
+        # instead it sets _needs_reconnect=True when the DB set diverges.
+        self._open_symbols = set(symbols)
+        self._needs_reconnect = False
 
         if not symbols:
             logger.debug("markprice: no open positions — sleeping %ss before retry", SYMBOL_POLL_S)
@@ -353,8 +358,8 @@ class MarkPriceClient:
                     except Exception as exc:
                         logger.debug("markprice: message parse error: %s", exc)
 
-                    # Check if symbols changed (set by _symbol_poll_loop)
-                    if self._open_symbols != set(self._positions.keys()):
+                    # Check if _symbol_poll_loop detected a DB change
+                    if self._needs_reconnect:
                         logger.info("markprice: symbol set changed — reconnecting")
                         break
         finally:
@@ -365,18 +370,43 @@ class MarkPriceClient:
                 pass
 
     async def _symbol_poll_loop(self) -> None:
-        """Periodically re-check open symbols; update _open_symbols (triggers reconnect)."""
+        """Periodically poll the DB for open-symbol changes.
+
+        IMPORTANT: this loop must NOT call _reload_positions() (which mutates
+        self._positions and self._open_symbols) — doing so would make both sides
+        of the reconnect check identical, so the break never fires.
+
+        Instead it only queries the DB for the current symbol set and compares
+        against self._open_symbols (the set that was subscribed at connect time).
+        When they differ it sets self._needs_reconnect = True; the async-for
+        body in _run_once checks that flag each iteration and breaks.
+        """
+        conn = self._ensure_ro_conn()
         while True:
             await asyncio.sleep(SYMBOL_POLL_S)
-            new_syms = self._reload_positions()
-            if new_syms != self._open_symbols:
+            # Read-only symbol query — does NOT mutate self._positions
+            try:
+                if conn is None:
+                    conn = self._ensure_ro_conn()
+                if conn is None:
+                    continue
+                rows = conn.execute(
+                    "SELECT UPPER(symbol) FROM trades WHERE status='open'"
+                ).fetchall()
+                current_syms: Set[str] = {r[0] for r in rows if r[0]}
+            except Exception as exc:
+                logger.debug("markprice: symbol poll query failed: %s", exc)
+                continue
+
+            if current_syms != self._open_symbols:
                 logger.info(
-                    "markprice: open symbols changed %s → %s",
+                    "markprice: open symbols changed %s → %s; will reconnect",
                     self._open_symbols,
-                    new_syms,
+                    current_syms,
                 )
-                self._open_symbols = new_syms
-                # The outer _run_once loop will see the mismatch and reconnect
+                self._needs_reconnect = True
+                # No further mutation — _run_once will break and call
+                # _reload_positions() at the top of the next session.
 
     async def _handle_message(self, raw: str) -> None:
         """Process one WS frame from the Binance combined stream.

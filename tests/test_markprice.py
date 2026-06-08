@@ -213,39 +213,139 @@ class TestShortUpnl:
 # ---------------------------------------------------------------------------
 
 class TestSymbolSetChange:
-    """When _open_symbols != set(_positions.keys()), _run_once exits its WS loop."""
+    """When the DB grows a new open symbol, _run_once must tear down and rebuild the WS
+    with the new symbol included in the subscribe URL.
 
-    def test_symbol_set_change_triggers_exit(self, tmp_path: Any) -> None:
-        """Simulate the WS loop body: if open_symbols changes, the inner loop breaks."""
+    The test drives the REAL _symbol_poll_loop + _run_once control flow using a mock
+    websockets.connect.  It must FAIL against the old buggy code (where _symbol_poll_loop
+    called _reload_positions() and _open_symbols was clobbered before the break check)
+    and PASS after the fix.
+    """
+
+    def test_new_symbol_triggers_reconnect_and_resubscribe(self, tmp_path: Any) -> None:
+        """Insert ETHUSDT into DB after WS connects; _run_once must exit and the next
+        _run_once call must build a URL that includes both BTCUSDT and ETHUSDT.
+
+        Mechanism: the fake WS for session 1 first yields one BTC tick, then blocks on an
+        asyncio.Event.  Meanwhile the patched asyncio.sleep (fired by _symbol_poll_loop)
+        inserts ETHUSDT into the DB and sets the event, unblocking __anext__ which raises
+        StopAsyncIteration.  At that point _needs_reconnect is already True, so the inner
+        for-loop in _run_once sees it and breaks cleanly.
+        """
         db_path = _seed_db(tmp_path, [
             {"symbol": "BTCUSDT", "side": "long", "entry_price": 30000.0, "size": 1.0},
         ])
-        from api.markprice import MarkPriceClient
+        from api.markprice import MarkPriceClient, SYMBOL_POLL_S
 
         broadcasts: List[Dict[str, Any]] = []
-        client = MarkPriceClient(db_path=db_path, broadcast_fn=lambda m: broadcasts.append(m), ws_base_url="wss://unused")
-        client._reload_positions()
-        initial_symbols = set(client._positions.keys())
-        assert "BTCUSDT" in initial_symbols
 
-        # Simulate a new trade being opened in DB after the WS connected
-        conn = sqlite3.connect(db_path, isolation_level=None)
-        conn.execute(
-            "INSERT INTO trades (symbol, side, entry_price, size, status) VALUES ('ETHUSDT','long',3000.0,10.0,'open')"
+        async def fake_broadcast(msg: Dict[str, Any]) -> None:
+            broadcasts.append(msg)
+
+        client = MarkPriceClient(
+            db_path=db_path,
+            broadcast_fn=fake_broadcast,
+            ws_base_url="wss://testhost",
         )
-        conn.close()
 
-        # Poll loop updates _open_symbols
-        new_symbols = client._reload_positions()
-        assert "ETHUSDT" in new_symbols, "ETHUSDT must appear after DB insert"
+        # Track every URL that websockets.connect is called with
+        connect_urls: List[str] = []
 
-        # The WS loop checks: if _open_symbols != set(_positions.keys()) → exit
-        # After _reload_positions(), _positions is updated (contains both BTC and ETH)
-        # _open_symbols was set to initial_symbols (just BTC).  Simulate the check:
-        client._open_symbols = initial_symbols   # restore to pre-reload state (as if WS was connected)
-        # Now positions has BTC+ETH; _open_symbols has only BTC → mismatch → reconnect
-        mismatch = client._open_symbols != set(client._positions.keys())
-        assert mismatch, "Symbol set mismatch must trigger reconnect (loop break)"
+        # An event that the poll-sleep callback will set after inserting ETHUSDT.
+        # The session-1 FakeWS blocks on this event, so it stays alive long enough
+        # for the poll loop to detect the change and set _needs_reconnect=True.
+        eth_inserted_event: Optional[asyncio.Event] = None
+
+        session_index = [0]
+
+        class FakeWS:
+            """Async context manager + async iterator.
+            Session 0: yield one BTC tick, then block until eth_inserted_event is set.
+            Session 1: yield one ETH tick + one BTC tick, then stop.
+            """
+            def __init__(self, url: str) -> None:
+                self.url = url
+                self._session = session_index[0]
+                connect_urls.append(url)
+                session_index[0] += 1
+                self._tick_count = 0
+
+            async def __aenter__(self) -> "FakeWS":
+                return self
+
+            async def __aexit__(self, *_: Any) -> None:
+                pass
+
+            def __aiter__(self) -> "FakeWS":
+                return self
+
+            async def __anext__(self) -> str:
+                if self._session == 0:
+                    if self._tick_count == 0:
+                        self._tick_count += 1
+                        return _make_mark_message("BTCUSDT", 31000.0)
+                    # Block until the poll loop fires and inserts ETHUSDT
+                    assert eth_inserted_event is not None
+                    await eth_inserted_event.wait()
+                    raise StopAsyncIteration
+                else:
+                    # Session 1: just a couple of ticks so _run_once can complete
+                    if self._tick_count < 2:
+                        sym = "BTCUSDT" if self._tick_count == 0 else "ETHUSDT"
+                        self._tick_count += 1
+                        return _make_mark_message(sym, 31500.0 if sym == "BTCUSDT" else 2100.0)
+                    raise StopAsyncIteration
+
+        # Patch asyncio.sleep so the poll-loop sleep(SYMBOL_POLL_S) resolves instantly
+        # and inserts ETHUSDT into the DB the first time it fires.
+        poll_sleep_calls = [0]
+        original_sleep = asyncio.sleep
+
+        async def patched_sleep(n: float) -> None:
+            nonlocal eth_inserted_event
+            if abs(n - SYMBOL_POLL_S) < 1e-3:
+                poll_sleep_calls[0] += 1
+                if poll_sleep_calls[0] == 1:
+                    # Insert ETHUSDT into DB so the poll query sees a new symbol
+                    conn2 = sqlite3.connect(db_path, isolation_level=None)
+                    conn2.execute(
+                        "INSERT INTO trades (symbol, side, entry_price, size, status)"
+                        " VALUES ('ETHUSDT','long',2000.0,5.0,'open')"
+                    )
+                    conn2.close()
+                    # Unblock the FakeWS session-0 __anext__
+                    if eth_inserted_event is not None:
+                        eth_inserted_event.set()
+            # Always yield without real delay
+            await original_sleep(0)
+
+        async def run_two_sessions() -> None:
+            nonlocal eth_inserted_event
+            eth_inserted_event = asyncio.Event()
+            with patch("asyncio.sleep", patched_sleep):
+                with patch("websockets.connect", side_effect=lambda url, **kw: FakeWS(url)):
+                    # Session 1: connects BTC-only; poll fires → ETHUSDT inserted →
+                    #            _needs_reconnect=True → WS loop breaks
+                    await client._run_once()
+                    # Session 2: reconnects; _reload_positions() sees both BTC + ETH
+                    await client._run_once()
+
+        asyncio.get_event_loop().run_until_complete(run_two_sessions())
+
+        assert len(connect_urls) == 2, (
+            f"websockets.connect must be called twice (once per session); got {connect_urls}"
+        )
+        first_url, second_url = connect_urls
+        assert "btcusdt@markprice" in first_url.lower(), (
+            f"Session 1 URL must contain btcusdt@markPrice; got {first_url}"
+        )
+        # After reconnect, both symbols must appear in the subscribe URL
+        assert "ethusdt@markprice" in second_url.lower(), (
+            f"Session 2 URL must contain ethusdt@markPrice (new symbol); got {second_url}"
+        )
+        assert "btcusdt@markprice" in second_url.lower(), (
+            f"Session 2 URL must still contain btcusdt@markPrice; got {second_url}"
+        )
 
 
 # ---------------------------------------------------------------------------
