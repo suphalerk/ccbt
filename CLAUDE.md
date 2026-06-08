@@ -39,6 +39,7 @@ bot/
 ├── news_fetcher.py      → RSS/CryptoPanic news integration
 ├── telegram.py          → Lightweight Telegram alert sender (stdlib only)
 ├── telegram_commands.py → Interactive Telegram commands (/status /pnl /positions /upnl /panic etc.); /upnl = live uPnL via a thread-isolated ccxt clone (not the shared trading instance)
+├── user_data_stream.py  → Realtime TP/SL alerts (CCBT_USERDATA_WS=1): ONE account-wide Binance user-data WS as a TRIGGER (set-only) → wakes the owning bot to verify via check_closed_positions + bounded retry → alert in seconds (vs candle-paced). Dedicated ccxt for listenKey; fail-closed SOCKS (python-socks; socks5h→socks5). Flag-OFF == candle-paced (today). See docs/tickets/realtime-close-alerts/
 └── logger.py            → SQLite trade journal + AI calibration tracker + bot_health table
 dashboard/
 └── queries.py           → SQLite query helpers (symbol-filtered) + log file reader — SINGLE SOURCE OF TRUTH for all dashboard financial math; imported by the FastAPI `api/`. (The old Streamlit app.py + Plotly components.py were retired 2026-06-08.)
@@ -236,9 +237,16 @@ BOT_DATA_DIR                 — Data directory (default: ./data in Docker, . lo
 - **Realtime uPnL** (`api/markprice.py`): public Binance markPrice WS (no API key) broadcasts `type:"upnl"`
   frames on the same `/ws` channel — per-position unrealized PnL + server-computed `dist_to_stop_pct` /
   `rr_remaining` (shown in UpnlPanel) + `feed_status` (live/stale/offline). never-interfere: the dashboard
-  never calls the trading account. **Note:** auto TP/SL Telegram alerts are still **candle-paced** (the
-  per-bot loop detects closes once per candle, up to ~4h late on a 4H bot); a realtime-alert design
-  (user-data WS trigger → verify → retry) is planned in [docs/tickets/realtime-close-alerts/README.md](docs/tickets/realtime-close-alerts/README.md).
+  never calls the trading account.
+- **Realtime TP/SL alerts** (`CCBT_USERDATA_WS=1`, `bot/user_data_stream.py`): ON for testnet
+  (`deploy/macos/start.sh`), **OFF for mainnet** until proxied-WS egress is validated. A single account-wide
+  Binance user-data WS is a TRIGGER only (set-only; never alerts/DB/PnL); on an `ACCOUNT_UPDATE pa==0` /
+  SL-TP `ORDER_TRADE_UPDATE FILLED` it wakes the owning bot, which VERIFIES via the unchanged
+  `check_closed_positions` (absence in real position state) with a bounded retry, then alerts — within
+  seconds instead of waiting for the next candle. Flag-OFF == candle-paced (the per-bot loop still detects
+  closes once per candle as the backstop). Needs `python-socks` (in requirements) for the SOCKS-proxied WS;
+  the WS fails CLOSED (disabled, candle backstop) if the proxy is set but unusable. Design + PR history:
+  [docs/tickets/realtime-close-alerts/README.md](docs/tickets/realtime-close-alerts/README.md).
 - **Exchange**: Binance testnet (set `use_testnet: false` in configs to go live)
 - Docker deployment still supported for VPS: `docker compose up -d --build`
 - Nginx reverse proxy (HTTPS, basic auth, rate limiting) for VPS dashboard

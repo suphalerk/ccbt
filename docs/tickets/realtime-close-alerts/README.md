@@ -1,6 +1,6 @@
 # Ticket — Realtime TP/SL Close Alerts (user-data WS as TRIGGER, REST as TRUTH)
 
-Status: **PR1 ✅ + PR2 ✅ merged (flag-OFF, dormant) — PR3 (live testnet validation) PENDING user GO**  
+Status: **PR1 ✅ + PR2 ✅ + PR3 ✅ — LIVE on testnet (`CCBT_USERDATA_WS=1`). Mainnet stays flag-OFF.**  
 Owner: TBD  
 Flag: `CCBT_USERDATA_WS=1` (flag-OFF == today's behaviour, byte-for-byte)
 
@@ -15,9 +15,26 @@ Flag: `CCBT_USERDATA_WS=1` (flag-OFF == today's behaviour, byte-for-byte)
   REST domain = `fapi.binance.com` not the WS host; broken proxied connect → native `proxy=` kwarg) + 4
   MAJORS — fixed. 73 tests. Remaining: MAJOR-5 (CancelledError DELETE on overlapping restart) + 10 minors
   are mainnet/proxy ops concerns deferred to PR3.
-- **PR3 ⏳ PENDING** — enable `CCBT_USERDATA_WS=1` on **testnet**, restart, validate a real SL/TP fill wakes
-  within seconds + routes through `check_closed_positions`, no duplicate alerts, WS-down → candle backstop.
-  Needs a bot restart (touches live positions) → **requires explicit user GO**. Mainnet stays flag-OFF.
+- **PR3 ✅ LIVE on testnet** (2026-06-08) — `CCBT_USERDATA_WS=1` set in `deploy/macos/start.sh`; bot
+  restarted. Live validation CAUGHT + FIXED two real integration bugs that unit tests (all fakes) could not:
+  1. **`socks5h` scheme** (commit 9f0e90f) — the bot's proxy is `socks5h://127.0.0.1:1080` (curl/PySocks
+     remote-DNS), which python-socks + websockets reject ("Invalid scheme component: socks5h"). The WS
+     correctly FAILED CLOSED (disabled, bots unaffected on candle backstop, no IP leak). Fix:
+     `_normalize_socks_scheme()` maps `socks5h→socks5` / `socks4a→socks4` (remote DNS is python-socks'
+     default, so intent preserved). 4 tests incl. the exact `from_url(socks5h) raises / from_url(normalized)
+     ok` pin. Requires `python-socks` installed (added to requirements; pip-installed into system python3).
+  2. **STALE-watchdog reconnect churn** (commit 9edb823) — the user-data stream is silent on an idle account,
+     so the 60s frame-age watchdog fired every minute → reconnect + reconcile-sweep + listenKey churn. Fix:
+     dropped the frame-age watchdog; liveness is the websockets `ping_interval=20`/`ping_timeout=10` keepalive
+     (a dead socket raises ConnectionClosed → run_forever reconnects). recv() now polls with a 5s timeout
+     ONLY to check shutdown/force_reconnect; a recv timeout is a no-op.
+  - **Verified live**: WS connects through the SOCKS proxy → listenKey → reconcile sweep (keyed on open DB
+    trades, woke BERA correctly) → stable connection (no churn). **No false alert** (BERA still open, no
+    spurious close). REMAINING: a real SL/TP fill to confirm the seconds-latency wake→verify→alert path
+    end-to-end (awaiting a natural fill — user chose not to force-close).
+  - **Deferred (mainnet/ops, not blocking testnet)**: PR2 MAJOR-5 (CancelledError listenKey DELETE on
+    overlapping restart) + 10 PR2 minors. Mainnet stays flag-OFF until the proxied-WS egress IP is confirmed
+    identical to the ccxt REST egress and these are tightened.
 
 ---
 
