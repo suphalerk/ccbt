@@ -4,7 +4,7 @@
  *  - useLiveSnapshot correctly parses {type:'upnl'} WS messages and exposes upnl state
  */
 import { render, screen, act } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { UpnlPanel } from '../components/UpnlPanel'
 import type { WSUpnlData, PositionMark } from '../ws-types'
 
@@ -126,8 +126,10 @@ class MockWebSocket {
   onclose: ((evt: { code: number }) => void) | null = null
   onerror: (() => void) | null = null
   readyState = 0 // CONNECTING
+  url: string
 
-  constructor(public url: string) {
+  constructor(url: string) {
+    this.url = url
     MockWebSocket.instances.push(this)
   }
 
