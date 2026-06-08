@@ -34,7 +34,9 @@ Design notes
 - run_forever + exponential backoff mirrors api/markprice.py:366-388.
 - Two independent timers: (1) listenKey keepalive PUT every ~1800s;
   (2) 24h WS cap handled naturally by run_forever reconnect.
-- STALE watchdog: if no frame arrives for STALE_AFTER_S seconds, reconnect.
+- Liveness: websockets ping_interval/ping_timeout keepalive (NO frame-age
+  watchdog — the user-data stream is silent on an idle account, so frame-age
+  staleness would cause reconnect churn).
 - Reconnect reconcile sweep: on (re)connect, debounced sweep sets wake events
   for all coins with open DB trades (keyed on journal, not _tracked_trades).
 - Shutdown: attempt listenKey DELETE within 2s, swallow all failures; prefer
@@ -77,8 +79,10 @@ _MAINNET_REST_DOMAIN = "fapi.binance.com"
 #: Keepalive PUT interval (Binance listenKey TTL is 60 min; PUT every ~30 min)
 LISTEN_KEY_KEEPALIVE_S: int = 1800
 
-#: Seconds without a frame before we close + reconnect (user-data is sparse)
-STALE_AFTER_S: int = 60
+#: recv() poll timeout — ONLY so shutdown / force_reconnect are checked promptly
+#: while the (sparse) user-data stream is idle. NOT a staleness/liveness check:
+#: connection liveness is the websockets ping_interval/ping_timeout keepalive.
+_RECV_POLL_S: float = 5.0
 
 #: Exponential backoff base/max in seconds
 BACKOFF_BASE_S: float = 1.0
@@ -674,7 +678,6 @@ async def _run_once(
             # instead of the saturated MAX_BACKOFF_S.
             if retry_count is not None:
                 retry_count[0] = 0
-            last_frame_time = time.monotonic()
 
             while True:
                 if shutdown_event.is_set():
@@ -683,27 +686,22 @@ async def _run_once(
                     logger.info("user_data_ws: force reconnect flagged — closing session")
                     return
 
-                # Stale watchdog + frame receive with timeout
-                time_since_frame = time.monotonic() - last_frame_time
-                remaining = max(0.0, STALE_AFTER_S - time_since_frame)
-
+                # Poll recv with a SHORT timeout purely so shutdown / force_reconnect
+                # are checked promptly. A timeout is NOT staleness: the user-data
+                # stream is silent whenever the account is idle (no fills), so a
+                # frame-age watchdog treated every quiet minute as a dead connection
+                # and caused reconnect churn (PR3 testnet finding). Connection
+                # liveness is maintained by the websockets ping_interval/ping_timeout
+                # keepalive — a genuinely dead socket raises ConnectionClosed from
+                # recv() and run_forever reconnects.
                 try:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=remaining + 1.0)
-                    last_frame_time = time.monotonic()
-                    try:
-                        _handle_frame(raw, wake_events)
-                    except Exception as exc:
-                        logger.debug("user_data_ws: frame handler error: %s", exc)
+                    raw = await asyncio.wait_for(ws.recv(), timeout=_RECV_POLL_S)
                 except asyncio.TimeoutError:
-                    pass  # check stale watchdog next iteration
-
-                # Stale watchdog check
-                if time.monotonic() - last_frame_time > STALE_AFTER_S:
-                    logger.warning(
-                        "user_data_ws: no frame for %ds — reconnecting",
-                        STALE_AFTER_S,
-                    )
-                    return
+                    continue
+                try:
+                    _handle_frame(raw, wake_events)
+                except Exception as exc:
+                    logger.debug("user_data_ws: frame handler error: %s", exc)
 
     finally:
         keepalive_task.cancel()
