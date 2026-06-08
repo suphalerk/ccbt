@@ -1,5 +1,11 @@
 # Batch 2 — Live-trade context
 
+> ✅ **DONE + deployed 2026-06-08** (branch `ui-batch2-livetrade`, merged to main). All numbers computed
+> server-side (no math in TS): markprice query adds `stop_loss,take_profit`; `PositionMark` emits
+> `dist_to_stop_pct` + `rr_remaining` (null-guarded for missing/zero SL/TP); `PortfolioSummaryResponse` gains
+> `notional` (Σ abs(entry)·abs(size), matching canonical `/api/risk`). Review caught a missing notional pin
+> test (short with negative size → makes abs() load-bearing) — added. 22 markprice + 218 vitest pass.
+>
 > From [README.md](README.md) ADD_NOW #3, #5. Branch: `ui-batch2-livetrade`. TDD + review.
 > No new exchange call. Backend changes are small + server-side (no math in TS).
 

@@ -1,5 +1,10 @@
 # Batch 1 — Operational controls (highest value, backend exists)
 
+> ✅ **DONE + deployed 2026-06-08** (branch `ui-batch1-operational`, merged to main). Review caught 2 BLOCKERS
+> (mode UPPER/lower case-mismatch → banner false-alarm + dead mode-highlight from `bot_detail` hardcoding
+> `mode=None`) + 2 MAJORS (`error_count` not exposed on BotRow; dialog a11y) — all fixed. Backend now returns
+> `mode.upper()` + `error_count` on BotRow; 203 vitest + 107 api tests pass.
+
 > From [README.md](README.md) ADD_NOW #1, #2, #4. These wire EXISTING, token-gated backend endpoints
 > into the React SPA — the backend (`api/routers/control.py`) + client (`web/src/api/client.ts`
 > `setBotMode`/`setBulkMode`) already exist and are tested. This is pure frontend wiring + tests.

@@ -23,6 +23,7 @@ Interactive commands via Telegram chat — send to the bot:
 | `/balance` | Current USDT balance |
 | `/pnl` | Today + total PnL, win rate |
 | `/positions` | Open positions with entry/side/size |
+| `/upnl` | **Live unrealized PnL** per position + total (queries the exchange directly via a dedicated thread-isolated ccxt clone — realtime, not candle-paced; degrades gracefully if exchange unconnected; HTML in errors is escaped) |
 | `/bots` | All bots listed by status |
 | `/mode` | Mode distribution across bots |
 | `/panic` | Set ALL bots to PANIC |

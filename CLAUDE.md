@@ -38,7 +38,7 @@ bot/
 ├── context_builder.py   → Market context assembly for AI prompts
 ├── news_fetcher.py      → RSS/CryptoPanic news integration
 ├── telegram.py          → Lightweight Telegram alert sender (stdlib only)
-├── telegram_commands.py → Interactive Telegram commands (/status /pnl /panic etc.)
+├── telegram_commands.py → Interactive Telegram commands (/status /pnl /positions /upnl /panic etc.); /upnl = live uPnL via a thread-isolated ccxt clone (not the shared trading instance)
 └── logger.py            → SQLite trade journal + AI calibration tracker + bot_health table
 dashboard/
 └── queries.py           → SQLite query helpers (symbol-filtered) + log file reader — SINGLE SOURCE OF TRUTH for all dashboard financial math; imported by the FastAPI `api/`. (The old Streamlit app.py + Plotly components.py were retired 2026-06-08.)
@@ -228,7 +228,17 @@ BOT_DATA_DIR                 — Data directory (default: ./data in Docker, . lo
 - **RAM**: ~340 MB total (vs ~25 GB if running each bot as a separate Docker container)
 - **Start/stop**: `bash scripts/start_all_bots.sh` / `bash scripts/start_all_bots.sh stop`
 - **Dashboard**: **Vite + React SPA + FastAPI + WebSocket** (`api/` serves the `web/dist` bundle + REST + WS on one port). Managed by launchd `com.ccbt.dashboard-v2` on **127.0.0.1:8501** (`deploy/macos/start-dashboard-v2.sh`, `.venv-dash` Python 3.12); restart with `launchctl kickstart -k gui/$(id -u)/com.ccbt.dashboard-v2`. The old Streamlit dashboard was **retired + deleted 2026-06-08** (cutover N12/N13 complete); `dashboard/queries.py` is kept as the shared data layer. Rebuild the web bundle after a `web/` change: `npm --prefix web run build`. Plan/history: [docs/tickets/dashboard-rewrite/README.md](docs/tickets/dashboard-rewrite/README.md).
-- **Per-bot mode control**: mode files in `data/mode_{symbol}.json` (read each loop tick)
+- **Per-bot mode control**: mode files in `data/mode_{symbol}.json` (read each loop tick). The dashboard now
+  has UI controls wired to the token-gated `api/routers/control.py` endpoints: per-bot mode buttons on
+  BotDetailPage + global STOP-ALL/PANIC-ALL/RESUME-ALL on Portfolio (PANIC behind a confirm dialog). BotRow
+  serves `mode` UPPERCASE + `error_count` (drives the portfolio alert banner). UI plan + per-batch status:
+  [docs/tickets/dashboard-ui-improvements/README.md](docs/tickets/dashboard-ui-improvements/README.md).
+- **Realtime uPnL** (`api/markprice.py`): public Binance markPrice WS (no API key) broadcasts `type:"upnl"`
+  frames on the same `/ws` channel — per-position unrealized PnL + server-computed `dist_to_stop_pct` /
+  `rr_remaining` (shown in UpnlPanel) + `feed_status` (live/stale/offline). never-interfere: the dashboard
+  never calls the trading account. **Note:** auto TP/SL Telegram alerts are still **candle-paced** (the
+  per-bot loop detects closes once per candle, up to ~4h late on a 4H bot); a realtime-alert design
+  (user-data WS trigger → verify → retry) is planned in [docs/tickets/realtime-close-alerts/README.md](docs/tickets/realtime-close-alerts/README.md).
 - **Exchange**: Binance testnet (set `use_testnet: false` in configs to go live)
 - Docker deployment still supported for VPS: `docker compose up -d --build`
 - Nginx reverse proxy (HTTPS, basic auth, rate limiting) for VPS dashboard

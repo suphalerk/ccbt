@@ -1,5 +1,13 @@
 # Dashboard UI Improvements — Plan
 
+> **STATUS (2026-06-08):** Batch 1 ✅ DONE + deployed ([batch-1-operational.md](batch-1-operational.md)) —
+> mode buttons (#1), STOP-ALL/PANIC-ALL/RESUME-ALL (#2), alert banner (#4). Batch 2 ✅ DONE + deployed
+> ([batch-2-live-trade.md](batch-2-live-trade.md)) — SL/TP+R:R+dist% in UpnlPanel (#3), Today's-PnL/notional
+> header cards (#5). **Batch 3 ⏳ pending** ([batch-3-analytics.md](batch-3-analytics.md)) — underwater chart
+> (#6), BotGrid symbol labels (#7), Bot-table filter (#8). Each batch shipped via its own branch + TDD +
+> multi-lens review; Batch 1 review caught 2 BLOCKERS (mode case-mismatch banner false-alarm; dead
+> mode-highlight) + 2 MAJORS — all fixed before merge.
+
 > From a 2026-06-08 UI review of the CCBT v2 dashboard vs the best trading-bot dashboards (freqUI/Freqtrade,
 > Jesse, Hummingbot, OctoBot, Binance Futures, TradingView, 3Commas, Gunbot, Coinrule, crypto.dobot.trade).
 > Verdict: the dashboard is architecturally clean (no math in TS, WS hydration, correct dark-theme semantics,
