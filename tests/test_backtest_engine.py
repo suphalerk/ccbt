@@ -2240,3 +2240,155 @@ class TestFundingPIN10:
             f"force_close funding: expected pnl={expected_pnl:.4f}, "
             f"got {trade.pnl:.4f}. accrued_funding must be deducted in force_close path."
         )
+
+    def test_pin10_entry_on_settlement_candle_excludes_that_settlement_run_e2e(self):
+        """PIN-10 loop-order invariant (end-to-end run()): settlement on the entry candle
+        is EXCLUDED from accrued_funding.
+
+        This is an ASYMMETRIC behavioral pin for the run() loop order:
+
+            for i in range(1, len(df)):
+                if position is not None:
+                    _check_exit(row[i])   ← funding + exit check
+                if position is None:
+                    _check_entry(prev_row[i-1], row[i])  ← opens position at row[i]
+
+        At iteration i=8 (candle "2024-01-01 08:00"):
+            - _check_exit runs first  → position is None → skipped (no funding charged)
+            - _check_entry runs after → signal at candle 7 (07:00) fires → position opens
+
+        So the 08:00 settlement is NEVER seen by the newly opened position.
+        First settlement charged is at 16:00 (candle 16).
+
+        Fixture design (no commission, no slippage, partial_tp OFF):
+            Candle freq: 1h, starting 2024-01-01 00:00 UTC
+            Candle  7 (07:00): ema_cross_up=True (injected) → signal fires
+            Candle  8 (08:00): entry executes at close=100.0; 08:00 is a settlement
+                               but position did not exist when _check_exit ran → NOT charged
+            Candles 9-15     : hold; non-settlement or settlement but check-exit sees pos
+            Candle 16 (16:00): settlement charged; accrued_funding += size × 0.001
+            Candle 17 (17:00): high=104.0 ≥ TP=103.0 → take_profit; trade closes
+
+        Expected: accrued_funding == trade.size × 0.001  (exactly 1 settlement, not 2)
+
+        Mutation strength: if _check_entry moved ABOVE _check_exit in run(), the 08:00
+        settlement would fire against the newly opened position → accrued_funding == 2 ×
+        trade.size × 0.001 → assertion fails.  White-box math pins cannot cover this
+        loop-order invariant; only a full run() fixture can.
+
+        Hand-derivation (no fees, slippage, partial):
+            entry_price  = 100.0  (close of candle 8)
+            atr          = 1.0
+            SL           = 100.0 - 1.5×1.0 = 98.5   (below all candle lows = 99.5)
+            TP           = 100.0 + 3.0×1.0 = 103.0   (hit at candle 17 where high=104.0)
+            rate         = 0.001
+            Settlement boundaries crossed while HELD: 16:00 only (1 boundary)
+            accrued_funding = trade.size × 0.001
+        """
+        rate = 0.001
+        n = 25  # 25 candles: 00:00 to 00:00+24h
+
+        # --- Build raw OHLCV DataFrame ---
+        idx = pd.date_range("2024-01-01 00:00", periods=n, freq="1h", tz=None)
+        rows = []
+        for i in range(n):
+            if i == 17:
+                # TP candle: high=104.0 ≥ TP=103.0
+                row = {
+                    "open": 100.5, "high": 104.0, "low": 100.0, "close": 103.5,
+                    "volume": 1000.0,
+                }
+            else:
+                row = {
+                    "open": 99.7, "high": 100.5, "low": 99.5, "close": 100.0,
+                    "volume": 1000.0,
+                }
+            rows.append(row)
+        raw_df = pd.DataFrame(rows, index=idx)
+
+        # --- Patches ---
+        # add_indicators: inject indicator columns; force ema_cross_up=True at candle 7.
+        # Everything else set to values that allow a LONG entry without interference:
+        #   rsi=55 ∈ [0,100] (trading_config has rsi filters open), atr=1.0 > 0,
+        #   ema_slope=0.01 ≥ 0 (trading_config: ema_slope_min=0.0), volume_ma=500
+        #   so volume 1000 > 500×0.0 = passes trading_config's volume_mult=0.0.
+        # ema_cross_down=False everywhere to suppress shorts.
+
+        def fake_add_indicators(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+            df = df.copy()
+            df["ema_fast"] = 10.0
+            df["ema_slow"] = 9.0
+            df["rsi"] = 55.0
+            df["atr"] = 1.0
+            df["volume_ma"] = 500.0
+            df["ema_slope"] = 0.01
+            df["ema_cross_up"] = False
+            df["ema_cross_down"] = False
+            # Signal fires at candle 7 (07:00 UTC) so entry executes at candle 8 (08:00)
+            df.iloc[7, df.columns.get_loc("ema_cross_up")] = True
+            # Columns required by other strategy checks (prevent KeyError in loops)
+            for col in (
+                "bb_upper", "bb_lower", "bb_mid", "bb_width", "bb_width_pct",
+                "swing_low", "swing_high", "pullback_long", "pullback_short",
+                "ema_fast2", "ema_slow2", "regime",
+            ):
+                if col not in df.columns:
+                    df[col] = 0.0
+            return df
+
+        def fake_add_funding_rate(df: pd.DataFrame, _path: str) -> pd.DataFrame:
+            df = df.copy()
+            df["fundingRate"] = rate
+            return df
+
+        cfg = trading_config(
+            commission_rate=0.0,
+            slippage_rate=0.0,
+            partial_tp_enabled=False,
+            atr_sl_mult=1.5,
+            atr_tp_mult=3.0,
+        )
+
+        with patch("backtest.engine.add_indicators", side_effect=fake_add_indicators), \
+             patch("backtest.engine.add_funding_rate", side_effect=fake_add_funding_rate):
+            engine = BacktestEngine(cfg, initial_balance=10_000.0)
+            engine.run(raw_df)
+
+        # Must have exactly 1 trade (the LONG opened at 08:00, closed at 17:00)
+        assert len(engine.state.trades) == 1, (
+            f"Expected exactly 1 trade; got {len(engine.state.trades)}. "
+            "Check fixture: signal at candle 7 → entry at candle 8."
+        )
+        trade = engine.state.trades[0]
+
+        # Entry must be on the 08:00 candle (confirms fixture and loop-order invariant)
+        assert "08:00" in trade.entry_time, (
+            f"Expected entry at 08:00 candle; got entry_time={trade.entry_time!r}"
+        )
+        assert trade.close_reason == "take_profit", (
+            f"Expected take_profit close; got {trade.close_reason!r}"
+        )
+
+        # Core invariant: exactly 1 settlement (16:00 only), NOT 2 (not counting 08:00 entry candle).
+        #
+        # Correct behavior (loop order: exit-before-entry):
+        #     At candle 8 (08:00): _check_exit runs → position is None → no funding charged.
+        #     _check_entry opens position.
+        #     At candle 16 (16:00): _check_exit runs → position exists → 1 settlement charged.
+        #     accrued_funding = trade.size × 0.001
+        #
+        # Broken behavior (if _check_entry moved above _check_exit in run()):
+        #     At candle 8 (08:00): _check_entry opens position first.
+        #     _check_exit runs → position exists → 08:00 settlement charged.
+        #     At candle 16 (16:00): another settlement charged.
+        #     accrued_funding = 2 × trade.size × 0.001  → assertion fails.
+        expected_funding = trade.size * rate  # 1 settlement on full size
+        assert abs(trade.accrued_funding - expected_funding) < 1e-10, (
+            f"Entry-candle exclusion FAILED.\n"
+            f"  accrued_funding = {trade.accrued_funding:.6f}\n"
+            f"  expected        = {expected_funding:.6f}  (1 settlement at 16:00 only)\n"
+            f"  trade.size      = {trade.size:.4f}\n"
+            f"  If accrued ≈ 2×expected: 08:00 entry-candle was charged "
+            f"(loop order: entry before exit — invariant broken).\n"
+            f"  White-box tests cannot catch this; only an end-to-end run() fixture can."
+        )

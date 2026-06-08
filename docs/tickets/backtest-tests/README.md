@@ -116,6 +116,14 @@ fill models silently mix). Record the three deltas in docs/portfolio.md. SL-firs
 diagnostic and **re-audit any bot whose pass/fail flips**. (Separately, from the project review: taker fees +
 higher slippage re-baseline + multiple-testing discount — not this ticket.)
 
+> **DOWNSTREAM PENDING (PR-C funding leg, 2026-06-08):** The portfolio re-run for the funding-only delta has NOT
+> been executed yet. All per-bot numbers in `docs/portfolio.md` were produced by the pre-funding engine and are
+> stale with respect to PR-C. Funding deduction is non-uniform pessimism — longs held across positive-funding 8h
+> boundaries are charged; bots near the PF~1.2 floor can flip pass→fail. Do NOT use the current
+> `docs/portfolio.md` figures to make pass/fail decisions on individual bots without first running the
+> funding-only re-run. Obligation: run `research/portfolio_backtest_v2.py` with `--no-cache` against the PR-C
+> engine, record the per-bot PF deltas and any pass/fail flips in `docs/portfolio.md`, and remove this notice.
+
 ## Effort
 PR-A ~1 day (harness + characterization + snapshot + replay pin). PR-B ~0.5 day + re-run. PR-C ~1 day
 (funding is the fiddly one) + re-run. ~45-60 tests total.
