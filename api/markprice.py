@@ -342,6 +342,9 @@ class MarkPriceClient:
         except Exception as exc:
             logger.debug("markprice: _get_today_realized failed in payload: %s", exc)
             today_realized = 0.0
+        # Round components first so the three emitted numbers are internally
+        # consistent: emitted net_today == emitted today_realized + emitted total_upnl.
+        today_realized = round(today_realized, 6)
         net_today = round(today_realized + total_upnl, 6)
         return {
             "type": "upnl",
@@ -350,7 +353,7 @@ class MarkPriceClient:
                 "positions": [p.to_dict() for p in self._positions.values()],
                 "total_upnl": total_upnl,
                 "feed_status": effective,
-                "today_realized": round(today_realized, 6),
+                "today_realized": today_realized,
                 "net_today": net_today,
             },
         }

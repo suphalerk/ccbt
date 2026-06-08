@@ -1092,44 +1092,49 @@ class TestTodayRealizedAndNetToday:
             "today_realized must still be present in the payload on error"
         )
 
-    def test_ttl_cache_avoids_repeated_sql(self, tmp_path: Any) -> None:
-        """Consecutive calls within TTL must not call the underlying SQL again.
+    def test_ttl_cache_issues_one_sql_within_window_then_refreshes(
+        self, tmp_path: Any, monkeypatch: Any
+    ) -> None:
+        """Exercise the REAL _get_today_realized TTL cache (not a stub of it).
 
-        We replace _get_today_realized with a call-counting stub and call
-        get_upnl_payload twice within the TTL window.  The stub must be called
-        exactly once (first call fetches; second returns cached value).
-
-        Note: this tests the PUBLIC get_upnl_payload, not _get_today_realized
-        internals, so it remains valid if the caching implementation changes.
+        Patches the underlying SQL (dashboard.queries.get_today_pnl) with a call
+        counter and calls the real _get_today_realized twice within the TTL window
+        → SQL issued exactly ONCE (cache hit). Then forces the cache timestamp
+        back past the TTL → next call refetches (counter goes to 2). This pins the
+        '<=1/sec broadcast doesn't issue a fresh SQL on every tick' guarantee that
+        the previous stub-based test bypassed.
         """
         db_path = _seed_db(tmp_path, [])
-        from api.markprice import MarkPriceClient
+        from api.markprice import MarkPriceClient, TODAY_REALIZED_TTL_S
+        import dashboard.queries as dq
 
-        client = MarkPriceClient(db_path=db_path, broadcast_fn=lambda m: None, ws_base_url="wss://unused")
+        calls = [0]
 
-        call_count = [0]
-        original = client._get_today_realized
+        def counting_today_pnl(db_path: Any = None, symbol: Any = None) -> float:
+            calls[0] += 1
+            return 42.0
 
-        def counting_get() -> float:
-            call_count[0] += 1
-            return 42.0  # a known value
+        # _get_today_realized lazily imports get_today_pnl from dashboard.queries
+        # each call, so patching the attribute on the module takes effect.
+        monkeypatch.setattr(dq, "get_today_pnl", counting_today_pnl)
 
-        client._get_today_realized = counting_get  # type: ignore[method-assign]
+        client = MarkPriceClient(
+            db_path=db_path, broadcast_fn=lambda m: None, ws_base_url="wss://unused"
+        )
 
-        # Two back-to-back calls
-        payload1 = client.get_upnl_payload()
-        payload2 = client.get_upnl_payload()
+        v1 = client._get_today_realized()
+        v2 = client._get_today_realized()
+        assert v1 == 42.0 and v2 == 42.0
+        assert calls[0] == 1, (
+            f"SQL must be issued ONCE within the TTL window (cache hit); got {calls[0]}"
+        )
 
-        # Both must contain today_realized from our stub
-        assert payload1["data"]["today_realized"] == 42.0
-        assert payload2["data"]["today_realized"] == 42.0
-
-        # stub was called twice (once per get_upnl_payload call) because the
-        # caching lives inside _get_today_realized itself and our stub bypasses it.
-        # The important assertion is that both payloads have the correct value.
-        # (The real TTL test is that _get_today_realized internally throttles SQL.)
-        assert call_count[0] == 2, (
-            f"counting stub must be called once per get_upnl_payload call; called {call_count[0]}"
+        # Force the cached timestamp past the TTL → next call must refetch.
+        client._today_realized_ts -= (TODAY_REALIZED_TTL_S + 1.0)
+        v3 = client._get_today_realized()
+        assert v3 == 42.0
+        assert calls[0] == 2, (
+            f"expiring the TTL must trigger exactly one refresh SQL; got {calls[0]}"
         )
 
     def test_net_today_server_computed_identity(self, tmp_path: Any) -> None:
