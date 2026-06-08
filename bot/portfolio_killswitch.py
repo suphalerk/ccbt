@@ -183,7 +183,8 @@ async def run_portfolio_killswitch(
             # Don't return — keep looping and retry arming below
         else:
             # Mid-day restart: back-calculate Bangkok-midnight balance
-            realized_today = get_today_realized_by_close(db_path)
+            # Use to_thread: SQLite read blocks the event loop if held too long.
+            realized_today = await asyncio.to_thread(get_today_realized_by_close, db_path)
             start_equity = equity - realized_today
             if start_equity <= 0:
                 # Fallback: use current equity as the denominator
@@ -212,7 +213,17 @@ async def run_portfolio_killswitch(
     _halted_alerted: bool = portfolio_manager.is_halted  # don't re-alert on restore
 
     while not shutdown_event.is_set():
-        await asyncio.sleep(_MONITOR_PERIOD_S)
+        # Interruptible wait: exits within milliseconds of SIGTERM instead of
+        # blocking asyncio.gather for up to _MONITOR_PERIOD_S.  Mirrors the
+        # telegram handler pattern (bot/telegram_commands.py:819-820).
+        try:
+            await asyncio.wait_for(
+                asyncio.shield(shutdown_event.wait()),
+                timeout=_MONITOR_PERIOD_S,
+            )
+            break  # shutdown_event was set — exit immediately
+        except asyncio.TimeoutError:
+            pass  # normal case: period elapsed, run a tick
         if shutdown_event.is_set():
             break
 
@@ -243,10 +254,15 @@ async def run_portfolio_killswitch(
 async def _get_equity_with_retries(
     get_equity_fn: Callable[[], Optional[float]],
 ) -> Optional[float]:
-    """Call get_equity_fn up to _EQUITY_RETRIES times with backoff."""
+    """Call get_equity_fn up to _EQUITY_RETRIES times with backoff.
+
+    Wraps each call in asyncio.to_thread so the synchronous ccxt
+    fetch_balance() HTTP round-trip never blocks the event loop that drives
+    all ~59 bot coroutines.
+    """
     for attempt in range(_EQUITY_RETRIES):
         try:
-            equity = get_equity_fn()
+            equity = await asyncio.to_thread(get_equity_fn)
         except Exception as exc:
             logger.warning("get_equity_attempt_failed", extra={"attempt": attempt, "error": str(exc)})
             equity = None
@@ -327,7 +343,7 @@ async def _monitor_tick(
         if equity is None or equity <= 0:
             logger.warning("killswitch_still_no_equity_skipping_trip")
             return
-        realized_today = get_realized_fn(db_path)
+        realized_today = await asyncio.to_thread(get_realized_fn, db_path)
         start_equity = max(equity - realized_today, equity)  # never go below current
         portfolio_manager.start_of_day_equity = start_equity
         portfolio_manager._halt_bangkok_date = today
@@ -352,7 +368,7 @@ async def _monitor_tick(
         return
 
     try:
-        realized_today = get_realized_fn(db_path)
+        realized_today = await asyncio.to_thread(get_realized_fn, db_path)
     except Exception as exc:
         logger.error("killswitch_realized_query_failed", extra={"error": str(exc)})
         breach_window.append(False)
@@ -452,7 +468,7 @@ async def _handle_daily_rollover(
 
     # New-day realized loss (should be 0 or near-0 at rollover, but check)
     try:
-        new_day_realized = get_realized_fn(db_path)
+        new_day_realized = await asyncio.to_thread(get_realized_fn, db_path)
     except Exception:
         new_day_realized = 0.0
 

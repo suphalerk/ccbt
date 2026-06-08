@@ -677,7 +677,13 @@ async def async_main(
     if os.getenv("CCBT_KILL_SWITCH") == "1":
         from bot.portfolio_killswitch import run_portfolio_killswitch
         _ks_data_dir = os.environ.get("BOT_DATA_DIR", "data")
-        _ks_db_path = str(Path(_ks_data_dir) / "trades.db") if _ks_data_dir != "data" else "trades.db"
+        # Resolve DB path identically to TradeJournal (bot/logger.py:150-151):
+        #   empty string → "trades.db" (cwd), set value → "{data_dir}/trades.db".
+        # Must NOT special-case "data" — BOT_DATA_DIR="data" must yield
+        # "data/trades.db" to match the journal (the old != "data" guard gave the
+        # wrong path and silently prevented halt trips under that config).
+        _ks_db_env = os.environ.get("BOT_DATA_DIR", "")
+        _ks_db_path = str(Path(_ks_db_env) / "trades.db") if _ks_db_env else "trades.db"
         # Build an equity getter that calls SharedMarketData.get_equity(fresh=True)
         # (or falls back to a direct exchange call if shared_market_data is None)
         if shared_market_data is not None:

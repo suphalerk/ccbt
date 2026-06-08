@@ -1133,3 +1133,152 @@ class TestRegressionPortfolioManager:
         await pm.register_open("BTCUSDTUSDT")
         await pm.register_open("BTCUSDTUSDT")  # idempotent
         assert pm.open_count == 1
+
+
+# ---------------------------------------------------------------------------
+# 16. DB-path agreement: kill-switch vs TradeJournal resolver
+# ---------------------------------------------------------------------------
+
+class TestKsDbPathAgreement:
+    """_ks_db_path must match TradeJournal(db_path=None).db_path for all BOT_DATA_DIR values.
+
+    The MAJOR fix: the old `!= "data"` special-case diverged from the logger
+    when BOT_DATA_DIR="data", causing the kill-switch to read an empty DB and
+    never trip on real losses.
+    """
+
+    def _resolve_ks_db_path(self, env_val: Optional[str]) -> str:
+        """Replicate the fixed main_multi.py _ks_db_path resolver."""
+        db_env = env_val if env_val is not None else ""
+        return str(Path(db_env) / "trades.db") if db_env else "trades.db"
+
+    def _resolve_journal_db_path(self, env_val: Optional[str]) -> str:
+        """Replicate TradeJournal(db_path=None) resolver (bot/logger.py:150-151)."""
+        data_dir = env_val if env_val is not None else ""
+        return str(Path(data_dir) / "trades.db") if data_dir else "trades.db"
+
+    @pytest.mark.parametrize("env_val,expected", [
+        # BOT_DATA_DIR unset (empty string in get) → cwd trades.db
+        (None, "trades.db"),
+        # BOT_DATA_DIR="" (explicit empty) → cwd trades.db
+        ("", "trades.db"),
+        # BOT_DATA_DIR="data" (the mode-file default) → data/trades.db
+        ("data", str(Path("data") / "trades.db")),
+        # BOT_DATA_DIR="/abs/path" → /abs/path/trades.db
+        ("/abs/path", "/abs/path/trades.db"),
+        # BOT_DATA_DIR="rel/dir" → rel/dir/trades.db
+        ("rel/dir", str(Path("rel/dir") / "trades.db")),
+    ])
+    def test_ks_db_path_matches_journal(self, env_val, expected):
+        """_ks_db_path == TradeJournal resolver for each BOT_DATA_DIR value."""
+        ks = self._resolve_ks_db_path(env_val)
+        journal = self._resolve_journal_db_path(env_val)
+        assert ks == journal, (
+            f"BOT_DATA_DIR={env_val!r}: ks={ks!r} != journal={journal!r}"
+        )
+        assert ks == expected, f"BOT_DATA_DIR={env_val!r}: expected {expected!r}, got {ks!r}"
+
+    def test_ks_db_path_with_bot_data_dir_data(self, tmp_path):
+        """Critical case: BOT_DATA_DIR='data' must yield '<dir>/trades.db', not './trades.db'.
+
+        Uses a tmp_path subdirectory so TradeJournal can actually open the file
+        (the real 'data/' may not exist in the test cwd).
+        """
+        fake_data_dir = str(tmp_path / "data")
+        os.makedirs(fake_data_dir, exist_ok=True)
+
+        with patch.dict(os.environ, {"BOT_DATA_DIR": fake_data_dir}):
+            import importlib, main_multi
+            importlib.reload(main_multi)
+            db_env = os.environ.get("BOT_DATA_DIR", "")
+            ks_db_path = str(Path(db_env) / "trades.db") if db_env else "trades.db"
+
+        assert ks_db_path == str(Path(fake_data_dir) / "trades.db"), (
+            f"Expected {fake_data_dir}/trades.db, got {ks_db_path!r}"
+        )
+        # Confirm it matches TradeJournal resolver (logger.py:150-151)
+        from bot.logger import TradeJournal
+        with patch.dict(os.environ, {"BOT_DATA_DIR": fake_data_dir}):
+            j = TradeJournal(db_path=None)
+        assert ks_db_path == j.db_path
+        j.close()
+
+    def test_ks_db_path_unset_matches_journal(self):
+        """BOT_DATA_DIR unset: both resolve to 'trades.db'."""
+        env = {k: v for k, v in os.environ.items() if k != "BOT_DATA_DIR"}
+        with patch.dict(os.environ, env, clear=True):
+            db_env = os.environ.get("BOT_DATA_DIR", "")
+            ks_db_path = str(Path(db_env) / "trades.db") if db_env else "trades.db"
+            from bot.logger import TradeJournal
+            j = TradeJournal(db_path=None)
+        assert ks_db_path == "trades.db"
+        assert ks_db_path == j.db_path
+        j.close()
+
+
+# ---------------------------------------------------------------------------
+# 17. Interruptible monitor sleep exits on shutdown_event
+# ---------------------------------------------------------------------------
+
+class TestInterruptibleMonitorSleep:
+    """Monitor loop exits within milliseconds of shutdown_event.set()."""
+
+    @pytest.mark.asyncio
+    async def test_monitor_exits_immediately_on_shutdown(self):
+        """Simulated monitor loop exits quickly when shutdown_event is set.
+
+        Uses the fixed wait_for(shield(shutdown_event.wait()), timeout=period)
+        pattern — should complete in <<1s even with a 15s period.
+        """
+        import time
+        period = 15.0
+
+        shutdown_event = asyncio.Event()
+
+        async def _simulated_monitor():
+            """The exact loop structure from run_portfolio_killswitch."""
+            while not shutdown_event.is_set():
+                try:
+                    await asyncio.wait_for(
+                        asyncio.shield(shutdown_event.wait()),
+                        timeout=period,
+                    )
+                    break  # event set
+                except asyncio.TimeoutError:
+                    pass  # period elapsed — would run tick here
+
+        # Set the event almost immediately to simulate SIGTERM
+        async def _trigger():
+            await asyncio.sleep(0.05)  # 50 ms
+            shutdown_event.set()
+
+        start = time.monotonic()
+        await asyncio.gather(_simulated_monitor(), _trigger())
+        elapsed = time.monotonic() - start
+
+        # Should complete in well under 1s, not wait out the full 15s period
+        assert elapsed < 1.0, f"Monitor took {elapsed:.2f}s to exit — not interruptible"
+
+    @pytest.mark.asyncio
+    async def test_monitor_runs_tick_on_timeout(self):
+        """When shutdown_event is NOT set, TimeoutError fires and tick logic runs."""
+        tick_count = 0
+        period = 0.05  # 50ms for fast test
+        shutdown_event = asyncio.Event()
+
+        async def _simulated_monitor_two_ticks():
+            nonlocal tick_count
+            while not shutdown_event.is_set():
+                try:
+                    await asyncio.wait_for(
+                        asyncio.shield(shutdown_event.wait()),
+                        timeout=period,
+                    )
+                    break
+                except asyncio.TimeoutError:
+                    tick_count += 1
+                    if tick_count >= 2:
+                        shutdown_event.set()  # stop after 2 ticks
+
+        await _simulated_monitor_two_ticks()
+        assert tick_count == 2
