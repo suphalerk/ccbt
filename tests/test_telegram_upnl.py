@@ -57,6 +57,18 @@ class ErrorExchange:
         raise RuntimeError("network timeout")
 
 
+class HtmlErrorExchange:
+    """Fake exchange that raises with HTML-special chars in the message.
+
+    ccxt frequently surfaces an exchange HTML error page or raw JSON in the
+    exception string; if it reaches Telegram unescaped under parse_mode=HTML
+    the whole message is rejected with HTTP 400 and the user sees nothing.
+    """
+
+    def fetch_positions(self):
+        raise RuntimeError("<html>429 Too <b>Many</b> Requests & throttled</html>")
+
+
 # ---------------------------------------------------------------------------
 # Fixture: reset _EXCHANGE after every test to prevent state leakage
 # ---------------------------------------------------------------------------
@@ -105,6 +117,24 @@ class TestCmdUpnlExchangeError:
             tc._cmd_upnl()
         except Exception as exc:
             pytest.fail(f"_cmd_upnl raised on fetch error: {exc}")
+
+    def test_fetch_error_message_is_html_escaped(self):
+        """HTML-special chars in the exception must be escaped so Telegram's
+        HTML parser does not reject the whole error message (HTTP 400).
+
+        Teeth: without html.escape() the raw '<html>'/'<b>' tags survive and
+        this assertion fails.
+        """
+        tc.set_exchange(HtmlErrorExchange())
+        result = tc._cmd_upnl()
+        # The raw exception tags must NOT appear verbatim ...
+        assert "<html>" not in result
+        assert "<b>Many</b>" not in result
+        # ... they must be escaped instead.
+        assert "&lt;html&gt;" in result
+        assert "&amp; throttled" in result
+        # The surrounding intentional markup is still present.
+        assert "<i>Error fetching uPnL:" in result
 
 
 class TestCmdUpnlTotalCalculation:

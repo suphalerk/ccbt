@@ -18,6 +18,7 @@ Commands:
 """
 
 import asyncio
+import html
 import json
 import logging
 import os
@@ -566,7 +567,7 @@ def _cmd_upnl() -> str:
         return (
             "<b>💰 Unrealized PnL</b>\n"
             "━━━━━━━━━━━━━━━\n"
-            f"<i>Error fetching uPnL: {exc}</i>"
+            f"<i>Error fetching uPnL: {html.escape(str(exc))}</i>"
         )
 
     # Keep only positions with nonzero size
@@ -733,7 +734,7 @@ def _dispatch(text: str) -> Optional[str]:
         return handler()
     except Exception as exc:
         logger.exception("command_handler_error", extra={"cmd": base, "error": str(exc)})
-        return f"Error running {base}: {exc}"
+        return f"Error running {html.escape(base)}: {html.escape(str(exc))}"
 
 
 # ---------------------------------------------------------------------------
