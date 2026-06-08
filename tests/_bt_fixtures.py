@@ -9,8 +9,17 @@ make_ohlcv(n, ...)
     Build a deterministic DataFrame of n closed candles with configurable
     price-trend, ATR, and funding-rate columns.
 
+make_trading_ohlcv(n, ...)
+    Build an alternating bull/bear raw OHLCV DataFrame that produces genuine
+    EMA(9)/EMA(21) crossovers after add_indicators() runs inside run().
+    Use this for end-to-end run()-based tests that need len(trades) > 0.
+
 base_config(**overrides)
     Return a minimal BacktestEngine config dict with all optional features OFF.
+
+trading_config(**overrides)
+    Like base_config() but with RSI/volume/slope filters relaxed so
+    ema_crossover signals fire on make_trading_ohlcv() fixtures.
 
 open_position(engine, side, entry_price, stop_loss, take_profit, ...)
     Build a BacktestTrade, seed engine.state, and charge entry commission so
@@ -21,6 +30,7 @@ open_position(engine, side, entry_price, stop_loss, take_profit, ...)
 from __future__ import annotations
 
 import copy
+import math
 from typing import Optional
 
 import pandas as pd
@@ -75,6 +85,60 @@ def make_ohlcv(
 
     df = pd.DataFrame(rows, index=idx)
     return df
+
+
+def make_trading_ohlcv(
+    n: int = 300,
+    *,
+    base_price: float = 1000.0,
+    move_per_candle: float = 2.0,
+    leg_length: int = 50,
+    start: str = "2024-01-01",
+    freq: str = "1h",
+) -> pd.DataFrame:
+    """Build an alternating bull/bear OHLCV fixture that produces real EMA crossovers.
+
+    Design: price alternates between +move/candle (bull leg) and -move/candle (bear leg)
+    for leg_length candles each.  A small sine wobble creates realistic candle bodies
+    without disrupting the trend.  After add_indicators() runs inside engine.run(),
+    EMA9 crosses EMA21 roughly 15-20 candles into each regime flip, producing
+    at least 2 genuine entries per 100 candles.
+
+    This is the same fixture used in test_backtest_snapshot.py (TestGoldenSnapshot).
+    Use it for end-to-end run() tests that need len(trades) >= 2.
+
+    Parameters
+    ----------
+    n:              Total candles (>=200 recommended for several crossovers).
+    base_price:     Starting close price.
+    move_per_candle: Absolute price move per candle in each leg.
+    leg_length:     Candles per bull/bear leg (50 = several crossovers per 300 bars).
+    start:          ISO date for index start.
+    freq:           Candle frequency (e.g. "1h", "4h").
+    """
+    idx = pd.date_range(start, periods=n, freq=freq, tz=None)
+
+    prices = []
+    base = base_price
+    for i in range(n):
+        cycle_pos = i % (leg_length * 2)
+        move = +move_per_candle if cycle_pos < leg_length else -move_per_candle
+        base += move
+        wobble = (move_per_candle * 0.25) * math.sin(2 * math.pi * i / 7)
+        prices.append(base + wobble)
+
+    rows = []
+    for c in prices:
+        half_atr = move_per_candle  # High/low bracket wider than wobble
+        rows.append({
+            "open":   c - move_per_candle * 0.5,
+            "high":   c + half_atr,
+            "low":    c - half_atr,
+            "close":  c,
+            "volume": 1000.0,
+        })
+
+    return pd.DataFrame(rows, index=idx)
 
 
 def make_candle(
@@ -228,6 +292,33 @@ def base_config(**overrides) -> dict:
     cfg = copy.deepcopy(_BASE_CFG)
     cfg.update(overrides)
     return cfg
+
+
+def trading_config(**overrides) -> dict:
+    """Like base_config() but RSI/volume/slope filters relaxed so signals fire.
+
+    Use with make_trading_ohlcv() in end-to-end run() tests that need
+    len(trades) >= 2.  The relaxed filters match those in test_backtest_snapshot.py.
+
+    Relaxed defaults:
+        rsi_min=0, rsi_max=100 (all RSI values pass)
+        rsi_long_min=0, rsi_long_max=100
+        rsi_short_min=0, rsi_short_max=100
+        volume_mult=0.0 (no volume requirement)
+        ema_slope_min=0.0 (no slope requirement)
+    """
+    base = base_config(
+        rsi_min=0,
+        rsi_max=100,
+        rsi_long_min=0,
+        rsi_long_max=100,
+        rsi_short_min=0,
+        rsi_short_max=100,
+        volume_mult=0.0,
+        ema_slope_min=0.0,
+    )
+    base.update(overrides)
+    return base
 
 
 # ---------------------------------------------------------------------------

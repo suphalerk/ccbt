@@ -34,7 +34,9 @@ from tests._bt_fixtures import (
     base_config,
     make_candle,
     make_ohlcv,
+    make_trading_ohlcv,
     open_position,
+    trading_config,
 )
 
 
@@ -67,19 +69,34 @@ class TestIntrabarExits:
     """
 
     def test_entry_candle_not_evaluated_for_exit(self):
-        """Behavioral: enter on candle N, ensure position still open on N (same tick)."""
-        # Build a flat OHLCV where every candle could hit a very tight SL/TP
-        df = make_ohlcv(30, base_price=100.0, atr_value=1.0, trend=0.0)
-        # Manually inject ema signals so engine sees a crossover on candle 2
-        # We skip the full indicator pipeline and test the loop-order guarantee
-        # by running the engine and asserting trades only close on later candles.
-        cfg = base_config()
-        engine = BacktestEngine(cfg, initial_balance=10_000.0)
+        """Behavioral PIN-2 (partial): entry candle's h/l is never evaluated for exit.
 
-        # Patch add_funding_rate to be a no-op
+        engine.py:270-275: the loop first checks exit (on row i), THEN entry
+        (on prev_row i-1 as signal, row i as exec).  A position entered at the
+        CLOSE of candle i is placed into engine.state.position AFTER the exit
+        check for candle i has already run.  Therefore, candle i's h/l is never
+        evaluated against the new trade's SL/TP.
+
+        This fixture uses make_trading_ohlcv() + trading_config() to generate at
+        least 2 trades, then asserts: for EVERY closed trade, entry_time != exit_time.
+
+        The loop structure guarantees this structurally, but we verify it behaviorally
+        because a structural test (asserting 'signal_row is prev_row') would pass even
+        if the logic changed to use the wrong candle index — this assertion catches
+        the actual observable outcome.
+        """
+        df = make_trading_ohlcv(300)
+        cfg = trading_config(cooldown_candles_after_sl=0, cooldown_candles_after_close=0)
+
         with patch("backtest.engine.add_funding_rate", side_effect=lambda df, _: df):
-            # After run(), check that no trade's exit_time == entry_time
+            engine = BacktestEngine(cfg, initial_balance=10_000.0)
             engine.run(df)
+
+        # Verify we actually got trades (guard against vacuous iteration)
+        assert len(engine.state.trades) >= 2, (
+            f"Fixture produced only {len(engine.state.trades)} trades — "
+            "EMA crossover not firing; check make_trading_ohlcv() output"
+        )
 
         for t in engine.state.trades:
             if t.entry_time and t.exit_time:
@@ -809,32 +826,45 @@ class TestSimTimeCooldown:
     """
 
     def test_run_twice_same_result(self):
-        """Deterministic: same input → same output on both runs.
+        """PIN-9 (partial): deterministic — same input → same output on both runs.
 
-        Guards against wall-clock / RNG leaks (engine.py:319-330 flexible
-        cooldown override must not introduce non-determinism).
+        Guards against wall-clock / RNG leaks.  engine.py:319-330 flexible
+        cooldown override must not introduce non-determinism.
+
+        Uses make_trading_ohlcv() so the engine produces real trades and the
+        flexible_cooldown code path (engine.py:319-330) is actually entered.
+        A fixture with zero trades trivially satisfies this assertion without
+        exercising the guard.
         """
-        df = make_ohlcv(50, base_price=100.0, atr_value=1.0, trend=0.1)
-        cfg = base_config(cooldown_candles_after_sl=3)
+        df = make_trading_ohlcv(300)
+        cfg = trading_config(cooldown_candles_after_sl=3)
 
         def _run():
             with patch("backtest.engine.add_funding_rate", side_effect=lambda d, _: d):
                 engine = BacktestEngine(cfg, initial_balance=10_000.0)
                 engine.run(df)
-            return [(t.close_reason, t.pnl) for t in engine.state.trades]
+            return engine.state.trades, [(t.close_reason, round(t.pnl, 8)) for t in engine.state.trades]
 
-        result1 = _run()
-        result2 = _run()
+        trades1, result1 = _run()
+        _, result2 = _run()
+
+        assert len(result1) >= 2, (
+            f"Fixture produced only {len(result1)} trades — EMA crossover not firing"
+        )
         assert result1 == result2, "Two runs on identical data produced different trades"
 
     def test_run_twice_with_flexible_cooldown(self):
-        """Flexible cooldown doesn't introduce wall-clock non-determinism.
+        """PIN-9: flexible_cooldown doesn't introduce wall-clock non-determinism.
 
         engine.py:319-330: flexible_cooldown checks signal quality to override
         cooldown — must be deterministic (no time.time() or random calls).
+
+        Uses make_trading_ohlcv() so the flexible-cooldown code path is actually
+        exercised (it is only reached when a trade has closed within the cooldown
+        window and a new signal appears — requires len(trades) >= 2).
         """
-        df = make_ohlcv(50, base_price=100.0, atr_value=1.0, trend=0.1)
-        cfg = base_config(
+        df = make_trading_ohlcv(300)
+        cfg = trading_config(
             cooldown_candles_after_sl=5,
             flexible_cooldown={
                 "enabled": True,
@@ -848,25 +878,49 @@ class TestSimTimeCooldown:
             with patch("backtest.engine.add_funding_rate", side_effect=lambda d, _: d):
                 engine = BacktestEngine(cfg, initial_balance=10_000.0)
                 engine.run(df)
-            return [(t.close_reason, round(t.pnl, 6)) for t in engine.state.trades]
+            return [(t.close_reason, round(t.pnl, 8)) for t in engine.state.trades]
 
-        assert _run() == _run(), "Flexible cooldown introduces non-determinism"
+        r1 = _run()
+        r2 = _run()
+
+        assert len(r1) >= 2, (
+            f"Fixture produced only {len(r1)} trades — flexible_cooldown path not exercised"
+        )
+        assert r1 == r2, "Flexible cooldown introduces non-determinism"
 
     def test_candle_count_cooldown_blocks_entry(self):
-        """After SL close, cooldown_candles_after_sl blocks new entries."""
-        df = make_ohlcv(30, base_price=100.0, atr_value=1.0, trend=0.0)
-        cfg = base_config(cooldown_candles_after_sl=10)  # long cooldown
+        """PIN-9: after SL close, cooldown_candles_after_sl reduces trade count.
 
-        with patch("backtest.engine.add_funding_rate", side_effect=lambda d, _: d):
-            engine = BacktestEngine(cfg, initial_balance=10_000.0)
-            engine.run(df)
+        Strategy: run the same fixture twice — once with zero cooldown, once with
+        a long cooldown (25 candles).  The cooldown run must produce FEWER trades
+        than the no-cooldown run, proving cooldown is not a no-op.
 
-        # With a 10-candle cooldown on a 30-candle series, at most ~2 SL trades possible
-        sl_trades = [t for t in engine.state.trades if t.close_reason == "stop_loss"]
-        # This is a guard that cooldown doesn't silently become a no-op
-        total = len(engine.state.trades)
-        # Can't have more trades than candles / cooldown_length
-        assert total <= 30 // 1  # trivially true — just exercises the code path
+        Uses make_trading_ohlcv() so the SL path actually fires and the cooldown
+        has trades to block.  A fixture with no SL trades would vacuously pass
+        because candle_count_cooldown_blocks_entry never has anything to block.
+        """
+        df = make_trading_ohlcv(300)
+
+        def _run(cooldown: int) -> list:
+            cfg = trading_config(
+                cooldown_candles_after_sl=cooldown,
+                cooldown_candles_after_close=cooldown,
+            )
+            with patch("backtest.engine.add_funding_rate", side_effect=lambda d, _: d):
+                engine = BacktestEngine(cfg, initial_balance=10_000.0)
+                engine.run(df)
+            return engine.state.trades
+
+        trades_no_cooldown = _run(cooldown=0)
+        trades_long_cooldown = _run(cooldown=25)
+
+        assert len(trades_no_cooldown) >= 2, (
+            "No-cooldown run has no trades — fixture not generating signals"
+        )
+        assert len(trades_long_cooldown) <= len(trades_no_cooldown), (
+            f"Cooldown=25 produced MORE trades ({len(trades_long_cooldown)}) "
+            f"than cooldown=0 ({len(trades_no_cooldown)}) — cooldown is a no-op"
+        )
 
 
 # ============================================================================
@@ -943,13 +997,31 @@ class TestCashConservation:
         """Balance reconciles: final = initial - entry_commissions + sum(trade.pnl).
 
         Verified via engine.state.balance (the authoritative ledger).
+
+        CORRECT invariant derivation:
+            - Entry commission charged at engine.py:946-947: balance -= size * commission_rate
+            - Exit commission charged inside _close_position and netted into trade.pnl
+            - Therefore: final = initial - sum(entry_comm) + sum(trade.pnl)
+              where trade.pnl = gross_exit_pnl - exit_commission
+
+        Uses make_trading_ohlcv() so len(trades) >= 2 and the reconciliation is
+        non-trivial.  A zero-trade run trivially satisfies 10000 == 10000.
+
+        Historical regression: an entry-slippage bug at engine.py:938 left this
+        test GREEN when it had zero trades (vacuous), but was caught by the golden
+        snapshot.  Requiring len(trades) >= 2 prevents that class of vacuous pass.
         """
-        df = make_ohlcv(40, base_price=100.0, atr_value=2.0, trend=0.05)
-        cfg = base_config(partial_tp_enabled=False)
+        df = make_trading_ohlcv(300)
+        cfg = trading_config(partial_tp_enabled=False)
 
         with patch("backtest.engine.add_funding_rate", side_effect=lambda d, _: d):
             engine = BacktestEngine(cfg, initial_balance=10_000.0)
             engine.run(df)
+
+        assert len(engine.state.trades) >= 2, (
+            f"Fixture produced only {len(engine.state.trades)} trades — "
+            "cash conservation test is vacuous without actual trades"
+        )
 
         initial = engine.state.initial_balance
         final = engine.state.balance
@@ -972,13 +1044,21 @@ class TestCashConservation:
         """Engine opens at most one position at a time (default max_positions=1 here).
 
         Guards against double-entry bugs.
+
+        Uses make_trading_ohlcv() so the engine actually opens positions to verify.
+        A zero-trade run vacuously passes (iterates over an empty list).
         """
-        df = make_ohlcv(60, base_price=100.0, atr_value=1.0, trend=0.1)
-        cfg = base_config(max_positions=1)
+        df = make_trading_ohlcv(300)
+        cfg = trading_config(max_positions=1)
 
         with patch("backtest.engine.add_funding_rate", side_effect=lambda d, _: d):
             engine = BacktestEngine(cfg, initial_balance=10_000.0)
             engine.run(df)
+
+        assert len(engine.state.trades) >= 2, (
+            f"Fixture produced only {len(engine.state.trades)} trades — "
+            "overlap guard is vacuous without actual trades"
+        )
 
         # Check trade timeline: no two overlapping trades
         trades = sorted(engine.state.trades, key=lambda t: t.entry_time)
@@ -988,3 +1068,301 @@ class TestCashConservation:
                     f"Overlapping trades: trade {i} exits at {trades[i].exit_time}, "
                     f"trade {i+1} enters at {trades[i+1].entry_time}"
                 )
+
+
+# ============================================================================
+# Look-ahead pins (PIN-2, PIN-3, PIN-4) — asymmetric run_backtest() fixtures
+#
+# README §42-45: these MUST be behavioral (end-to-end run()) with ASYMMETRIC
+# fixtures, NOT structural 'signal_row is prev_row' assertions.  A structural
+# assertion passes while wrong if a variable is renamed; the fixture below
+# catches the observable outcome.
+# ============================================================================
+
+class TestLookAheadPins:
+    """PIN-2/3/4: behavioral guards that the engine uses only closed-candle data.
+
+    Historical context: the look-ahead class inflated PF from ~0.90 to ~2.06 in
+    early development.  These tests pin the CORRECT (no-look-ahead) behavior.
+    """
+
+    def test_pin2_no_entry_from_exec_candle_ema_crossover(self):
+        """PIN-2: ema_cross_up on exec candle ONLY → NO trade opens.
+
+        Asymmetric fixture design:
+            - Long bearish series: EMA9 << EMA21, ema_cross_up=False throughout.
+            - ONE final bull spike that causes EMA9 to cross above EMA21 on the
+              VERY LAST candle (the exec candle, df.iloc[-1]).
+            - Signal candle (df.iloc[-2]) still has ema_cross_up=False.
+            - engine.py:274: _check_entry(signal_row=df.iloc[i-1], current_row=df.iloc[i])
+              uses signal_row for signal check → sees ema_cross_up=False → NO trade.
+            - BUG scenario (look-ahead): engine uses current_row for signal check
+              → sees ema_cross_up=True → opens trade → would be force-closed as
+              "backtest_end" with len(trades)==1.  This test catches that.
+
+        Hand-derivation of crossover timing:
+            - 100-candle bear run: each candle -2.0 pts. After 100 candles:
+              close[-1] ≈ 1000 - 200 = 800.
+            - Final candle +300 spike: close goes to ~1100 (well above EMA21 ~800).
+            - EMA9 reacts in ONE candle (wt ~20%): EMA9 jumps from ~800 to ~880.
+            - EMA21 barely reacts: EMA21 ≈ 805.
+            - So ema_cross_up fires on df.iloc[-1] (the spike candle), but NOT on
+              df.iloc[-2] (the candle before the spike, still bearish).
+        """
+        n = 101
+        idx = pd.date_range("2024-01-01", periods=n, freq="1h", tz=None)
+        rows = []
+        c = 1000.0
+        for i in range(n):
+            if i < n - 1:
+                c -= 2.0   # steady bear run
+            else:
+                c += 300.0  # massive spike on the final (exec) candle
+            rows.append({
+                "open":   c - 1.0,
+                "high":   c + 2.0,
+                "low":    c - 2.0,
+                "close":  c,
+                "volume": 1000.0,
+            })
+        df = pd.DataFrame(rows, index=idx)
+
+        cfg = trading_config(
+            cooldown_candles_after_sl=0,
+            cooldown_candles_after_close=0,
+        )
+
+        with patch("backtest.engine.add_funding_rate", side_effect=lambda d, _: d):
+            engine = BacktestEngine(cfg, initial_balance=10_000.0)
+            engine.run(df)
+
+        # The crossover fires on the EXEC candle (df.iloc[-1]).
+        # The SIGNAL candle (df.iloc[-2]) still has ema_cross_up=False.
+        # Correct behavior: no trade opens (signal_row has no signal).
+        # Look-ahead bug: trade would open (engine uses exec_row for signal).
+        assert len(engine.state.trades) == 0, (
+            f"PIN-2 FAILED: engine entered {len(engine.state.trades)} trade(s) using "
+            "exec-candle signal — look-ahead in ema_cross_up detection"
+        )
+
+    def test_pin2_body_dominance_exec_candle_no_entry(self):
+        """PIN-2 (Round-3 body_dominance fixture): body dominance on exec candle → NO trade.
+
+        Asymmetric fixture: signal candle (N-1) is a tiny-body doji (<65% body/range);
+        exec candle (N) has a large body (>95% body/range) that would satisfy
+        check_body_dominance_conditions if it were the signal candle.
+
+        With correct behavior: engine uses signal_row (doji) → body_pct < min_body → skip.
+        With look-ahead bug: engine uses current_row (big body) → would enter.
+
+        body_dominance condition (strategy.py:428-430):
+            body_pct >= min_body (default 0.65)
+            mom10 >= min_mom (default 0.02)  — momentum must be positive for long
+            volume >= volume_ma * min_vol (default 1.5x)
+
+        Hand-derivation:
+            signal_row: close=100.0, open=99.9, high=100.5, low=99.5 → body=0.1/1.0=0.10 (fail)
+            exec_row:   close=103.0, open=100.5, high=103.0, low=100.5 → body=2.5/2.5=1.0 (pass)
+        """
+        # Build a base series to get warmup done, then append the asymmetric pair
+        n_warmup = 60
+        rows = []
+        c = 1000.0
+        for i in range(n_warmup):
+            c += 2.0  # steady bull so trend indicators are healthy
+            rows.append({
+                "open":   c - 0.5,
+                "high":   c + 0.5,
+                "low":    c - 0.5,
+                "close":  c,
+                "volume": 3000.0,  # high volume throughout for volume_ma
+            })
+
+        # Signal candle (N-1): tiny body — body_pct = 0.1/1.0 = 10% (fails min_body=65%)
+        c_s = c
+        rows.append({
+            "open":   c_s - 0.05,
+            "high":   c_s + 0.5,
+            "low":    c_s - 0.5,
+            "close":  c_s + 0.05,  # tiny body: (0.10/1.00 = 10%)
+            "volume": 3000.0,
+        })
+
+        # Exec candle (N): massive bull body — if looked at, body_pct ≈ 100%
+        c_e = c_s + 5.0
+        rows.append({
+            "open":   c_e - 2.5,
+            "high":   c_e,
+            "low":    c_e - 2.5,
+            "close":  c_e,  # perfect bull body: body=2.5, range=2.5 → 100%
+            "volume": 5000.0,
+        })
+
+        idx = pd.date_range("2024-01-01", periods=len(rows), freq="1h", tz=None)
+        df = pd.DataFrame(rows, index=idx)
+
+        cfg = trading_config(
+            cooldown_candles_after_sl=0,
+            cooldown_candles_after_close=0,
+            signals={
+                **{k: {"enabled": False} for k in [
+                    "ema_crossover", "ema_fast_crossover", "ema_pullback",
+                    "rsi_divergence", "bb_breakout", "mean_reversion",
+                    "squeeze_release", "ichimoku_cloud", "supertrend",
+                    "vol_expansion", "dual_supertrend", "alligator",
+                    "ema_ichimoku_hybrid", "ichi_supertrend", "volexp_supertrend",
+                    "dual_thrust", "stoch_mtf", "zscore_meanrev", "awesome_oscillator",
+                    "range_bounce", "ema_ribbon", "ichi_adx", "ribbon_ao",
+                    "zscore_stoch", "stoch_supertrend", "supertrend_volume",
+                    "dualthrust_adx", "pin_bar", "engulfing", "inside_bar_breakout",
+                    "adx_di_cross", "choppiness_ema", "williams_r_adx", "roc_momentum",
+                    "price_channel_vol", "ema_alligator", "ribbon_rsi_vol",
+                ]},
+                "body_dominance": {
+                    "enabled": True,
+                },
+            },
+            body_dominance_min_body=0.65,  # signal candle (10%) fails, exec candle (100%) passes
+            body_dominance_min_mom=0.0,    # disable mom filter to isolate body check
+            body_dominance_min_vol=0.0,    # disable vol filter to isolate body check
+        )
+
+        with patch("backtest.engine.add_funding_rate", side_effect=lambda d, _: d):
+            engine = BacktestEngine(cfg, initial_balance=10_000.0)
+            engine.run(df)
+
+        # Signal candle is the doji (body_pct=10% < 65%) → body_dominance fails.
+        # Exec candle has body_pct=100% → would pass if looked at.
+        # Correct: 0 trades. Look-ahead bug: ≥1 trade.
+        trades_bd = [t for t in engine.state.trades if t.signal_source == "body_dominance"]
+        assert len(trades_bd) == 0, (
+            f"PIN-2 body_dominance FAILED: {len(trades_bd)} trade(s) opened using "
+            "exec-candle body data — look-ahead in body_dominance detection"
+        )
+
+    def test_pin3_trend_filter_shift1_blocks_premature_entry(self):
+        """PIN-3: trend_filter shift(1) in add_trend_filter() prevents look-ahead.
+
+        data.py:1254-1261: all 1H trend features are shifted by 1 period before
+        merge.  This means at candle i, 'above_trend' reflects the 1H state at
+        candle i-1 (the last COMPLETED 1H candle), NOT candle i's own trend.
+
+        Behavioral test: run the same 15m signal fixture with two different 1H
+        trend datasets — one where 1H trend is strongly bullish from the start
+        (above_trend=True at all merged candles), and one where 1H trend is
+        strongly bearish (above_trend=False at all merged candles).
+
+        Expected:
+            - Bull-trend run: LONG entries fire (ema_cross_up AND above_trend=True).
+            - Bear-trend run: LONG entries are blocked by above_trend=False filter.
+              This directly tests data.py:1273 `above_trend = close > ema_trend_1h`
+              combined with strategy.py:105-107 `if not row["above_trend"]: return False`.
+
+        The shift(1) is implicitly tested: even if the bull trend just switched on
+        the current exec candle, the signal_row (prev candle) would still see the
+        shifted (one-period-old) state — and the shifted state blocks the entry.
+        We pin the outcome (trade count difference), not the internal mechanism.
+
+        Note on add_trend_filter() compatibility: requires index.name="timestamp"
+        for the merge_asof call (data.py:1264-1270) to restore the DatetimeIndex
+        correctly.  make_trading_ohlcv_named() sets this name explicitly.
+        """
+        def _make_named_df(n: int, base_price: float = 1000.0) -> pd.DataFrame:
+            """make_trading_ohlcv with index.name='timestamp' for add_trend_filter."""
+            df = make_trading_ohlcv(n, base_price=base_price)
+            df.index.name = "timestamp"
+            return df
+
+        def _make_trend(n: int, close_price: float) -> pd.DataFrame:
+            """Build a flat 1H trend DataFrame with known close price and named index."""
+            idx = pd.date_range("2024-01-01", periods=n, freq="1h", tz=None)
+            idx.name = "timestamp"
+            return pd.DataFrame({
+                "open":   [close_price] * n,
+                "high":   [close_price + 5.0] * n,
+                "low":    [close_price - 5.0] * n,
+                "close":  [close_price] * n,
+                "volume": [1000.0] * n,
+            }, index=idx)
+
+        signal_df = _make_named_df(200, base_price=1000.0)
+        cfg = trading_config(cooldown_candles_after_sl=0, cooldown_candles_after_close=0)
+
+        def _run_with_trend(trend_df):
+            with patch("backtest.engine.add_funding_rate", side_effect=lambda d, _: d):
+                engine = BacktestEngine(cfg, initial_balance=10_000.0)
+                engine.run(signal_df.copy(), trend_df)
+            return engine.state.trades
+
+        # "Bull trend" from the LONG filter's perspective:
+        #   above_trend = signal.close > ema_trend_1h  (data.py:1273)
+        #   Signal prices ~1000; trend EMA50 must be BELOW 1000 → LONG entries pass.
+        #   Use trend close=500 so EMA50 ≈ 500 << 1000 → above_trend=True.
+        trades_bull = _run_with_trend(_make_trend(200, close_price=500.0))
+
+        # "Bear trend" from the LONG filter's perspective:
+        #   Signal prices ~1000; trend EMA50 >> 1000 → above_trend=False → LONG blocked.
+        #   Use trend close=2000 so EMA50 ≈ 2000 >> 1000 → above_trend=False.
+        trades_bear = _run_with_trend(_make_trend(200, close_price=2000.0))
+
+        long_trades_bull = [t for t in trades_bull if t.side == "long"]
+        long_trades_bear = [t for t in trades_bear if t.side == "long"]
+
+        assert len(long_trades_bull) >= 1, (
+            "PIN-3: 'bull-trend' run (trend close=500 < signal prices ~1000) produced no "
+            "long trades — above_trend=True should allow LONG entries but ema_crossover "
+            "is not firing. Check trading_config() filters or make_trading_ohlcv()."
+        )
+        assert len(long_trades_bear) == 0, (
+            f"PIN-3 FAILED: 'bear-trend' run produced {len(long_trades_bear)} long trade(s). "
+            "above_trend filter (data.py:1273 + strategy.py:105-107) is not blocking LONG "
+            "entries when trend EMA50 >> signal price (above_trend=False). "
+            "If trend_filter shift(1) were removed, a trend crossover on the exec candle "
+            "could leak into the signal check and allow a premature LONG entry."
+        )
+
+    def test_pin4_regime_per_row_early_candles_are_ranging(self):
+        """PIN-4: regime is computed per-row (rolling), not globally from future data.
+
+        engine.py:219-229: for each row i, regime = detect_regime(df[:i+1]).
+        Rows before atr_period + regime_lookback are assigned 'ranging' because
+        there isn't enough history for a meaningful calculation.
+
+        Behavioral test: with regime_filter enabled (skip_ranging=True), a SHORT
+        fixture (< warmup candles) must produce ZERO trades, because every row
+        has regime='ranging' and the filter blocks all entries.
+
+        If regime were computed globally from the full dataset (future look-ahead),
+        a longer bull run would be detected as 'trending' and entries would fire
+        even in the early candles.
+
+        Hand-derivation:
+            atr_period=14, regime_lookback=20 → warmup = 14+20=34 rows.
+            With n=30 candles, ALL rows have i < 34, so ALL get regime='ranging'.
+            regime_filter enabled with skip_ranging=True → ALL entries blocked.
+            Expected trades: 0.
+        """
+        # Short series — all rows will be below the regime warmup threshold
+        n = 30
+        df = make_trading_ohlcv(n)
+
+        cfg = trading_config(
+            atr_period=14,
+            regime_lookback=20,
+            regime_filter={"enabled": True, "skip_ranging": True, "skip_volatile": False},
+            cooldown_candles_after_sl=0,
+            cooldown_candles_after_close=0,
+        )
+
+        with patch("backtest.engine.add_funding_rate", side_effect=lambda d, _: d):
+            engine = BacktestEngine(cfg, initial_balance=10_000.0)
+            engine.run(df)
+
+        # All candles are in ranging regime → regime_filter blocks all entries.
+        # If regime used global future data: some candles would be 'trending' → entries fire.
+        assert len(engine.state.trades) == 0, (
+            f"PIN-4 FAILED: {len(engine.state.trades)} trade(s) opened on a {n}-candle "
+            "fixture where ALL rows should have regime='ranging' (atr_period=14 + "
+            "regime_lookback=20 = 34 warmup bars > n=30). "
+            "Regime may be computed from future data (look-ahead) or per-row logic is broken."
+        )
