@@ -16,9 +16,9 @@
  *   - Exit markers placed at timestamp + duration_seconds (both columns exist).
  *   - Empty/unavailable states handled gracefully.
  */
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { BotRow, TradeRow, CandlesResponse } from '../api/client'
 import { formatMoney, formatPct, formatPF, formatDuration } from '../utils/format'
@@ -90,6 +90,173 @@ function ModeBadge({ mode }: { mode: string | null }) {
   const cfg = MODE_BADGE_MAP[mode]
   return (
     <span className={`text-[10px] px-1.5 py-0.5 rounded ${cfg.className}`}>{cfg.label}</span>
+  )
+}
+
+// ============================================================================
+// Panic confirm dialog
+// ============================================================================
+
+interface PanicConfirmDialogProps {
+  title: string
+  message: string
+  onConfirm: () => void
+  onCancel: () => void
+}
+
+function PanicConfirmDialog({ title, message, onConfirm, onCancel }: PanicConfirmDialogProps) {
+  return (
+    <div
+      data-testid="panic-confirm-dialog"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="bg-[#12161F] border border-red-500/50 rounded-lg p-6 max-w-sm w-full mx-4 shadow-2xl">
+        <h3 className="text-base font-bold text-red-400 mb-2">{title}</h3>
+        <p className="text-sm text-slate-300 mb-5">{message}</p>
+        <div className="flex gap-3 justify-end">
+          <button
+            data-testid="panic-confirm-cancel"
+            onClick={onCancel}
+            className="px-4 py-1.5 rounded text-sm bg-[#1A1F2E] border border-[#2A3245] text-slate-300 hover:border-slate-500 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            data-testid="panic-confirm-ok"
+            onClick={onConfirm}
+            className="px-4 py-1.5 rounded text-sm bg-red-600 hover:bg-red-700 text-white font-semibold transition-colors"
+          >
+            Confirm PANIC
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// Mode buttons (#1)
+// ============================================================================
+
+type BotMode = 'NORMAL' | 'GRACEFUL_STOP' | 'TP_ONLY' | 'PANIC'
+
+const MODE_BUTTONS: { mode: BotMode; label: string; className: string; activeClass: string }[] = [
+  {
+    mode: 'NORMAL',
+    label: 'Normal',
+    className: 'border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10',
+    activeClass: 'bg-emerald-500/20 border-emerald-500 text-emerald-200 font-semibold',
+  },
+  {
+    mode: 'GRACEFUL_STOP',
+    label: 'Graceful Stop',
+    className: 'border-yellow-500/40 text-yellow-300 hover:bg-yellow-500/10',
+    activeClass: 'bg-yellow-500/20 border-yellow-500 text-yellow-200 font-semibold',
+  },
+  {
+    mode: 'TP_ONLY',
+    label: 'TP Only',
+    className: 'border-blue-500/40 text-blue-300 hover:bg-blue-500/10',
+    activeClass: 'bg-blue-500/20 border-blue-500 text-blue-200 font-semibold',
+  },
+  {
+    mode: 'PANIC',
+    label: 'PANIC',
+    className: 'border-red-500/40 text-red-300 hover:bg-red-500/10',
+    activeClass: 'bg-red-500/20 border-red-500 text-red-200 font-bold',
+  },
+]
+
+interface ModeButtonsProps {
+  symbol: string
+  currentMode: string | null
+}
+
+function ModeButtons({ symbol, currentMode }: ModeButtonsProps) {
+  const queryClient = useQueryClient()
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const [showPanicConfirm, setShowPanicConfirm] = useState(false)
+
+  const token = localStorage.getItem('ccbt_dash_token')
+
+  async function applyMode(mode: BotMode, confirmPanic?: boolean) {
+    setPending(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const body = mode === 'PANIC'
+        ? { mode, confirm_panic: confirmPanic ?? false }
+        : { mode }
+      const res = await api.setBotMode(symbol, body, token)
+      setMessage(res.message ?? `Mode set to ${mode}`)
+      // Invalidate both the bot-detail and ['bots'] queries so the badge updates
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['bot', symbol] }),
+        queryClient.invalidateQueries({ queryKey: ['bots'] }),
+      ])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unknown error')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  function handleClick(mode: BotMode) {
+    if (mode === 'PANIC') {
+      setShowPanicConfirm(true)
+    } else {
+      applyMode(mode)
+    }
+  }
+
+  return (
+    <>
+      <div data-testid="mode-buttons" className="flex flex-wrap gap-2 items-center">
+        {MODE_BUTTONS.map(({ mode, label, className, activeClass }) => {
+          const isActive = currentMode === mode
+          return (
+            <button
+              key={mode}
+              data-testid={`mode-btn-${mode}`}
+              aria-pressed={isActive ? 'true' : 'false'}
+              disabled={pending}
+              onClick={() => handleClick(mode)}
+              className={`px-3 py-1.5 rounded border text-xs transition-colors disabled:opacity-50 ${
+                isActive ? activeClass : `bg-transparent ${className}`
+              }`}
+            >
+              {label}
+            </button>
+          )
+        })}
+
+        {/* Success message */}
+        {message && (
+          <span className="text-xs text-emerald-400 ml-1">{message}</span>
+        )}
+
+        {/* Error message */}
+        {error && (
+          <span data-testid="mode-error" className="text-xs text-red-400 ml-1">{error}</span>
+        )}
+      </div>
+
+      {showPanicConfirm && (
+        <PanicConfirmDialog
+          title={`PANIC: ${symbol}`}
+          message="This will immediately close ALL open positions at market price. This action cannot be undone."
+          onConfirm={() => {
+            setShowPanicConfirm(false)
+            applyMode('PANIC', true)
+          }}
+          onCancel={() => setShowPanicConfirm(false)}
+        />
+      )}
+    </>
   )
 }
 
@@ -593,7 +760,7 @@ export function BotDetailPage() {
   return (
     <div className="p-4 max-w-screen-xl mx-auto">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-3 mb-2">
         <Link
           to="/"
           className="text-slate-500 hover:text-slate-300 transition-colors text-sm"
@@ -607,6 +774,11 @@ export function BotDetailPage() {
         {bot?.mode && bot.mode !== 'NORMAL' && (
           <ModeBadge mode={bot.mode} />
         )}
+      </div>
+
+      {/* Mode control buttons (#1) */}
+      <div className="mb-4">
+        <ModeButtons symbol={sym} currentMode={bot?.mode ?? null} />
       </div>
 
       {/* Performance stats */}

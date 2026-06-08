@@ -23,10 +23,10 @@
  *     to avoid duplicate 'STOP'/'TP'/'PANIC' text matches.
  */
 import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
-import type { BotRow, TradeRow, PortfolioSummaryResponse } from '../api/client'
+import type { BotRow, TradeRow, PortfolioSummaryResponse, ModeResponse } from '../api/client'
 import { formatMoney, formatPct, formatPF } from '../utils/format'
 import { EquityCurve, PerBotPnl, DailyPnl } from '../components/Charts'
 import { UpnlPanel } from '../components/UpnlPanel'
@@ -67,28 +67,32 @@ function PortfolioHeader({ summary }: { summary: PortfolioSummaryResponse | unde
     totalPnl === null ? 'text-slate-100' : totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'
 
   return (
-    <div data-testid="portfolio-header" className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-      <MetricCard
-        label="Total PnL"
-        value={formatMoney(totalPnl)}
-        testId="header-total-pnl"
-        valueClass={pnlClass}
-      />
-      <MetricCard
-        label="Win Rate"
-        value={formatPct(summary?.win_rate_pct ?? null)}
-        testId="header-win-rate"
-      />
-      <MetricCard
-        label="Profit Factor"
-        value={formatPF(summary?.profit_factor ?? null)}
-        testId="header-profit-factor"
-      />
-      <MetricCard
-        label="Active Bots"
-        value={summary?.active_bots !== undefined ? String(summary.active_bots) : '—'}
-        testId="header-active-bots"
-      />
+    <div data-testid="portfolio-header" className="mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+        <MetricCard
+          label="Total PnL"
+          value={formatMoney(totalPnl)}
+          testId="header-total-pnl"
+          valueClass={pnlClass}
+        />
+        <MetricCard
+          label="Win Rate"
+          value={formatPct(summary?.win_rate_pct ?? null)}
+          testId="header-win-rate"
+        />
+        <MetricCard
+          label="Profit Factor"
+          value={formatPF(summary?.profit_factor ?? null)}
+          testId="header-profit-factor"
+        />
+        <MetricCard
+          label="Active Bots"
+          value={summary?.active_bots !== undefined ? String(summary.active_bots) : '—'}
+          testId="header-active-bots"
+        />
+      </div>
+      {/* Bulk mode controls (#2) */}
+      <BulkModeControls />
     </div>
   )
 }
@@ -118,6 +122,192 @@ function ModeBadge({ mode }: { mode: string | null }) {
   const cfg = MODE_BADGE_MAP[mode]
   return (
     <span className={`text-[10px] px-1.5 py-0.5 rounded ${cfg.className}`}>{cfg.label}</span>
+  )
+}
+
+// ============================================================================
+// Bulk panic confirm dialog (#2)
+// ============================================================================
+
+interface BulkPanicConfirmDialogProps {
+  onConfirm: () => void
+  onCancel: () => void
+}
+
+function BulkPanicConfirmDialog({ onConfirm, onCancel }: BulkPanicConfirmDialogProps) {
+  return (
+    <div
+      data-testid="bulk-panic-confirm-dialog"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="bg-[#12161F] border border-red-500/50 rounded-lg p-6 max-w-sm w-full mx-4 shadow-2xl">
+        <h3 className="text-base font-bold text-red-400 mb-2">PANIC ALL BOTS</h3>
+        <p className="text-sm text-slate-300 mb-5">
+          This will immediately close ALL open positions across ALL bots at market price.
+          This action cannot be undone.
+        </p>
+        <div className="flex gap-3 justify-end">
+          <button
+            data-testid="bulk-panic-confirm-cancel"
+            onClick={onCancel}
+            className="px-4 py-1.5 rounded text-sm bg-[#1A1F2E] border border-[#2A3245] text-slate-300 hover:border-slate-500 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            data-testid="bulk-panic-confirm-ok"
+            onClick={onConfirm}
+            className="px-4 py-1.5 rounded text-sm bg-red-600 hover:bg-red-700 text-white font-semibold transition-colors"
+          >
+            Confirm PANIC ALL
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// Bulk mode controls (#2)
+// ============================================================================
+
+function BulkModeControls() {
+  const queryClient = useQueryClient()
+  const [pending, setPending] = useState(false)
+  const [error, setBulkError] = useState<string | null>(null)
+  const [result, setResult] = useState<ModeResponse[] | null>(null)
+  const [showPanicConfirm, setShowPanicConfirm] = useState(false)
+
+  const token = localStorage.getItem('ccbt_dash_token')
+
+  async function sendBulk(mode: string, confirmPanic?: boolean) {
+    setPending(true)
+    setBulkError(null)
+    setResult(null)
+    try {
+      const body = mode === 'PANIC'
+        ? { symbols: [], mode, confirm_panic: confirmPanic ?? false }
+        : { symbols: [], mode }
+      const res = await api.setBulkMode(body, token)
+      setResult(res.results)
+      // Invalidate bots cache so modes update
+      await queryClient.invalidateQueries({ queryKey: ['bots'] })
+    } catch (e) {
+      setBulkError(e instanceof Error ? e.message : 'Unknown error')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  const acceptedCount = result?.filter(r => r.accepted).length ?? 0
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        {/* STOP-ALL — prominent */}
+        <button
+          data-testid="bulk-stop-all"
+          disabled={pending}
+          onClick={() => sendBulk('GRACEFUL_STOP')}
+          className="px-3 py-1.5 rounded border border-yellow-500/50 bg-yellow-500/10 text-yellow-300 text-xs font-medium hover:bg-yellow-500/20 disabled:opacity-50 transition-colors"
+        >
+          STOP ALL
+        </button>
+
+        {/* RESUME-ALL */}
+        <button
+          data-testid="bulk-resume-all"
+          disabled={pending}
+          onClick={() => sendBulk('NORMAL')}
+          className="px-3 py-1.5 rounded border border-emerald-500/50 bg-emerald-500/10 text-emerald-300 text-xs font-medium hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
+        >
+          RESUME ALL
+        </button>
+
+        {/* PANIC-ALL — less prominent, behind confirm */}
+        <button
+          data-testid="bulk-panic-all"
+          disabled={pending}
+          onClick={() => setShowPanicConfirm(true)}
+          className="px-3 py-1.5 rounded border border-red-500/30 bg-transparent text-red-400/70 text-xs hover:bg-red-500/10 hover:border-red-500/50 disabled:opacity-50 transition-colors"
+        >
+          PANIC ALL
+        </button>
+
+        {/* Result summary */}
+        {result !== null && (
+          <span data-testid="bulk-result" className="text-xs text-emerald-400 ml-1">
+            {acceptedCount} bot{acceptedCount !== 1 ? 's' : ''} updated
+          </span>
+        )}
+
+        {/* Error */}
+        {error && (
+          <span data-testid="bulk-error" className="text-xs text-red-400 ml-1">{error}</span>
+        )}
+      </div>
+
+      {showPanicConfirm && (
+        <BulkPanicConfirmDialog
+          onConfirm={() => {
+            setShowPanicConfirm(false)
+            sendBulk('PANIC', true)
+          }}
+          onCancel={() => setShowPanicConfirm(false)}
+        />
+      )}
+    </>
+  )
+}
+
+// ============================================================================
+// Portfolio alert banner (#4)
+// ============================================================================
+
+type AlertSeverity = 'clear' | 'warning' | 'critical'
+
+function getAlertSeverity(bots: BotRow[]): AlertSeverity {
+  if (bots.length === 0) return 'clear'
+  const hasPanic = bots.some(b => b.mode === 'PANIC')
+  if (hasPanic) return 'critical'
+  const hasNonNormal = bots.some(b => b.mode && b.mode !== 'NORMAL')
+  const hasError = bots.some(b => b.status === 'error')
+  if (hasNonNormal || hasError) return 'warning'
+  return 'clear'
+}
+
+function PortfolioAlertBanner({ bots }: { bots: BotRow[] }) {
+  const severity = getAlertSeverity(bots)
+
+  if (severity === 'clear') {
+    return null
+  }
+
+  const nonNormalCount = bots.filter(b => b.mode && b.mode !== 'NORMAL').length
+  const errorCount = bots.filter(b => b.status === 'error').length
+
+  const parts: string[] = []
+  if (nonNormalCount > 0) parts.push(`${nonNormalCount} bot${nonNormalCount !== 1 ? 's' : ''} in non-NORMAL mode`)
+  if (errorCount > 0) parts.push(`${errorCount} bot${errorCount !== 1 ? 's' : ''} with errors`)
+
+  const bannerClass = severity === 'critical'
+    ? 'bg-red-900/30 border-red-500/50 text-red-300'
+    : 'bg-yellow-900/20 border-yellow-500/40 text-yellow-300'
+
+  const dotClass = severity === 'critical' ? 'bg-red-400' : 'bg-yellow-400'
+
+  return (
+    <div
+      data-testid="portfolio-alert-banner"
+      data-severity={severity === 'critical' ? 'critical' : 'warning'}
+      className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border mb-4 text-sm ${bannerClass}`}
+      role="alert"
+    >
+      <span className={`w-2 h-2 rounded-full shrink-0 ${dotClass}`} aria-hidden="true" />
+      <span>{parts.join(' · ')}</span>
+    </div>
   )
 }
 
@@ -596,7 +786,10 @@ export function PortfolioPage({ upnl = null }: PortfolioPageProps) {
     <div className="p-4 max-w-screen-xl mx-auto">
       <h1 className="text-2xl font-bold text-slate-100 mb-4">Portfolio Overview</h1>
 
-      {/* Header metrics */}
+      {/* Alert banner (#4) — aggregates already-loaded bots, no new API call */}
+      <PortfolioAlertBanner bots={bots} />
+
+      {/* Header metrics + bulk controls */}
       <PortfolioHeader summary={summary} />
 
       {/* Realtime unrealized PnL (from public markPrice WS — no API key) */}
