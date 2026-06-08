@@ -712,6 +712,7 @@ class TradingEngine:
         portfolio_manager=None,
         market_data=None,
         recently_closed: Optional[dict] = None,
+        wake_events: Optional[dict] = None,
     ) -> None:
         self._config = config
         self._shutdown_event = shutdown_event
@@ -743,6 +744,39 @@ class TradingEngine:
         self._symbol_clean = config["symbol"].replace("/", "").replace(":", "")
         self._current_mode = BotMode.NORMAL
         self._loop_count: int = 0
+
+        # ---------------------------------------------------------------------------
+        # PR1 — WS wake plumbing (flag-OFF == today when wake_events is None)
+        #
+        # _norm_symbol: same normalisation as check_closed_positions (engine.py ~:231-234)
+        #   symbol.replace('/','').replace(':USDT','').replace('-','').upper()
+        # _wake_event: private asyncio.Event owned exclusively by this engine.
+        #   asyncio.Event() is safe to construct outside a running event loop in
+        #   Python 3.10+ (it no longer binds to a loop at construction time).
+        #   TradingEngine.__init__ is called inside run_bot(), which is an async
+        #   coroutine already running inside async_main's event loop — so the Event
+        #   is created within the running loop and is immediately valid.
+        #   If ever called from a sync context (e.g. a test that constructs an engine
+        #   outside asyncio.run()), the Event still works because Python 3.10+
+        #   deferred-loop binding means wait() binds to whatever loop is current at
+        #   await time.  Flag-OFF path: wake_events is None → _wake_event is private
+        #   and never .set() externally → _interruptible_sleep races timeout only.
+        # ---------------------------------------------------------------------------
+        self._norm_symbol: str = (
+            config["symbol"]
+            .replace("/", "")
+            .replace(":USDT", "")
+            .replace("-", "")
+            .upper()
+        )
+        self._wake_event: asyncio.Event = asyncio.Event()
+        self._woke_via_ws: bool = False
+        # Per-tick positions cache populated by _verify_close_after_ws so the
+        # loop-top _monitor_positions call avoids a back-to-back double fetch.
+        self._cached_positions_this_tick: Optional[list] = None
+
+        if wake_events is not None:
+            wake_events.setdefault(self._norm_symbol, []).append(self._wake_event)
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -896,10 +930,28 @@ class TradingEngine:
 
                 await self._daily_reset()
 
+                # PR1 — WS wake verify: if a WS event woke us early, re-fetch
+                # positions and run check_closed_positions immediately rather
+                # than waiting for the candle boundary.  Short-circuits when
+                # _tracked_trades is empty (sibling deduped) and drops the
+                # trigger after N ambiguous/failed attempts.  The cached
+                # snapshot (self._cached_positions_this_tick) is reused by the
+                # branch-specific get_positions() calls below to avoid a double
+                # fetch.  Flag-OFF (wake_events=None): _woke_via_ws is always
+                # False, so this block is never entered — byte-for-byte today.
+                if self._woke_via_ws:
+                    await self._verify_close_after_ws()
+
                 # GRACEFUL_STOP: manage existing positions only, no new entries.
                 # Exit when no tracked trades remain.
                 if self._current_mode == BotMode.GRACEFUL_STOP:
-                    positions = self._client.get_positions()
+                    # Reuse cached snapshot from WS-verify if available (avoids
+                    # back-to-back double get_positions on the same tick).
+                    if self._cached_positions_this_tick is not None:
+                        positions = self._cached_positions_this_tick
+                        self._cached_positions_this_tick = None
+                    else:
+                        positions = self._client.get_positions()
                     await self._monitor_positions(positions)
                     await self._update_trailing_stops()
                     if not self._tracked_trades:
@@ -912,7 +964,12 @@ class TradingEngine:
                 # TP_ONLY: no new entries, no trailing stops; only TP closes positions.
                 # Also cancels open SL (stop-market) algo orders so only the TP remains.
                 if self._current_mode == BotMode.TP_ONLY:
-                    positions = self._client.get_positions()
+                    # Reuse cached snapshot from WS-verify if available.
+                    if self._cached_positions_this_tick is not None:
+                        positions = self._cached_positions_this_tick
+                        self._cached_positions_this_tick = None
+                    else:
+                        positions = self._client.get_positions()
                     await self._monitor_positions(positions)
                     # Cancel SL orders, keep only TP
                     if self._client._exchange_name == "binance":
@@ -943,7 +1000,12 @@ class TradingEngine:
                 # T3: flag-guarded gate — skip per-symbol API call when this
                 # bot has no tracked trades and the global cap is already full
                 # (a no-trade bot can't act anyway).  Holders ALWAYS fetch.
-                if _should_skip_positions_fetch(
+                # Reuse cached snapshot from WS-verify if available (one fetch
+                # per tick per woken bot, not two).
+                if self._cached_positions_this_tick is not None:
+                    positions = self._cached_positions_this_tick
+                    self._cached_positions_this_tick = None
+                elif _should_skip_positions_fetch(
                     tracked_trades=self._tracked_trades,
                     portfolio_manager=self._portfolio_manager,
                     flag=os.environ.get("CCBT_SHARED_MARKETDATA"),
@@ -1129,6 +1191,125 @@ class TradingEngine:
             closed_count = len(trades_before) - len(trades_after)
             for _ in range(closed_count):
                 await self._portfolio_manager.register_close(self._config["symbol"])
+
+    # ------------------------------------------------------------------
+    # WS-wake verify helper (PR1)
+    # ------------------------------------------------------------------
+
+    async def _verify_close_after_ws(self) -> None:
+        """Verify a WS-triggered close by re-fetching positions and calling
+        the authoritative check_closed_positions path.
+
+        Called from run() loop top when self._woke_via_ws is True (reset to
+        False immediately on entry).  Short-circuits if _tracked_trades is
+        empty — the sibling engine may have already deduped this coin's close.
+
+        Invariants (see ticket Section 2):
+        - A fetch exception is NEVER absence.  Each get_positions() call is
+          individually wrapped in try/except; any exception / non-list result
+          is treated as PRESENT/ambiguous and never passed to
+          check_closed_positions.
+        - This helper does NO dedup of its own — it only re-fetches and calls
+          the unchanged synchronous check_closed_positions, which is the sole
+          exactly-once arbiter (recently_closed TTL registry).
+        - Flag-OFF (wake_events=None): _woke_via_ws is always False so this
+          method is never called — byte-for-byte today's behaviour.
+
+        The successful positions snapshot is stored in
+        self._cached_positions_this_tick so the loop-top _monitor_positions
+        call can reuse it and skip a redundant second get_positions() call.
+        The cache is consumed/cleared at the top of the normal loop path.
+        """
+        # Reset immediately — even if we short-circuit, the flag is consumed.
+        self._woke_via_ws = False
+
+        if not self._tracked_trades:
+            # Sibling engine already deduped this coin's close; skip cleanly.
+            logger.debug(
+                "verify_ws_skipped_no_tracked_trades",
+                extra={"symbol": self._config["symbol"]},
+            )
+            return
+
+        _N = 3
+        _BACKOFFS = (0.4, 0.8, 1.6)  # seconds; total budget ~3 s
+        positions: Optional[list] = None
+
+        for attempt in range(_N):
+            if attempt > 0:
+                backoff = _BACKOFFS[min(attempt - 1, len(_BACKOFFS) - 1)]
+                await asyncio.sleep(backoff)
+
+            try:
+                raw = self._client.get_positions()
+            except Exception as exc:
+                # Fetch exception — NEVER treat as absence.
+                logger.debug(
+                    "verify_ws_fetch_exception",
+                    extra={
+                        "symbol": self._config["symbol"],
+                        "attempt": attempt + 1,
+                        "error": str(exc),
+                    },
+                )
+                continue
+
+            if not isinstance(raw, list):
+                # Non-list sentinel — treat as ambiguous.
+                logger.debug(
+                    "verify_ws_fetch_non_list",
+                    extra={
+                        "symbol": self._config["symbol"],
+                        "attempt": attempt + 1,
+                        "type": type(raw).__name__,
+                    },
+                )
+                continue
+
+            # Real list — check if our tracked side is absent.
+            def _norm(s: str) -> str:
+                return s.replace("/", "").replace(":USDT", "").replace("-", "").upper()
+
+            active_sides: set[str] = set()
+            for pos in raw:
+                if _norm(pos.get("symbol", "")) == self._norm_symbol:
+                    active_sides.add(pos.get("side", ""))
+
+            # Check each tracked trade to see if its side is now absent.
+            side_absent = False
+            for info in self._tracked_trades.values():
+                trade_side = "long" if info["side"] == "buy" else "short"
+                if trade_side not in active_sides:
+                    side_absent = True
+                    break
+
+            if side_absent:
+                # Verified closed — run the authoritative path.
+                positions = raw
+                break
+            else:
+                # Position still present — not closed yet, retry.
+                logger.debug(
+                    "verify_ws_side_still_present",
+                    extra={"symbol": self._config["symbol"], "attempt": attempt + 1},
+                )
+        else:
+            # All N attempts ambiguous or failed — drop trigger.
+            logger.debug(
+                "verify_ambiguous_drop_trigger",
+                extra={"symbol": self._config["symbol"], "attempts": _N},
+            )
+            return
+
+        if positions is None:
+            # Should not happen (loop `break` always sets positions), but be safe.
+            return
+
+        # Cache for loop-top _monitor_positions reuse (avoids back-to-back double fetch).
+        self._cached_positions_this_tick = positions
+
+        # Run the authoritative close-detection path (unchanged).
+        await self._monitor_positions(positions)
 
     # ------------------------------------------------------------------
     # Trailing stops
@@ -1999,20 +2180,38 @@ class TradingEngine:
         return await self._interruptible_sleep(sleep_time)
 
     async def _interruptible_sleep(self, seconds: float) -> bool:
-        """Sleep for up to ``seconds``, waking early if shutdown is requested.
+        """Sleep for up to ``seconds``, waking early on shutdown or WS wake event.
+
+        PR1 — 3-way race: shutdown, private WS wake event, timeout.
+        Flag-OFF (wake_events=None at __init__): _wake_event is a private Event
+        that never fires externally, so the race resolves on timeout exactly as
+        before — byte-for-byte today's behaviour.
 
         Args:
             seconds: Maximum sleep duration.
 
         Returns:
             True if shutdown was requested (caller should break/return),
-            False if the full sleep elapsed normally.
+            False if the full sleep elapsed (or WS event fired — continue).
         """
-        try:
-            await asyncio.wait_for(self._shutdown_event.wait(), timeout=seconds)
+        shutdown_fut = asyncio.ensure_future(self._shutdown_event.wait())
+        wake_fut = asyncio.ensure_future(self._wake_event.wait())
+        done, pending = await asyncio.wait(
+            {shutdown_fut, wake_fut},
+            timeout=seconds,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for t in pending:
+            t.cancel()
+        if self._shutdown_event.is_set():
             return True  # Shutdown requested
-        except asyncio.TimeoutError:
-            return False  # Normal timeout — continue
+        # Capture woke_via_ws from race result — NOT from a post-hoc is_set() read
+        # (a sibling engine may have already cleared a shared event by then, but here
+        # each engine has its OWN private event, so this distinction is belt-and-
+        # suspenders correctness).
+        self._woke_via_ws = wake_fut in done
+        self._wake_event.clear()  # clear OUR event only; siblings have their own
+        return False
 
     # ------------------------------------------------------------------
     # Error handling

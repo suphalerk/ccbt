@@ -352,6 +352,7 @@ async def run_bot(
     risk_override: Optional[float] = None,
     leverage_override: Optional[int] = None,
     market_data: Optional[SharedMarketData] = None,
+    wake_events: Optional[dict] = None,
 ) -> None:
     """Run a single bot coroutine inside the shared event loop.
 
@@ -368,6 +369,10 @@ async def run_bot(
             CCBT_SHARED_MARKETDATA=='1', the engine's BybitClient will
             early-return balance/OHLCV from the shared cache rather than
             hitting the exchange on every tick.
+        wake_events: Optional shared dict mapping normalised coin symbols to
+            lists of per-engine asyncio.Events.  When provided (PR1+), the
+            engine registers its own private Event and wakes early on WS
+            triggers.  None (default) == flag-OFF / today's behaviour.
     """
     config = load_config(config_path)
     if config is None:
@@ -391,6 +396,7 @@ async def run_bot(
             portfolio_manager=portfolio_manager,
             market_data=market_data,
             recently_closed=portfolio_manager.recently_closed if portfolio_manager is not None else None,
+            wake_events=wake_events,
         )
         await engine.run()
     except Exception as e:
@@ -570,6 +576,13 @@ async def async_main(
             ),
         )
 
+    # PR1 — WS wake plumbing: shared registry mapping normalised coin symbols
+    # (e.g. 'BTCUSDT') to lists of per-engine asyncio.Events.  Each engine
+    # registers its own private Event here at __init__ time.  PR2 will attach
+    # the user-data WS task that fires these events on SL/TP fills.  In PR1
+    # the dict is populated but never fired externally — flag-OFF behaviour.
+    wake_events: dict = {}
+
     # Launch all bots as concurrent tasks.
     # Flag ON:  stagger launches ~200 ms apart to spread initial load.
     # Flag OFF: all tasks created immediately (today's behaviour).
@@ -585,6 +598,7 @@ async def async_main(
                 risk_override=risk_override,
                 leverage_override=leverage_override,
                 market_data=shared_market_data,
+                wake_events=wake_events,
             ),
             name=f"bot-{Path(cfg).stem}",
         )
